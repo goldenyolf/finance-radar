@@ -180,19 +180,36 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
     });
   }
 
+  const triggerDisabled = !userId || accounts.length === 0;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
+      {/* Desktop：頁首 pill 按鈕（md+ 顯示） */}
       <DialogTrigger
         render={
           <Button
             size="lg"
-            className="gap-1.5 rounded-full bg-foreground px-4 text-background shadow-sm shadow-foreground/10 hover:bg-foreground/90"
-            disabled={!userId || accounts.length === 0}
+            className="hidden gap-1.5 rounded-full bg-foreground px-4 text-background shadow-sm shadow-foreground/10 hover:bg-foreground/90 md:inline-flex"
+            disabled={triggerDisabled}
           />
         }
       >
         <Plus className="size-4" />
         快速記帳
+      </DialogTrigger>
+
+      {/* Mobile：右下角 Extended FAB（md 以下顯示） */}
+      <DialogTrigger
+        render={
+          <Button
+            aria-label="快速記帳"
+            className="fixed right-5 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-40 h-14 gap-2 rounded-full bg-foreground pr-6 pl-5 text-base font-semibold text-background shadow-lg shadow-foreground/25 ring-1 ring-foreground/10 hover:bg-foreground/90 md:hidden [&_svg:not([class*='size-'])]:size-5"
+            disabled={triggerDisabled}
+          />
+        }
+      >
+        <Plus strokeWidth={2.5} />
+        記帳
       </DialogTrigger>
 
       <DialogContent className="sm:max-w-md">

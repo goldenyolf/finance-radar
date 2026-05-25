@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import {
   formatCurrency,
   type BoardData,
@@ -208,45 +209,60 @@ export function BoardCard({ data }: Props) {
             </div>
           ) : (
             <ul className="-mx-1 flex max-h-72 flex-col gap-0.5 overflow-y-auto pr-0.5">
-              {items.map((item) => (
-                <li
-                  key={item.id}
-                  className="grid grid-cols-[auto_1fr_auto] items-start gap-3 rounded-md px-1.5 py-1.5 hover:bg-muted/50"
-                >
-                  <span
-                    className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none ring-1 ${CATEGORY_STYLE[item.category]}`}
+              {items.map((item) => {
+                const rawId =
+                  item.source === "transaction"
+                    ? item.id.slice(2)
+                    : null;
+                return (
+                  <li
+                    key={item.id}
+                    className="group grid grid-cols-[auto_1fr_auto] items-start gap-3 rounded-md px-1.5 py-1.5 hover:bg-muted/50"
                   >
-                    {item.category}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{item.title}</p>
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {item.accountName}
-                      {item.source === "transaction" && (
-                        <>
-                          <span className="mx-1 text-muted-foreground/40">
-                            ·
-                          </span>
-                          {formatDateShort(item.date)}
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-0.5">
                     <span
-                      className={`text-sm font-semibold tabular-nums ${amountToneClass(item)}`}
+                      className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none ring-1 ${CATEGORY_STYLE[item.category]}`}
                     >
-                      {signedFormat(item.signedAmount)}
+                      {item.category}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <span
-                        className={`inline-block size-1.5 rounded-full ${STATUS_DOT[item.status]}`}
-                      />
-                      {item.status}
-                    </span>
-                  </div>
-                </li>
-              ))}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{item.title}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                        {item.accountName}
+                        {item.source === "transaction" && (
+                          <>
+                            <span className="mx-1 text-muted-foreground/40">
+                              ·
+                            </span>
+                            {formatDateShort(item.date)}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-1">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span
+                          className={`text-sm font-semibold tabular-nums ${amountToneClass(item)}`}
+                        >
+                          {signedFormat(item.signedAmount)}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <span
+                            className={`inline-block size-1.5 rounded-full ${STATUS_DOT[item.status]}`}
+                          />
+                          {item.status}
+                        </span>
+                      </div>
+                      {rawId && (
+                        <TransactionRowActions
+                          transactionId={rawId}
+                          title={item.title}
+                          amount={item.amount}
+                        />
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

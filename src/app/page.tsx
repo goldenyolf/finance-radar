@@ -16,6 +16,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
   availableCash,
   buildBoardData,
   computeForecast,
@@ -120,7 +126,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
   const breach = forecastPoints.find((p) => p.cash < safetyFloor);
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
+    <main className="mx-auto w-full max-w-6xl px-4 pt-10 pb-28 sm:px-6 md:pb-10 lg:py-14">
       {/* Header */}
       <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -203,14 +209,39 @@ export default async function Dashboard({ searchParams }: PageProps) {
         </Alert>
       )}
 
-      {/* 三大板塊 */}
+      {/* 三大板塊 — Desktop (md+)：維持 Grid 並排（lg 三欄、md 單欄堆疊） */}
       <section
         aria-label="三大財務板塊"
-        className="grid grid-cols-1 gap-4 lg:grid-cols-3"
+        className="hidden grid-cols-1 gap-4 md:grid lg:grid-cols-3"
       >
         {BOARDS.map((b) => (
           <BoardCard key={b.key} data={boardData[b.key]} />
         ))}
+      </section>
+
+      {/* 三大板塊 — Mobile (<md)：Tabs 切換，預設「家庭」 */}
+      <section aria-label="三大財務板塊（手機版）" className="md:hidden">
+        <Tabs defaultValue="family" className="gap-3">
+          <TabsList className="grid w-full grid-cols-3">
+            {BOARDS.map((b) => (
+              <TabsTrigger key={b.key} value={b.key} className="gap-1.5">
+                <span aria-hidden>{b.emoji}</span>
+                <span>
+                  {b.key === "family"
+                    ? "家庭"
+                    : b.key === "subsidy"
+                      ? "補助"
+                      : "個人"}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {BOARDS.map((b) => (
+            <TabsContent key={b.key} value={b.key}>
+              <BoardCard data={boardData[b.key]} />
+            </TabsContent>
+          ))}
+        </Tabs>
       </section>
 
       {/* 趨勢預測 (supplementary) */}
@@ -239,10 +270,15 @@ export default async function Dashboard({ searchParams }: PageProps) {
             </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
-            <CashflowLineChart
-              data={forecastPoints}
-              threshold={threshold || undefined}
-            />
+            {/* Mobile：圖表橫向滑動避免資料點擠在一起；Desktop：fit 容器 */}
+            <div className="-mx-2 overflow-x-auto px-2 md:mx-0 md:overflow-x-visible md:px-0">
+              <div className="min-w-[560px] md:min-w-0">
+                <CashflowLineChart
+                  data={forecastPoints}
+                  threshold={threshold || undefined}
+                />
+              </div>
+            </div>
             <div className="border-t border-foreground/10 pt-2">
               <h3 className="px-1 pb-1 text-xs font-medium tracking-wider text-muted-foreground uppercase">
                 未來金流明細

@@ -9,6 +9,7 @@ import {
 
 import { AddRecurringDialog } from "@/components/recurring/add-recurring-dialog";
 import { DeleteRecurringButton } from "@/components/recurring/delete-recurring-button";
+import { EditRecurringDialog } from "@/components/recurring/edit-recurring-dialog";
 import {
   Card,
   CardContent,
@@ -79,9 +80,11 @@ function formatDate(iso: string) {
 function RecurringRowCard({
   row,
   accountName,
+  accounts,
 }: {
   row: RecurringRow;
   accountName: string;
+  accounts: { id: string; name: string }[];
 }) {
   const isIncome = row.type === "income";
   const monthly = expandToMonthly(num(row.amount), row.frequency);
@@ -132,7 +135,21 @@ function RecurringRowCard({
             月均 {formatCurrency(monthly)}
           </p>
         </div>
-        <DeleteRecurringButton id={row.id} title={row.title} />
+        <div className="flex items-center">
+          <EditRecurringDialog
+            id={row.id}
+            initial={{
+              title: row.title,
+              amount: num(row.amount),
+              type: row.type,
+              frequency: row.frequency,
+              accountId: row.account_id,
+              nextDueDate: row.next_due_date,
+            }}
+            accounts={accounts}
+          />
+          <DeleteRecurringButton id={row.id} title={row.title} />
+        </div>
       </div>
     </li>
   );
@@ -253,6 +270,7 @@ export default async function RecurringPage() {
                     key={r.id}
                     row={r}
                     accountName={accountName(r.account_id)}
+                    accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
                   />
                 ))}
               </ul>
@@ -278,6 +296,7 @@ export default async function RecurringPage() {
                     key={r.id}
                     row={r}
                     accountName={accountName(r.account_id)}
+                    accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
                   />
                 ))}
               </ul>

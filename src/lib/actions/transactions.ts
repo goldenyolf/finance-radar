@@ -34,6 +34,83 @@ export interface CreateTransferInput {
 
 export type MutationResult = { ok: true } | { ok: false; error: string };
 
+export interface UpdateTransactionInput {
+  id: string;
+  description: string;
+  amount: number;
+}
+
+export async function updateTransaction(
+  input: UpdateTransactionInput
+): Promise<MutationResult> {
+  if (!input.id) return { ok: false, error: "缺少交易 ID" };
+  if (!input.description.trim()) return { ok: false, error: "請輸入項目名稱" };
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    return { ok: false, error: "金額必須為大於 0 的數字" };
+  }
+
+  // 先查出這筆是否為 transfer（需要同步更新另一腿）
+  const { data: existing, error: fetchError } = await supabase
+    .from("transactions")
+    .select("type, transfer_group_id")
+    .eq("id", input.id)
+    .maybeSingle();
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!existing) return { ok: false, error: "找不到該筆交易" };
+
+  const patch = {
+    description: input.description.trim(),
+    amount: input.amount,
+  };
+
+  if (existing.type === "transfer" && existing.transfer_group_id) {
+    const { error } = await supabase
+      .from("transactions")
+      .update(patch)
+      .eq("transfer_group_id", existing.transfer_group_id);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await supabase
+      .from("transactions")
+      .update(patch)
+      .eq("id", input.id);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function deleteTransaction(id: string): Promise<MutationResult> {
+  if (!id) return { ok: false, error: "缺少交易 ID" };
+
+  // 若是 transfer，連同另一腿一起刪
+  const { data: existing, error: fetchError } = await supabase
+    .from("transactions")
+    .select("type, transfer_group_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!existing) return { ok: false, error: "找不到該筆交易" };
+
+  if (existing.type === "transfer" && existing.transfer_group_id) {
+    const { error } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("transfer_group_id", existing.transfer_group_id);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("id", id);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
 export async function createTransaction(
   input: CreateTransactionInput
 ): Promise<MutationResult> {

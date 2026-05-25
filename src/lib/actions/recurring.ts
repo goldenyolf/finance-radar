@@ -56,6 +56,45 @@ export async function createRecurring(
   return { ok: true };
 }
 
+export interface UpdateRecurringInput {
+  id: string;
+  accountId: string | null;
+  title: string;
+  amount: number;
+  type: RecurringType;
+  frequency: RecurringFrequency;
+  nextDueDate: string;
+}
+
+export async function updateRecurring(
+  input: UpdateRecurringInput
+): Promise<MutationResult> {
+  if (!input.id) return { ok: false, error: "缺少項目 ID" };
+  if (!input.title.trim()) return { ok: false, error: "請輸入項目名稱" };
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    return { ok: false, error: "金額必須為大於 0 的數字" };
+  }
+  if (!input.nextDueDate) return { ok: false, error: "請選擇下次執行日期" };
+
+  const { error } = await supabase
+    .from("recurring_payments")
+    .update({
+      account_id: input.accountId,
+      title: input.title.trim(),
+      amount: input.amount,
+      type: input.type,
+      frequency: input.frequency,
+      next_due_date: input.nextDueDate,
+    })
+    .eq("id", input.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/");
+  revalidatePath("/recurring");
+  return { ok: true };
+}
+
 export async function deleteRecurring(id: string): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少項目 ID" };
 
