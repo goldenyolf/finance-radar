@@ -10,30 +10,49 @@ import { supabase } from "@/lib/supabase";
 export const runtime = "nodejs";
 
 const DEFAULT_USER_ID = "user-001";
-const DEFAULT_ACCOUNT_ID = "acc-ctbc";
+const PERSONAL_ACCOUNT_ID = "acc-001";       // 中信（百五個人）
+const SHARED_ACCOUNT_ID = "acc-taishin";     // 台新共同戶
+const SHARED_KEYWORDS = ["共同", "家庭"];
 
-type ParsedEntry = { amount: number; title: string };
+type ParsedEntry = {
+  amount: number;
+  title: string;
+  accountId: string;
+  accountLabel: string;
+};
 
 function parseExpenseMessage(text: string): ParsedEntry | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
+  let working = text.trim();
+  if (!working) return null;
 
-  const amountMatch = trimmed.match(/\d+(?:\.\d+)?/);
+  let accountId = PERSONAL_ACCOUNT_ID;
+  let accountLabel = "中信";
+
+  for (const kw of SHARED_KEYWORDS) {
+    if (working.startsWith(kw)) {
+      working = working.slice(kw.length).trim();
+      accountId = SHARED_ACCOUNT_ID;
+      accountLabel = "台新共同";
+      break;
+    }
+  }
+
+  const amountMatch = working.match(/\d+(?:\.\d+)?/);
   if (!amountMatch) return null;
 
   const amount = Number(amountMatch[0]);
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
   const title = (
-    trimmed.slice(0, amountMatch.index ?? 0) +
-    trimmed.slice((amountMatch.index ?? 0) + amountMatch[0].length)
+    working.slice(0, amountMatch.index ?? 0) +
+    working.slice((amountMatch.index ?? 0) + amountMatch[0].length)
   )
     .replace(/\s+/g, " ")
     .trim();
 
   if (!title) return null;
 
-  return { amount, title };
+  return { amount, title, accountId, accountLabel };
 }
 
 function todayInTaipei(): string {
@@ -94,7 +113,7 @@ async function handleEvent(
     await replyText(
       client,
       replyToken,
-      "💡 記帳格式錯誤囉！請輸入『項目 金額』，例如：午餐 120"
+      "💡 記帳格式錯誤囉！\n• 個人（中信）：午餐 120\n• 共同（台新）：共同 牛奶 80"
     );
     return;
   }
@@ -102,7 +121,7 @@ async function handleEvent(
   try {
     const { error } = await supabase.from("transactions").insert({
       user_id: DEFAULT_USER_ID,
-      account_id: DEFAULT_ACCOUNT_ID,
+      account_id: parsed.accountId,
       description: parsed.title,
       amount: parsed.amount,
       type: "expense",
@@ -120,7 +139,7 @@ async function handleEvent(
     await replyText(
       client,
       replyToken,
-      `✅ 已成功記帳：${parsed.title} $ ${parsed.amount}`
+      `✅ 已記帳：${parsed.title} $${parsed.amount}（${parsed.accountLabel}）`
     );
   } catch (err) {
     console.error("[LINE webhook] Unexpected error:", err);
