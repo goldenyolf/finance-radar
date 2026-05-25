@@ -12,7 +12,9 @@
       "Read(//tmp/**)",
       "Bash(curl -s -o /tmp/page2.html -w \"HTTP: %{http_code}\\\\n\" http://localhost:3000/)",
       "Bash(curl -sS -o /tmp/page.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/)",
-      "Bash(curl -s -o /tmp/page.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/)"
+      "Bash(curl -s -o /tmp/page.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(command -v gh)",
+      "Bash(gh auth *)"
     ]
   }
 }
