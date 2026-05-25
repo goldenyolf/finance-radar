@@ -1,246 +1,270 @@
+import Link from "next/link";
+import { AlertTriangle, CalendarClock, TrendingUp } from "lucide-react";
+
+import { AccountSwitcher } from "@/components/dashboard/account-switcher";
+import { BoardCard } from "@/components/dashboard/board-card";
+import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
+import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
+import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { buttonVariants } from "@/components/ui/button";
 import {
-  Wallet,
-  CreditCard,
-  AlertTriangle,
-  ShieldCheck,
-  ShieldAlert,
-  CalendarClock,
-  TrendingDown,
-} from "lucide-react";
-import { user, accounts, transactions } from "@/data/mock";
-import { Transaction } from "@/data/types";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  availableCash,
+  buildBoardData,
+  computeForecast,
+  formatCurrency,
+  num,
+  scopeForAccount,
+  BOARDS,
+  type AccountRow,
+  type AssetRow,
+  type DebtRow,
+  type RecurringRow,
+  type TransactionRow,
+  type UserRow,
+} from "@/lib/dashboard";
+import { supabase } from "@/lib/supabase";
 
-// ─── 計算邏輯 ──────────────────────────────────────
+// 時間感知：強制每次請求都重跑 RSC，讓 new Date() 真的拿到當下時間
+// (預設靜態 prerender 會把 new Date() 凍在 build 時間)
+export const dynamic = "force-dynamic";
 
-/** 總流動資產 = 銀行餘額總和 + 信用卡負債(負值) */
-function getTotalAssets() {
-  return accounts.reduce((sum, acc) => sum + acc.balance, 0);
+async function safeList<T>(
+  promise: PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<T[]> {
+  try {
+    const { data, error } = await promise;
+    if (error) return [];
+    return data ?? [];
+  } catch {
+    return [];
+  }
 }
 
-/** 取得下個月的所有已知支出 */
-function getNextMonthExpenses(): Transaction[] {
+async function loadDashboard() {
+  const userPromise = (async () => {
+    try {
+      const { data } = await supabase
+        .from("users")
+        .select("*")
+        .limit(1)
+        .maybeSingle();
+      return data as UserRow | null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [user, assets, debts, recurring, transactions, accounts] =
+    await Promise.all([
+      userPromise,
+      safeList<AssetRow>(supabase.from("assets").select("*")),
+      safeList<DebtRow>(supabase.from("debts").select("*")),
+      safeList<RecurringRow>(supabase.from("recurring_payments").select("*")),
+      safeList<TransactionRow>(supabase.from("transactions").select("*")),
+      safeList<AccountRow>(supabase.from("accounts").select("*")),
+    ]);
+
+  return { user, assets, debts, recurring, transactions, accounts };
+}
+
+interface PageProps {
+  searchParams: Promise<{ account?: string }>;
+}
+
+export default async function Dashboard({ searchParams }: PageProps) {
+  const { account: accountParam } = await searchParams;
   const now = new Date();
-  const nextMonth = now.getMonth() + 1;
-  const nextYear = nextMonth > 11 ? now.getFullYear() + 1 : now.getFullYear();
-  const normalizedMonth = nextMonth > 11 ? 0 : nextMonth;
+  const { user, assets, debts, recurring, transactions, accounts } =
+    await loadDashboard();
 
-  return transactions.filter((t) => {
-    const d = new Date(t.date);
-    return (
-      t.type === "expense" &&
-      t.status === "upcoming" &&
-      d.getMonth() === normalizedMonth &&
-      d.getFullYear() === nextYear
-    );
-  });
-}
+  // 3-board 區塊永遠顯示全部，不受 ?account 影響（板塊本身就是分組）
+  const boardData = buildBoardData({ accounts, recurring, transactions, now });
+  const threshold = user ? num(user.emergency_fund_threshold) : 0;
 
-/** 下個月已知支出總額 */
-function getNextMonthTotal(expenses: Transaction[]) {
-  return expenses.reduce((sum, t) => sum + t.amount, 0);
-}
-
-/** 風險等級 */
-function getRiskLevel(totalAssets: number, nextMonthTotal: number) {
-  const remaining = totalAssets - nextMonthTotal;
-  if (remaining < user.emergencyFundThreshold) return "high";
-  if (remaining < user.emergencyFundThreshold * 1.5) return "medium";
-  return "low";
-}
-
-// ─── 格式化 ─────────────────────────────────────────
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("zh-TW", {
-    style: "currency",
-    currency: "TWD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function formatDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-// ─── 元件 ───────────────────────────────────────────
-
-function StatCard({
-  icon,
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub?: string;
-  accent?: string;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border p-5 shadow-sm ${accent ?? "border-gray-200 bg-white"}`}
-    >
-      <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-        {icon}
-        {label}
-      </div>
-      <p className="text-2xl font-bold">{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
-    </div>
+  // 預測區塊套用帳戶過濾：選了帳戶就只算該帳戶的 recurring + upcoming + 起始現金
+  const activeAccountId =
+    accountParam && accounts.some((a) => a.id === accountParam)
+      ? accountParam
+      : null;
+  const forecastScope = scopeForAccount(
+    { accounts, transactions, recurring, assets, debts },
+    activeAccountId
   );
-}
+  const activeAccountName = activeAccountId
+    ? (accounts.find((a) => a.id === activeAccountId)?.name ?? "")
+    : null;
 
-// ─── 主頁面 ─────────────────────────────────────────
+  const startingCash = availableCash(
+    forecastScope.assets,
+    forecastScope.accounts
+  );
+  const forecastPoints = computeForecast({
+    startingCash,
+    recurring: forecastScope.recurring,
+    upcoming: forecastScope.transactions,
+    months: 8,
+    now,
+  });
 
-export default function Dashboard() {
-  const totalAssets = getTotalAssets();
-  const nextMonthExpenses = getNextMonthExpenses();
-  const nextMonthTotal = getNextMonthTotal(nextMonthExpenses);
-  const risk = getRiskLevel(totalAssets, nextMonthTotal);
-  const remaining = totalAssets - nextMonthTotal;
-
-  const riskConfig = {
-    high: {
-      label: "高風險",
-      desc: `淨資產 ${formatCurrency(remaining)} 低於準備金門檻 ${formatCurrency(user.emergencyFundThreshold)}`,
-      accent: "border-red-300 bg-red-50 text-red-700",
-      icon: <ShieldAlert className="w-5 h-5 text-red-500" />,
-    },
-    medium: {
-      label: "中風險",
-      desc: `接近準備金門檻，請留意支出`,
-      accent: "border-yellow-300 bg-yellow-50 text-yellow-700",
-      icon: <AlertTriangle className="w-5 h-5 text-yellow-500" />,
-    },
-    low: {
-      label: "安全",
-      desc: `淨資產充足，高於準備金門檻`,
-      accent: "border-green-300 bg-green-50 text-green-700",
-      icon: <ShieldCheck className="w-5 h-5 text-green-500" />,
-    },
-  };
-
-  const r = riskConfig[risk];
-
-  const upcomingExpenses = transactions
-    .filter((t) => t.status === "upcoming" && t.type === "expense")
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  // 資金缺口預警：找出未來 8 個月內第一個跌破安全門檻的月份。
+  // threshold 未設定（<=0）時改用 0 作為地板，至少守住「現金不能變負」。
+  const safetyFloor = threshold > 0 ? threshold : 0;
+  const breach = forecastPoints.find((p) => p.cash < safetyFloor);
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-10">
-      <h1 className="text-2xl font-bold mb-1">個人財務戰情室</h1>
-      <p className="text-gray-500 text-sm mb-8">
-        {user.name}，這是你目前的財務概覽
-      </p>
+    <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
+      {/* Header */}
+      <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
+            Money Radar
+          </p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
+            個人財務戰情室
+          </h1>
+          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+            {user?.name ? `${user.name}，` : ""}
+            採用「分離帳戶理財法」追蹤
+            <span className="mx-1 font-medium text-foreground">個人 / 家庭 / 補助</span>
+            三個獨立板塊的本月預算與實際開銷。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:flex-row-reverse">
+          <QuickAddTransaction
+            userId={user?.id ?? null}
+            accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+          />
+          <Link
+            href="/recurring"
+            className={buttonVariants({
+              variant: "outline",
+              size: "lg",
+              className: "gap-1.5 rounded-full",
+            })}
+          >
+            <CalendarClock className="size-4" />
+            週期性收支
+          </Link>
+        </div>
+      </header>
 
-      {/* 三張摘要卡片 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-        <StatCard
-          icon={<Wallet className="w-4 h-4" />}
-          label="總流動資產"
-          value={formatCurrency(totalAssets)}
-          sub={`${accounts.filter((a) => a.type === "bank").length} 個銀行帳戶 / ${accounts.filter((a) => a.type === "credit_card").length} 張信用卡`}
-        />
-        <StatCard
-          icon={<CreditCard className="w-4 h-4" />}
-          label="下月已知支出"
-          value={formatCurrency(nextMonthTotal)}
-          sub={`共 ${nextMonthExpenses.length} 筆`}
-        />
-        <StatCard
-          icon={r.icon}
-          label="斷炊風險"
-          value={r.label}
-          sub={r.desc}
-          accent={r.accent}
-        />
-      </div>
+      {/* AI 智慧預警 */}
+      {breach && (
+        <Alert
+          variant="destructive"
+          className="mb-6 border-rose-500/30 bg-rose-500/[0.04] ring-1 ring-rose-500/20"
+        >
+          <AlertTriangle />
+          <AlertTitle className="font-semibold">
+            ⚠️ 資金缺口預警
+            {activeAccountName && (
+              <span className="ml-2 text-xs font-normal text-destructive/70">
+                · 檢視範圍：{activeAccountName}
+              </span>
+            )}
+          </AlertTitle>
+          <AlertDescription>
+            {breach.netCashflow < 0 ? (
+              <>
+                系統偵測到 <strong>{breach.monthLabel}</strong>{" "}
+                將有大額支出（預估該月淨流出{" "}
+                <strong className="tabular-nums">
+                  {formatCurrency(-breach.netCashflow)}
+                </strong>
+                ），資金池將跌破安全門檻{" "}
+                <strong className="tabular-nums">
+                  {formatCurrency(safetyFloor)}
+                </strong>
+                ，請提前準備。
+              </>
+            ) : (
+              <>
+                系統偵測到 <strong>{breach.monthLabel}</strong>{" "}
+                可用現金預估降至{" "}
+                <strong className="tabular-nums">
+                  {formatCurrency(breach.cash)}
+                </strong>
+                ，將跌破安全門檻{" "}
+                <strong className="tabular-nums">
+                  {formatCurrency(safetyFloor)}
+                </strong>
+                ，請提前準備。
+              </>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
-      {/* 帳戶一覽 */}
-      <section className="mb-10">
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <Wallet className="w-5 h-5" /> 帳戶一覽
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {accounts.map((acc) => (
-            <div
-              key={acc.id}
-              className="flex justify-between items-center rounded-xl border border-gray-200 bg-white p-4"
-            >
-              <div>
-                <p className="font-medium text-sm">{acc.name}</p>
-                <p className="text-xs text-gray-400">
-                  {acc.type === "bank" ? "銀行帳戶" : "信用卡"}
-                </p>
+      {/* 三大板塊 */}
+      <section
+        aria-label="三大財務板塊"
+        className="grid grid-cols-1 gap-4 lg:grid-cols-3"
+      >
+        {BOARDS.map((b) => (
+          <BoardCard key={b.key} data={boardData[b.key]} />
+        ))}
+      </section>
+
+      {/* 趨勢預測 (supplementary) */}
+      <section className="mt-8">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-base">
+                    未來 8 個月現金流預測
+                  </CardTitle>
+                </div>
+                <CardDescription className="mt-1">
+                  {activeAccountName
+                    ? `僅檢視「${activeAccountName}」的現金、綁定的固定收支與未來預計交易。`
+                    : "結合所有帳戶的目前現金、固定收支與未來預計交易。"}
+                  紅色虛線為安全準備金門檻。
+                </CardDescription>
               </div>
-              <p
-                className={`font-bold ${acc.balance >= 0 ? "text-green-600" : "text-red-500"}`}
-              >
-                {formatCurrency(acc.balance)}
-              </p>
+              <AccountSwitcher
+                accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+                active={activeAccountId}
+              />
             </div>
-          ))}
-        </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-6">
+            <CashflowLineChart
+              data={forecastPoints}
+              threshold={threshold || undefined}
+            />
+            <div className="border-t border-foreground/10 pt-2">
+              <h3 className="px-1 pb-1 text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                未來金流明細
+                {activeAccountName && (
+                  <span className="ml-2 normal-case tracking-normal text-foreground/70">
+                    · {activeAccountName}
+                  </span>
+                )}
+              </h3>
+              <ForecastDetailAccordion points={forecastPoints} />
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
-      {/* 近期待支出表格 */}
-      <section>
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <CalendarClock className="w-5 h-5" /> 近期待支出項目
-        </h2>
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">日期</th>
-                <th className="text-left px-4 py-3 font-medium">說明</th>
-                <th className="text-left px-4 py-3 font-medium">類別</th>
-                <th className="text-right px-4 py-3 font-medium">金額</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {upcomingExpenses.map((t) => (
-                <tr key={t.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {formatDate(t.date)}
-                  </td>
-                  <td className="px-4 py-3">{t.description}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                        t.category === "essential"
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {t.category === "essential" ? "必要" : "非必要"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium text-red-500 flex items-center justify-end gap-1">
-                    <TrendingDown className="w-3 h-3" />
-                    {formatCurrency(t.amount)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className="bg-gray-50 font-semibold">
-              <tr>
-                <td className="px-4 py-3" colSpan={3}>
-                  合計
-                </td>
-                <td className="px-4 py-3 text-right text-red-600">
-                  {formatCurrency(
-                    upcomingExpenses.reduce((s, t) => s + t.amount, 0)
-                  )}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </section>
+      <footer className="mt-10 text-center text-xs text-muted-foreground">
+        週期性收支可至{" "}
+        <Link href="/recurring" className="underline underline-offset-4">
+          /recurring
+        </Link>{" "}
+        管理，新增/刪除後上方三大板塊與預測曲線會即時更新。
+      </footer>
     </main>
   );
 }
