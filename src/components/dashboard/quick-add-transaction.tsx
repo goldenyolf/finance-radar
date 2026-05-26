@@ -353,7 +353,16 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
                   onValueChange={(v) => setFromAccountId(v as string)}
                 >
                   <SelectTrigger id={fromFieldId} className="w-full">
-                    <SelectValue placeholder="選擇轉出帳戶" />
+                    <SelectValue placeholder="選擇轉出帳戶">
+                      {(v) => {
+                        const id = typeof v === "string" ? v : "";
+                        if (!id) return "選擇轉出帳戶";
+                        return getAccountLabel(
+                          id,
+                          accounts.find((a) => a.id === id)?.name
+                        );
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.map((acc) => (
@@ -374,7 +383,16 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
                   onValueChange={(v) => setToAccountId(v as string)}
                 >
                   <SelectTrigger id={toFieldId} className="w-full">
-                    <SelectValue placeholder="選擇轉入帳戶" />
+                    <SelectValue placeholder="選擇轉入帳戶">
+                      {(v) => {
+                        const id = typeof v === "string" ? v : "";
+                        if (!id) return "選擇轉入帳戶";
+                        return getAccountLabel(
+                          id,
+                          accounts.find((a) => a.id === id)?.name
+                        );
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.map((acc) => (
@@ -406,7 +424,16 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
                   onValueChange={(v) => setAccountId(v as string)}
                 >
                   <SelectTrigger id={accountFieldId} className="w-full">
-                    <SelectValue placeholder="選擇帳戶" />
+                    <SelectValue placeholder="選擇帳戶">
+                      {(v) => {
+                        const id = typeof v === "string" ? v : "";
+                        if (!id) return "選擇帳戶";
+                        return getAccountLabel(
+                          id,
+                          accounts.find((a) => a.id === id)?.name
+                        );
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.map((acc) => (

@@ -203,7 +203,13 @@ export function AddRecurringDialog({ userId, accounts }: Props) {
                 onValueChange={(v) => setFrequency(v as RecurringFrequency)}
               >
                 <SelectTrigger id={freqId} className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(v) =>
+                      typeof v === "string" && v in FREQUENCY_LABEL
+                        ? FREQUENCY_LABEL[v as RecurringFrequency]
+                        : (typeof v === "string" ? v : "")
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {FREQUENCY_OPTIONS.map((f) => (
@@ -235,7 +241,17 @@ export function AddRecurringDialog({ userId, accounts }: Props) {
                 onValueChange={(v) => setAccountId(v as string)}
               >
                 <SelectTrigger id={accId} className="w-full">
-                  <SelectValue placeholder="（可選）" />
+                  <SelectValue placeholder="（可選）">
+                    {(v) => {
+                      const id = typeof v === "string" ? v : "";
+                      if (!id) return "（可選）";
+                      if (id === NO_ACCOUNT) return getAccountLabel(NO_ACCOUNT);
+                      return getAccountLabel(
+                        id,
+                        accounts.find((a) => a.id === id)?.name
+                      );
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NO_ACCOUNT}>

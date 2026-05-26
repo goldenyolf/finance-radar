@@ -17,6 +17,19 @@ export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   other: "其他",
 };
 
+/**
+ * 把任意值（含 unknown / null / 不在 enum 內的字串）安全轉成中文 label。
+ * 給 base-ui Select.Value 的 render-function children 用：
+ * base-ui 的 value 型別是 any，所以走 unknown 收斂後再查表。
+ */
+export function getCategoryLabel(value: unknown): string {
+  if (typeof value !== "string" || !value) return "選擇花費類型";
+  if (value in EXPENSE_CATEGORY_LABEL) {
+    return EXPENSE_CATEGORY_LABEL[value as ExpenseCategory];
+  }
+  return value;
+}
+
 /** 圓餅圖 / Badge 用色票。Apple 風格偏溫暖、柔和。 */
 export const EXPENSE_CATEGORY_COLOR: Record<ExpenseCategory, string> = {
   food_dining: "#F59E0B", // amber-500，溫暖橘

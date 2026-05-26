@@ -31,6 +31,7 @@ import { getAccountLabel } from "@/lib/account-display";
 import type { AccountRow } from "@/lib/dashboard";
 import {
   EXPENSE_CATEGORY_LABEL,
+  getCategoryLabel,
   type ExpenseCategory,
 } from "@/lib/expense-categories";
 
@@ -215,7 +216,16 @@ export function TransactionRowActions({
                       onValueChange={(v) => setDraftAccountId(v as string)}
                     >
                       <SelectTrigger id={accountFieldId} className="w-full">
-                        <SelectValue placeholder="選擇帳戶" />
+                        <SelectValue placeholder="選擇帳戶">
+                          {(v) => {
+                            const id = typeof v === "string" ? v : "";
+                            if (!id) return "選擇帳戶";
+                            return getAccountLabel(
+                              id,
+                              accounts.find((a) => a.id === id)?.name
+                            );
+                          }}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {accounts.map((acc) => (
@@ -239,7 +249,9 @@ export function TransactionRowActions({
                     onValueChange={(v) => setDraftCategory(v as ExpenseCategory)}
                   >
                     <SelectTrigger id={categoryFieldId} className="w-full">
-                      <SelectValue placeholder="選擇花費類型" />
+                      <SelectValue placeholder="選擇花費類型">
+                        {(v) => getCategoryLabel(v)}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {CATEGORY_OPTIONS.map(([key, label]) => (
