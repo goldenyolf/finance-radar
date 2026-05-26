@@ -7,6 +7,7 @@ import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
 import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
+import { TodayBadge } from "@/components/dashboard/today-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -144,22 +145,25 @@ export default async function Dashboard({ searchParams }: PageProps) {
             三個獨立板塊的本月預算與實際開銷。
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:flex-row-reverse">
-          <QuickAddTransaction
-            userId={user?.id ?? null}
-            accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
-          />
-          <Link
-            href="/recurring"
-            className={buttonVariants({
-              variant: "outline",
-              size: "lg",
-              className: "gap-1.5 rounded-full",
-            })}
-          >
-            <CalendarClock className="size-4" />
-            週期性收支
-          </Link>
+        <div className="flex flex-col items-end gap-3">
+          <TodayBadge />
+          <div className="flex flex-wrap items-center gap-2 sm:flex-row-reverse">
+            <QuickAddTransaction
+              userId={user?.id ?? null}
+              accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+            />
+            <Link
+              href="/recurring"
+              className={buttonVariants({
+                variant: "outline",
+                size: "lg",
+                className: "gap-1.5 rounded-full",
+              })}
+            >
+              <CalendarClock className="size-4" />
+              週期性收支
+            </Link>
+          </div>
         </div>
       </header>
 
