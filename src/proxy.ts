@@ -49,6 +49,6 @@ export const config = {
      * 用 negative lookahead 一次列舉，比在 middleware body 裡寫 if 判斷
      * 更省 edge runtime cost（matcher 不通過就連 function 都不會跑）。
      */
-    "/((?!login|_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|api/line/webhook).*)",
+    "/((?!login|_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|api/line/webhook|api/cron).*)",
   ],
 };

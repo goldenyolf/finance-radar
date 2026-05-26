@@ -8,6 +8,7 @@ import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
+import { SubscriptionsCard } from "@/components/dashboard/subscriptions-card";
 import { TodayBadge } from "@/components/dashboard/today-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import {
   BOARDS,
 } from "@/lib/dashboard";
 import { loadDashboard } from "@/lib/load-dashboard";
+import { loadSubscriptions } from "@/lib/subscriptions";
 import { loadSystemSettings } from "@/lib/system-settings";
 
 // 時間感知：強制每次請求都重跑 RSC，讓 new Date() 真的拿到當下時間
@@ -46,8 +48,15 @@ interface PageProps {
 export default async function HomePage({ searchParams }: PageProps) {
   const { account: accountParam } = await searchParams;
   const now = new Date();
-  const [{ user, assets, debts, recurring, transactions, accounts }, settings] =
-    await Promise.all([loadDashboard(), loadSystemSettings()]);
+  const [
+    { user, assets, debts, recurring, transactions, accounts },
+    settings,
+    subscriptions,
+  ] = await Promise.all([
+    loadDashboard(),
+    loadSystemSettings(),
+    loadSubscriptions(),
+  ]);
 
   // 三大板塊：用真實當下；歷史月份切換已搬到 /analytics
   const boardData = buildBoardData({ accounts, recurring, transactions, now });
@@ -208,6 +217,9 @@ export default async function HomePage({ searchParams }: PageProps) {
           ))}
         </Tabs>
       </section>
+
+      {/* 訂閱制扣款雷達 */}
+      <SubscriptionsCard subscriptions={subscriptions} accounts={accounts} />
 
       {/* 趨勢預測 (supplementary) */}
       <section className="mt-8">
