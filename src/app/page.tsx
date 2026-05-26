@@ -2,11 +2,10 @@ import Link from "next/link";
 import { AlertTriangle, CalendarClock, TrendingUp } from "lucide-react";
 
 import { AccountSwitcher } from "@/components/dashboard/account-switcher";
-import { BoardCard } from "@/components/dashboard/board-card";
 import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
-import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
+import { TimeMachineDashboard } from "@/components/dashboard/time-machine-dashboard";
 import { TodayBadge } from "@/components/dashboard/today-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -18,19 +17,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   availableCash,
-  buildBoardData,
   computeForecast,
   formatCurrency,
   num,
   scopeForAccount,
-  BOARDS,
   type AccountRow,
   type AssetRow,
   type DebtRow,
@@ -93,8 +84,8 @@ export default async function Dashboard({ searchParams }: PageProps) {
   const { user, assets, debts, recurring, transactions, accounts } =
     await loadDashboard();
 
-  // 3-board 區塊永遠顯示全部，不受 ?account 影響（板塊本身就是分組）
-  const boardData = buildBoardData({ accounts, recurring, transactions, now });
+  // 三大板塊 + 圓餅圖搬進 TimeMachineDashboard，selectedDate 在 client 端控管；
+  // 這裡只負責把資料丟下去與算「未來預測」（永遠走真實 now）。
   const threshold = user ? num(user.emergency_fund_threshold) : 0;
 
   // 預測區塊套用帳戶過濾：選了帳戶就只算該帳戶的 recurring + upcoming + 起始現金
@@ -214,42 +205,11 @@ export default async function Dashboard({ searchParams }: PageProps) {
         </Alert>
       )}
 
-      {/* 三大板塊 — Desktop (md+)：維持 Grid 並排（lg 三欄、md 單欄堆疊） */}
-      <section
-        aria-label="三大財務板塊"
-        className="hidden grid-cols-1 gap-4 md:grid lg:grid-cols-3"
-      >
-        {BOARDS.map((b) => (
-          <BoardCard key={b.key} data={boardData[b.key]} allAccounts={accounts} />
-        ))}
-      </section>
-
-      {/* 三大板塊 — Mobile (<md)：Tabs 切換，預設「家庭」 */}
-      <section aria-label="三大財務板塊（手機版）" className="md:hidden">
-        <Tabs defaultValue="family" className="gap-6">
-          <TabsList className="mb-2 grid w-full grid-cols-3">
-            {BOARDS.map((b) => (
-              <TabsTrigger key={b.key} value={b.key} className="gap-1.5">
-                <span aria-hidden>{b.emoji}</span>
-                <span>
-                  {b.key === "family"
-                    ? "家庭"
-                    : b.key === "subsidy"
-                      ? "補助"
-                      : "個人"}
-                </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          {BOARDS.map((b) => (
-            <TabsContent key={b.key} value={b.key}>
-              <BoardCard data={boardData[b.key]} allAccounts={accounts} />
-            </TabsContent>
-          ))}
-        </Tabs>
-      </section>
-
-      <MonthCategoryCard transactions={transactions} accounts={accounts} />
+      <TimeMachineDashboard
+        accounts={accounts}
+        recurring={recurring}
+        transactions={transactions}
+      />
 
       {/* 趨勢預測 (supplementary) */}
       <section className="mt-8">

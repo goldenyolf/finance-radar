@@ -25,22 +25,26 @@ import { aggregateMonthlyByCategory } from "@/lib/expense-categories";
 interface Props {
   transactions: TransactionRow[];
   accounts: AccountRow[];
+  /** 統計的目標月份。歷史時光機切過去時傳入；省略時走真實本月。 */
+  now?: Date;
 }
 
 const ALL = "all";
 
-export function MonthCategoryCard({ transactions, accounts }: Props) {
+export function MonthCategoryCard({ transactions, accounts, now }: Props) {
   const [selectedAccount, setSelectedAccount] = useState<string>(ALL);
 
   // 先 filter 再 aggregate；'all' 走全量、否則只算該帳戶 row。
   // 用 useMemo 避免每次 re-render 都重算（transactions 上百筆時有感）。
+  // 月份基準走 props.now（時光機切換時會變），否則 fallback 到當下。
   const slices = useMemo(() => {
+    const base = now ?? new Date();
     const scoped =
       selectedAccount === ALL
         ? transactions
         : transactions.filter((t) => t.account_id === selectedAccount);
-    return aggregateMonthlyByCategory(scoped, new Date());
-  }, [transactions, selectedAccount]);
+    return aggregateMonthlyByCategory(scoped, base);
+  }, [transactions, selectedAccount, now]);
 
   const isScoped = selectedAccount !== ALL;
   const scopedAccountName = isScoped
@@ -119,7 +123,7 @@ export function MonthCategoryCard({ transactions, accounts }: Props) {
         <CardContent>
           {slices.length === 0 ? (
             <div className="grid h-72 w-full place-items-center rounded-lg border border-dashed border-foreground/10 bg-muted/30 text-center text-xs text-muted-foreground">
-              {isScoped ? "此帳戶本月尚無花費紀錄" : "本月尚無已記帳的花費"}
+              {isScoped ? "此帳戶該月份尚無花費紀錄" : "該月份尚無已記帳的花費"}
             </div>
           ) : (
             <ExpensePieChart data={slices} />

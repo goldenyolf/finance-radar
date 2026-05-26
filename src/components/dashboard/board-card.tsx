@@ -208,7 +208,7 @@ export function BoardCard({ data, allAccounts }: Props) {
           </div>
           {items.length === 0 ? (
             <div className="rounded-lg border border-dashed border-foreground/10 bg-muted/30 px-3 py-6 text-center text-xs text-muted-foreground">
-              本月尚無紀錄
+              該月份尚無紀錄
             </div>
           ) : (
             <ul className="-mx-1 flex max-h-72 flex-col gap-0.5 overflow-y-auto pr-0.5">
