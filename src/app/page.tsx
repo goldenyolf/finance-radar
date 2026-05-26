@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { AlertTriangle, CalendarClock, PieChart, TrendingUp } from "lucide-react";
+import { AlertTriangle, CalendarClock, TrendingUp } from "lucide-react";
 
 import { AccountSwitcher } from "@/components/dashboard/account-switcher";
 import { BoardCard } from "@/components/dashboard/board-card";
 import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
-import { ExpensePieChart } from "@/components/dashboard/expense-pie-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
+import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -37,7 +37,6 @@ import {
   type TransactionRow,
   type UserRow,
 } from "@/lib/dashboard";
-import { aggregateMonthlyByCategory } from "@/lib/expense-categories";
 import { supabase } from "@/lib/supabase";
 
 // 時間感知：強制每次請求都重跑 RSC，讓 new Date() 真的拿到當下時間
@@ -95,7 +94,6 @@ export default async function Dashboard({ searchParams }: PageProps) {
 
   // 3-board 區塊永遠顯示全部，不受 ?account 影響（板塊本身就是分組）
   const boardData = buildBoardData({ accounts, recurring, transactions, now });
-  const categorySlices = aggregateMonthlyByCategory(transactions, now);
   const threshold = user ? num(user.emergency_fund_threshold) : 0;
 
   // 預測區塊套用帳戶過濾：選了帳戶就只算該帳戶的 recurring + upcoming + 起始現金
@@ -247,24 +245,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
         </Tabs>
       </section>
 
-      {/* 本月花費分類 */}
-      <section className="mt-8">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <PieChart className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">本月花費分類</CardTitle>
-            </div>
-            <CardDescription className="mt-1">
-              依「餐飲 / 育兒 / 孝親 / 居家 / 金融 / 交通 / 其他」七大類加總當月已支出。LINE
-              機器人記帳會自動分類。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ExpensePieChart data={categorySlices} />
-          </CardContent>
-        </Card>
-      </section>
+      <MonthCategoryCard transactions={transactions} accounts={accounts} />
 
       {/* 趨勢預測 (supplementary) */}
       <section className="mt-8">
