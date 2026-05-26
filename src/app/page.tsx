@@ -126,7 +126,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
   const breach = forecastPoints.find((p) => p.cash < safetyFloor);
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pt-10 pb-28 sm:px-6 md:pb-10 lg:py-14">
+    <main className="mx-auto w-full max-w-6xl px-5 pt-10 pb-28 sm:px-6 md:pb-10 lg:py-14">
       {/* Header */}
       <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -136,7 +136,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
           <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
             個人財務戰情室
           </h1>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground md:max-w-none md:whitespace-nowrap">
             {user?.name ? `${user.name}，` : ""}
             採用「分離帳戶理財法」追蹤
             <span className="mx-1 font-medium text-foreground">個人 / 家庭 / 補助</span>
@@ -166,7 +166,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
       {breach && (
         <Alert
           variant="destructive"
-          className="mb-6 border-rose-500/30 bg-rose-500/[0.04] ring-1 ring-rose-500/20"
+          className="mb-6 gap-x-3 gap-y-1.5 border-rose-500/30 bg-rose-500/[0.04] px-6 py-4 ring-1 ring-rose-500/20"
         >
           <AlertTriangle />
           <AlertTitle className="font-semibold">
@@ -177,7 +177,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
               </span>
             )}
           </AlertTitle>
-          <AlertDescription>
+          <AlertDescription className="leading-relaxed">
             {breach.netCashflow < 0 ? (
               <>
                 系統偵測到 <strong>{breach.monthLabel}</strong>{" "}
@@ -221,8 +221,8 @@ export default async function Dashboard({ searchParams }: PageProps) {
 
       {/* 三大板塊 — Mobile (<md)：Tabs 切換，預設「家庭」 */}
       <section aria-label="三大財務板塊（手機版）" className="md:hidden">
-        <Tabs defaultValue="family" className="gap-3">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="family" className="gap-6">
+          <TabsList className="mb-2 grid w-full grid-cols-3">
             {BOARDS.map((b) => (
               <TabsTrigger key={b.key} value={b.key} className="gap-1.5">
                 <span aria-hidden>{b.emoji}</span>

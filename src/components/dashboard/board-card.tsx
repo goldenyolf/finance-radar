@@ -128,7 +128,7 @@ export function BoardCard({ data }: Props) {
             </CardDescription>
           </div>
         </div>
-        <p className="line-clamp-2 text-xs text-muted-foreground">
+        <p className="mb-5 line-clamp-2 text-xs text-muted-foreground">
           {hasAccounts ? (
             <>
               <span className="text-foreground/70">關聯帳戶</span>
@@ -145,7 +145,7 @@ export function BoardCard({ data }: Props) {
 
       <CardContent className="flex flex-col gap-4">
         {/* 三個核心數字 */}
-        <div className="grid grid-cols-1 gap-2.5">
+        <div className="grid grid-cols-1 gap-4">
           <MetricRow
             label="本月可支配預算"
             value={formatCurrency(metrics.budget)}
@@ -296,7 +296,7 @@ const TONE_RING_CLASS: Record<MetricRowProps["tone"], string> = {
 function MetricRow({ label, value, hint, tone, big }: MetricRowProps) {
   return (
     <div
-      className={`rounded-xl bg-card px-3 py-2.5 ring-1 ${TONE_RING_CLASS[tone]} ${
+      className={`rounded-xl bg-card px-5 py-4 ring-1 ${TONE_RING_CLASS[tone]} ${
         big ? "shadow-sm" : ""
       }`}
     >
@@ -312,7 +312,7 @@ function MetricRow({ label, value, hint, tone, big }: MetricRowProps) {
           {value}
         </span>
       </div>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+      <p className="mt-1.5 text-xs text-muted-foreground/70">{hint}</p>
     </div>
   );
 }
