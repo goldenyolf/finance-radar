@@ -12,7 +12,10 @@ import {
   EXPENSE_CATEGORY_LABEL,
   type ExpenseCategory,
 } from "@/lib/expense-categories";
+import { downloadLineMedia } from "@/lib/line-media";
 import { classifyByLlm } from "@/lib/llm-classify";
+import { extractInvoiceItems, type InvoiceItem } from "@/lib/openai-vision";
+import { transcribeAudio } from "@/lib/openai-whisper";
 import { budgetKey } from "@/lib/system-settings";
 
 export const runtime = "nodejs";
@@ -170,18 +173,70 @@ async function handleEvent(
 ): Promise<void> {
   if (event.type !== "message") return;
   const messageEvent = event as webhook.MessageEvent;
-  if (messageEvent.message.type !== "text") return;
   if (!messageEvent.replyToken) return;
-
-  const text = (messageEvent.message as webhook.TextMessageContent).text;
   const replyToken = messageEvent.replyToken;
 
+  const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN!;
+
+  try {
+    switch (messageEvent.message.type) {
+      case "text": {
+        const text = (messageEvent.message as webhook.TextMessageContent).text;
+        await handleTextMessage(text, client, replyToken);
+        return;
+      }
+      case "audio": {
+        const messageId = messageEvent.message.id;
+        await handleAudioMessage(
+          messageId,
+          channelAccessToken,
+          client,
+          replyToken
+        );
+        return;
+      }
+      case "image": {
+        const messageId = messageEvent.message.id;
+        await handleImageMessage(
+          messageId,
+          channelAccessToken,
+          client,
+          replyToken
+        );
+        return;
+      }
+      default:
+        // sticker / location / video / file 等暫不支援
+        return;
+    }
+  } catch (err) {
+    console.error("[LINE webhook] Unhandled error in dispatcher:", err);
+    await safeReply(
+      client,
+      replyToken,
+      "❌ 系統發生未預期錯誤，請稍後再試。"
+    );
+  }
+}
+
+/* ─────────────────────────── Text ─────────────────────────── */
+
+/**
+ * 文字訊息核心邏輯。也被 audio handler 在 Whisper 轉錄後重用 — 因此抽成
+ * 獨立函式，加 prefix 參數讓 audio 能在回覆前加「🎙️ 語音辨識成功」。
+ */
+async function handleTextMessage(
+  text: string,
+  client: messagingApi.MessagingApiClient,
+  replyToken: string,
+  replyPrefix: string = ""
+): Promise<void> {
   const parsed = parseExpenseMessage(text);
   if (!parsed) {
     await replyText(
       client,
       replyToken,
-      "💡 記帳格式錯誤囉！\n• 個人（中信）：午餐 120\n• 共同（台新）：共同 牛奶 80"
+      `${replyPrefix}💡 記帳格式錯誤囉！\n• 個人（中信）：午餐 120\n• 共同（台新）：共同 牛奶 80`
     );
     return;
   }
@@ -204,22 +259,218 @@ async function handleEvent(
 
     if (error) {
       console.error("[LINE webhook] Supabase insert error:", error);
-      await replyText(client, replyToken, "❌ 記帳失敗，請稍後再試或檢查系統日誌。");
+      await replyText(
+        client,
+        replyToken,
+        `${replyPrefix}❌ 記帳失敗，請稍後再試或檢查系統日誌。`
+      );
       return;
     }
 
-    // 記帳成功後，順便檢查該分類本月預算是否爆表，附加警報到回覆尾端。
-    // 失敗（網路 / DB error）不影響記帳本身，warning = "" 而已。
     const warning = await buildBudgetWarning(category);
-
     await replyText(
       client,
       replyToken,
-      `✅ 已成功記帳：[${categoryLabel}] ${parsed.title} $${parsed.amount}（${parsed.accountLabel}）${warning}`
+      `${replyPrefix}✅ 已成功記帳：[${categoryLabel}] ${parsed.title} $${parsed.amount}（${parsed.accountLabel}）${warning}`
     );
   } catch (err) {
     console.error("[LINE webhook] Unexpected error:", err);
-    await replyText(client, replyToken, "❌ 記帳失敗，請稍後再試或檢查系統日誌。");
+    await replyText(
+      client,
+      replyToken,
+      `${replyPrefix}❌ 記帳失敗，請稍後再試或檢查系統日誌。`
+    );
+  }
+}
+
+/* ─────────────────────────── Audio (Whisper STT) ─────────────────────────── */
+
+/**
+ * Audio → Whisper STT → 餵給文字解析鏈，用 replyPrefix 加上「🎙️ 語音辨識成功：原話」。
+ * 任何一步失敗都回友善訊息，不讓 webhook 整個崩潰。
+ */
+async function handleAudioMessage(
+  messageId: string,
+  channelAccessToken: string,
+  client: messagingApi.MessagingApiClient,
+  replyToken: string
+): Promise<void> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    await replyText(
+      client,
+      replyToken,
+      "⚠️ 尚未設定 OPENAI_API_KEY，目前不支援語音記帳。請改用文字訊息。"
+    );
+    return;
+  }
+
+  let transcript: string;
+  try {
+    const { buffer, contentType } = await downloadLineMedia(
+      messageId,
+      channelAccessToken
+    );
+    transcript = await transcribeAudio({
+      apiKey,
+      audio: buffer,
+      contentType,
+    });
+  } catch (err) {
+    console.error("[LINE webhook] audio pipeline failed:", err);
+    await replyText(
+      client,
+      replyToken,
+      "❌ 語音辨識失敗，請改用文字訊息重新記帳。"
+    );
+    return;
+  }
+
+  const prefix = `🎙️ 語音辨識成功：「${transcript}」\n\n`;
+  await handleTextMessage(transcript, client, replyToken, prefix);
+}
+
+/* ─────────────────────────── Image (Vision LLM) ─────────────────────────── */
+
+/**
+ * Image → Vision LLM → 可能多筆 InvoiceItem → 批次寫入 supabase →
+ * 多行條列式 LINE 回覆。
+ *
+ * 圖片沒有「帳戶」上下文（LINE image 不能附 caption），所以一律寫到
+ * personal 帳戶。要記到共同戶請改用文字「共同 ... 金額」格式。
+ */
+async function handleImageMessage(
+  messageId: string,
+  channelAccessToken: string,
+  client: messagingApi.MessagingApiClient,
+  replyToken: string
+): Promise<void> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    await replyText(
+      client,
+      replyToken,
+      "⚠️ 尚未設定 OPENAI_API_KEY，目前不支援發票記帳。請改用文字訊息。"
+    );
+    return;
+  }
+
+  let items: InvoiceItem[];
+  try {
+    const { buffer, contentType } = await downloadLineMedia(
+      messageId,
+      channelAccessToken
+    );
+    items = await extractInvoiceItems({
+      apiKey,
+      image: buffer,
+      contentType,
+    });
+  } catch (err) {
+    console.error("[LINE webhook] image pipeline failed:", err);
+    await replyText(
+      client,
+      replyToken,
+      "❌ 發票辨識失敗，請改用文字訊息記帳或重拍清晰一點。"
+    );
+    return;
+  }
+
+  if (items.length === 0) {
+    await replyText(
+      client,
+      replyToken,
+      "🤔 沒辨識到任何消費項目，請確認圖片是否為發票或購物明細。"
+    );
+    return;
+  }
+
+  // 批次寫入 — supabase.insert 接受 array 自動 batch
+  const today = todayInTaipei();
+  const rows = items.map((item) => ({
+    user_id: DEFAULT_USER_ID,
+    account_id: PERSONAL_ACCOUNT_ID, // 圖片沒帳戶 context，預設記到個人
+    description: item.name,
+    amount: item.amount,
+    type: "expense" as const,
+    priority: "non_essential" as const,
+    category: item.category,
+    status: "completed" as const,
+    date: today,
+  }));
+
+  try {
+    const { error } = await supabase.from("transactions").insert(rows);
+    if (error) {
+      console.error("[LINE webhook] batch insert error:", error);
+      await replyText(
+        client,
+        replyToken,
+        `❌ 辨識到 ${items.length} 筆但寫入資料庫失敗，請稍後再試。`
+      );
+      return;
+    }
+  } catch (err) {
+    console.error("[LINE webhook] batch insert unexpected error:", err);
+    await replyText(
+      client,
+      replyToken,
+      `❌ 辨識到 ${items.length} 筆但寫入失敗。`
+    );
+    return;
+  }
+
+  // 多筆預算警報：抓有預算的分類，逐一檢查，但別發太多條（取前 3 條最緊張的）
+  const warnings = await collectBudgetWarnings(items);
+
+  // 組合回覆
+  const total = items.reduce((sum, i) => sum + i.amount, 0);
+  const lines = items.map(
+    (i, idx) =>
+      `${idx + 1}. [${EXPENSE_CATEGORY_LABEL[i.category]}] ${i.name} $${i.amount}`
+  );
+
+  const reply = [
+    `✅ 發票解析成功！共記下 ${items.length} 筆帳：`,
+    ...lines,
+    `總計：$${total}`,
+    ...(warnings.length > 0 ? ["", ...warnings] : []),
+  ].join("\n");
+
+  await replyText(client, replyToken, reply);
+}
+
+/**
+ * 對發票多筆項目，把同分類加總後一次性檢查預算。回傳警告字串陣列。
+ * 為避免 LINE 訊息爆炸，最多顯示 3 條最嚴重的。
+ */
+async function collectBudgetWarnings(
+  items: InvoiceItem[]
+): Promise<string[]> {
+  const byCategory = new Map<ExpenseCategory, number>();
+  for (const it of items) {
+    byCategory.set(it.category, (byCategory.get(it.category) ?? 0) + it.amount);
+  }
+  const warnings: string[] = [];
+  for (const cat of byCategory.keys()) {
+    const w = await buildBudgetWarning(cat);
+    if (w) warnings.push(w.trim());
+  }
+  return warnings.slice(0, 3);
+}
+
+/**
+ * 想 replyText 但又怕 client 拋出 — 多包一層 safety net 給 catch-all 用。
+ */
+async function safeReply(
+  client: messagingApi.MessagingApiClient,
+  replyToken: string,
+  text: string
+): Promise<void> {
+  try {
+    await replyText(client, replyToken, text);
+  } catch (err) {
+    console.error("[LINE webhook] safeReply also failed:", err);
   }
 }
 
