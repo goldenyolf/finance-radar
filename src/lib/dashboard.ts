@@ -481,6 +481,12 @@ export interface BoardDetailItem {
   signedAmount: number;
   status: DetailStatus;
   accountName: string;
+  /** 該筆所屬帳戶 ID。僅 transaction-source 有；recurring 不會走編輯 dialog 故省略。 */
+  accountId?: string | null;
+  /** DB 上的花費大類（snake_case），給編輯 dialog 預設用。僅 transaction-source。 */
+  expenseCategory?: ExpenseCategory | null;
+  /** 是否為內部轉帳。Transfer row 不顯示帳戶/分類編輯欄位（避免破壞兩腿配對）。 */
+  isTransfer?: boolean;
   /** ISO date string (for sorting) */
   date: string;
 }
@@ -670,6 +676,9 @@ export function buildBoardData(opts: {
         signedAmount: signed,
         status,
         accountName: accName,
+        accountId: t.account_id,
+        expenseCategory: t.category,
+        isTransfer: t.type === "transfer",
         date: t.date,
       });
     }

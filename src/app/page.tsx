@@ -218,7 +218,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
         className="hidden grid-cols-1 gap-4 md:grid lg:grid-cols-3"
       >
         {BOARDS.map((b) => (
-          <BoardCard key={b.key} data={boardData[b.key]} />
+          <BoardCard key={b.key} data={boardData[b.key]} allAccounts={accounts} />
         ))}
       </section>
 
@@ -241,7 +241,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
           </TabsList>
           {BOARDS.map((b) => (
             <TabsContent key={b.key} value={b.key}>
-              <BoardCard data={boardData[b.key]} />
+              <BoardCard data={boardData[b.key]} allAccounts={accounts} />
             </TabsContent>
           ))}
         </Tabs>

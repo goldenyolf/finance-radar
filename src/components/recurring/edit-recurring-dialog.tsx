@@ -31,6 +31,7 @@ import {
   type UpdateRecurringInput,
 } from "@/lib/actions/recurring";
 import { FREQUENCY_LABEL } from "@/lib/dashboard";
+import { getAccountLabel } from "@/lib/account-display";
 
 interface RecurringAccount {
   id: string;
@@ -245,10 +246,12 @@ export function EditRecurringDialog({ id, initial, accounts }: Props) {
                     <SelectValue placeholder="（可選）" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NO_ACCOUNT}>未指定帳戶</SelectItem>
+                    <SelectItem value={NO_ACCOUNT}>
+                      {getAccountLabel(NO_ACCOUNT)}
+                    </SelectItem>
                     {accounts.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
-                        {a.name}
+                        {getAccountLabel(a.id, a.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>

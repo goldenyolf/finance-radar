@@ -42,6 +42,10 @@ export interface UpdateTransactionInput {
   id: string;
   description: string;
   amount: number;
+  /** 可選；變更才傳。Transfer 改帳戶會破壞配對，這欄位對 transfer 不生效。 */
+  accountId?: string;
+  /** 可選；變更才傳。Transfer 沒有花費分類概念，這欄位對 transfer 不生效。 */
+  category?: ExpenseCategory;
 }
 
 export async function updateTransaction(
@@ -53,7 +57,7 @@ export async function updateTransaction(
     return { ok: false, error: "金額必須為大於 0 的數字" };
   }
 
-  // 先查出這筆是否為 transfer（需要同步更新另一腿）
+  // 先查出這筆是否為 transfer（amount/description 需要同步另一腿）
   const { data: existing, error: fetchError } = await supabase
     .from("transactions")
     .select("type, transfer_group_id")
@@ -62,23 +66,41 @@ export async function updateTransaction(
   if (fetchError) return { ok: false, error: fetchError.message };
   if (!existing) return { ok: false, error: "找不到該筆交易" };
 
-  const patch = {
+  const isTransfer =
+    existing.type === "transfer" && Boolean(existing.transfer_group_id);
+
+  // 1) description / amount：transfer 的話兩腿一起更新；否則只動本筆
+  const sharedPatch = {
     description: input.description.trim(),
     amount: input.amount,
   };
-
-  if (existing.type === "transfer" && existing.transfer_group_id) {
+  if (isTransfer) {
     const { error } = await supabase
       .from("transactions")
-      .update(patch)
-      .eq("transfer_group_id", existing.transfer_group_id);
+      .update(sharedPatch)
+      .eq("transfer_group_id", existing.transfer_group_id!);
     if (error) return { ok: false, error: error.message };
   } else {
     const { error } = await supabase
       .from("transactions")
-      .update(patch)
+      .update(sharedPatch)
       .eq("id", input.id);
     if (error) return { ok: false, error: error.message };
+  }
+
+  // 2) accountId / category：只對非 transfer row 生效，且只更新這一筆
+  //    避免改 transfer 帳戶導致兩腿錯位；分類對 transfer 也無意義。
+  if (!isTransfer) {
+    const rowPatch: Record<string, string> = {};
+    if (input.accountId !== undefined) rowPatch.account_id = input.accountId;
+    if (input.category !== undefined) rowPatch.category = input.category;
+    if (Object.keys(rowPatch).length > 0) {
+      const { error } = await supabase
+        .from("transactions")
+        .update(rowPatch)
+        .eq("id", input.id);
+      if (error) return { ok: false, error: error.message };
+    }
   }
 
   revalidatePath("/");

@@ -42,6 +42,7 @@ import {
   type TransactionStatus,
   type TransactionType,
 } from "@/lib/actions/transactions";
+import { getAccountLabel } from "@/lib/account-display";
 
 export interface QuickAddAccount {
   id: string;
@@ -142,8 +143,14 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
           toast.error("新增失敗", { description: result.error });
           return;
         }
-        const fromName = accounts.find((a) => a.id === fromAccountId)?.name ?? "";
-        const toName = accounts.find((a) => a.id === toAccountId)?.name ?? "";
+        const fromName = getAccountLabel(
+          fromAccountId,
+          accounts.find((a) => a.id === fromAccountId)?.name
+        );
+        const toName = getAccountLabel(
+          toAccountId,
+          accounts.find((a) => a.id === toAccountId)?.name
+        );
         toast.success("已建立轉帳", {
           description: `${fromName} → ${toName}・NT$ ${parsedAmount.toLocaleString("zh-TW")}`,
         });
@@ -351,7 +358,7 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
                   <SelectContent>
                     {accounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
-                        {acc.name}
+                        {getAccountLabel(acc.id, acc.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -376,7 +383,7 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
                         value={acc.id}
                         disabled={acc.id === fromAccountId}
                       >
-                        {acc.name}
+                        {getAccountLabel(acc.id, acc.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -404,7 +411,7 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
                   <SelectContent>
                     {accounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
-                        {acc.name}
+                        {getAccountLabel(acc.id, acc.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>

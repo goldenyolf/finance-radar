@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import {
   formatCurrency,
+  type AccountRow,
   type BoardData,
   type BoardDetailItem,
   type DetailCategory,
@@ -17,6 +18,8 @@ import {
 
 interface Props {
   data: BoardData;
+  /** 全部帳戶清單（跨板塊），給編輯 dialog 的「移動到其他帳戶」下拉用。 */
+  allAccounts: AccountRow[];
 }
 
 const CATEGORY_STYLE: Record<DetailCategory, string> = {
@@ -67,7 +70,7 @@ function amountToneClass(item: BoardDetailItem) {
   return "text-foreground";
 }
 
-export function BoardCard({ data }: Props) {
+export function BoardCard({ data, allAccounts }: Props) {
   const { def, accounts, metrics, items, hasAccounts, hasRecurringIncome } = data;
   const remainingPositive = metrics.remaining >= 0;
 
@@ -257,6 +260,10 @@ export function BoardCard({ data }: Props) {
                           transactionId={rawId}
                           title={item.title}
                           amount={item.amount}
+                          accountId={item.accountId ?? null}
+                          expenseCategory={item.expenseCategory ?? null}
+                          isTransfer={item.isTransfer ?? false}
+                          accounts={allAccounts}
                         />
                       )}
                     </div>

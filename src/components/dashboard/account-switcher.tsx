@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getAccountLabel } from "@/lib/account-display";
 
 export interface AccountOption {
   id: string;
@@ -45,7 +46,7 @@ export function AccountSwitcher({ accounts, active }: Props) {
   const activeName =
     active === null
       ? "全部資產總覽"
-      : (accounts.find((a) => a.id === active)?.name ?? "選擇帳戶");
+      : getAccountLabel(active, accounts.find((a) => a.id === active)?.name);
 
   return (
     <Select value={value} onValueChange={(v) => handleChange(v as string)}>
@@ -75,7 +76,7 @@ export function AccountSwitcher({ accounts, active }: Props) {
           <SelectItem key={a.id} value={a.id}>
             <span className="flex items-center gap-2">
               <Wallet className="size-4 text-muted-foreground" />
-              {a.name}
+              {getAccountLabel(a.id, a.name)}
             </span>
           </SelectItem>
         ))}
