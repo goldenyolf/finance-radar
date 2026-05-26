@@ -269,6 +269,9 @@ export function computeForecast(opts: {
   const now = opts.now ?? new Date();
   const nowYear = now.getFullYear();
   const nowMonth = now.getMonth();
+  // 預測「未來」嚴格從下個月起算（本月已在三大板塊呈現，避免重複）。
+  // firstOffset = 1 表示「相對於 now 的下個月」，迴圈跑 months 個月 = 1..months。
+  const firstOffset = 1;
 
   // 預先把 upcoming 交易按月份 offset 分桶
   const upcomingByOffset = new Map<number, TransactionRow[]>();
@@ -279,8 +282,10 @@ export function computeForecast(opts: {
     if (Number.isNaN(d.getTime())) continue;
     let offset =
       (d.getFullYear() - nowYear) * 12 + (d.getMonth() - nowMonth);
-    if (offset < 0) offset = 0; // 已過期 upcoming 視為本月才會發生
-    if (offset >= months) continue;
+    // 過期 / 本月仍未實際發生的 upcoming → 全部收編進「下個月」這格，
+    // 確保 projectedBalance 不會漏算尚未過帳的負擔（不然預測會比實際樂觀）。
+    if (offset < firstOffset) offset = firstOffset;
+    if (offset >= firstOffset + months) continue;
     const list = upcomingByOffset.get(offset) ?? [];
     list.push(t);
     upcomingByOffset.set(offset, list);
@@ -290,7 +295,8 @@ export function computeForecast(opts: {
   // 滾動累計餘額：每月 += netCashflow。初始為 startingCash（真實本金）。
   let projectedBalance = opts.startingCash;
   for (let i = 0; i < months; i++) {
-    const monthDate = new Date(nowYear, nowMonth + i, 1);
+    const offset = firstOffset + i; // 1..months
+    const monthDate = new Date(nowYear, nowMonth + offset, 1);
     const y = monthDate.getFullYear();
     const m = monthDate.getMonth();
     const label = `${m + 1}月`;
@@ -312,8 +318,8 @@ export function computeForecast(opts: {
       else expectedExpenses.push(item);
     }
 
-    // 2) 該月的 upcoming 一次性交易
-    for (const t of upcomingByOffset.get(i) ?? []) {
+    // 2) 該月的 upcoming 一次性交易（offset 與 bucketing 一致）
+    for (const t of upcomingByOffset.get(offset) ?? []) {
       const item: ForecastItem = {
         title: t.description ?? "（無說明）",
         amount: num(t.amount),
