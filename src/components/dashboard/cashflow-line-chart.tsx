@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 import {
   Area,
   AreaChart,
@@ -53,6 +55,16 @@ function formatCompact(n: number) {
 export function CashflowLineChart({ data, threshold = 150000 }: Props) {
   const points = data && data.length > 0 ? data : MOCK;
 
+  // theme-aware 配色：dark 走霓虹藍 + 亮紅，light 維持 indigo + 標準紅
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+
+  const lineColor = isDark ? "#60a5fa" : "#6366f1"; // blue-400 vs indigo-500
+  const thresholdColor = isDark ? "#f87171" : "#ef4444"; // red-400 vs red-500
+  const gradientOpacity = isDark ? 0.45 : 0.35;
+
   return (
     <div className="h-72 w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -62,8 +74,8 @@ export function CashflowLineChart({ data, threshold = 150000 }: Props) {
         >
           <defs>
             <linearGradient id="cashGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity={0.35} />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+              <stop offset="0%" stopColor={lineColor} stopOpacity={gradientOpacity} />
+              <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
@@ -104,19 +116,19 @@ export function CashflowLineChart({ data, threshold = 150000 }: Props) {
           />
           <ReferenceLine
             y={threshold}
-            stroke="#ef4444"
+            stroke={thresholdColor}
             strokeDasharray="4 4"
             label={{
               value: `安全線 ${formatCompact(threshold)}`,
               position: "insideTopRight",
-              fill: "#ef4444",
+              fill: thresholdColor,
               fontSize: 11,
             }}
           />
           <Area
             type="monotone"
             dataKey="cash"
-            stroke="#6366f1"
+            stroke={lineColor}
             strokeWidth={2.5}
             fill="url(#cashGradient)"
             activeDot={{ r: 4, strokeWidth: 0 }}

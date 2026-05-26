@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import { useTheme } from "next-themes";
 import { ResponsiveContainer, Sankey, Tooltip } from "recharts";
 
 import { formatCurrency } from "@/lib/dashboard";
@@ -40,6 +42,27 @@ interface SankeyLinkRenderProps {
  * 客製 Node / Link renderer 達成 Apple 風配色 + 半透明流線。
  */
 export function CashflowSankeyChart({ data }: Props) {
+  // 主題感知：dark 用更飽和的霓虹色（Bloomberg 風），light 維持柔和淺色
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+
+  // expense 節點維持 EXPENSE_CATEGORY_COLOR（橘/粉/焦糖等，明暗都可讀）；
+  // income / account 改用 theme-aware 色階，保留資料純函式不污染。
+  const themedData = useMemo<SankeyData>(() => {
+    const incomeColor = isDark ? "#22c55e" : "#86efac"; // emerald-500 vs emerald-300
+    const accountColor = isDark ? "#3b82f6" : "#93c5fd"; // blue-500 vs blue-300
+    return {
+      ...data,
+      nodes: data.nodes.map((n) => {
+        if (n.type === "income") return { ...n, color: incomeColor };
+        if (n.type === "account") return { ...n, color: accountColor };
+        return n;
+      }),
+    };
+  }, [data, isDark]);
+
   if (data.links.length === 0) {
     return (
       <div className="grid h-[460px] w-full place-items-center rounded-lg border border-dashed border-foreground/10 bg-muted/30 text-center text-xs text-muted-foreground">
@@ -54,7 +77,7 @@ export function CashflowSankeyChart({ data }: Props) {
         <div className="h-[460px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <Sankey
-              data={data}
+              data={themedData}
               nodePadding={28}
               nodeWidth={12}
               linkCurvature={0.55}

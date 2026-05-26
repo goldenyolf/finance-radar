@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, PieChart, ScrollText, Settings, type LucideIcon } from "lucide-react";
 
+import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -35,6 +36,11 @@ export function Navigation() {
     <>
       <DesktopSidebar pathname={pathname} />
       <MobileTabBar pathname={pathname} />
+      {/* Mobile 主題切換：右上角浮動鈕，只在 <md 顯示（desktop 走 sidebar 底部） */}
+      <ThemeToggle
+        variant="floating"
+        className="fixed top-3 right-3 z-30 md:hidden"
+      />
     </>
   );
 }
@@ -62,7 +68,7 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
         </div>
       </div>
 
-      <nav className="flex flex-col gap-1 p-3">
+      <nav className="flex flex-1 flex-col gap-1 p-3">
         {NAV_ITEMS.map((item) => {
           const active = isActive(pathname, item.href);
           const Icon = item.icon;
@@ -84,6 +90,11 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
           );
         })}
       </nav>
+
+      {/* Sidebar 底部：主題切換 */}
+      <div className="border-t border-foreground/10 p-3">
+        <ThemeToggle variant="sidebar" />
+      </div>
     </aside>
   );
 }

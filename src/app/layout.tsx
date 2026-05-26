@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { Navigation } from "@/components/dashboard/navigation";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -28,20 +29,28 @@ export default function RootLayout({
   return (
     <html
       lang="zh-TW"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <Navigation />
-        {/*
-         * 主內容 padding：
-         *   - md+：左側保留 sidebar 寬度 (14rem = w-56)
-         *   - <md：底部保留 tab bar 高度 (h-16 = 4rem) + 一點呼吸空間（pb-24 = 6rem），
-         *           並加上 safe-area 處理瀏海手機
-         */}
-        <div className="flex-1 md:pl-56">
-          <div className="pb-24 md:pb-0">{children}</div>
-        </div>
-        <Toaster richColors closeButton position="top-center" />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <Navigation />
+          {/*
+           * 主內容 padding：
+           *   - md+：左側保留 sidebar 寬度 (14rem = w-56)
+           *   - <md：底部保留 tab bar 高度 (h-16 = 4rem) + 一點呼吸空間（pb-24 = 6rem），
+           *           並加上 safe-area 處理瀏海手機
+           */}
+          <div className="flex-1 md:pl-56">
+            <div className="pb-24 md:pb-0">{children}</div>
+          </div>
+          <Toaster richColors closeButton position="top-center" />
+        </ThemeProvider>
       </body>
     </html>
   );

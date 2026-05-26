@@ -84,37 +84,43 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  /*
+   * Bloomberg / 金融科技風：深邃黑底 + 高對比白字 + 微藍冷色階卡片
+   * background ≈ #07080b (slate-950 體感)
+   * card        ≈ #0f1116 (微微浮起的「終端機框」感)
+   * border 用 8% 白透明，邊界輕但仍可辨識
+   */
+  --background: oklch(0.08 0.005 270);
+  --foreground: oklch(0.97 0.005 270);
+  --card: oklch(0.135 0.008 270);
+  --card-foreground: oklch(0.97 0.005 270);
+  --popover: oklch(0.135 0.008 270);
+  --popover-foreground: oklch(0.97 0.005 270);
+  --primary: oklch(0.92 0 0);
+  --primary-foreground: oklch(0.15 0 0);
+  --secondary: oklch(0.22 0.005 270);
+  --secondary-foreground: oklch(0.97 0.005 270);
+  --muted: oklch(0.22 0.005 270);
+  --muted-foreground: oklch(0.68 0.01 270);
+  --accent: oklch(0.22 0.005 270);
+  --accent-foreground: oklch(0.97 0.005 270);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.6 0.02 264);
+  --chart-1: oklch(0.7 0.2 264); /* 霓虹藍 */
+  --chart-2: oklch(0.75 0.18 145); /* 螢光綠 */
+  --chart-3: oklch(0.72 0.2 25); /* 警示紅 */
+  --chart-4: oklch(0.75 0.18 70); /* 琥珀黃 */
+  --chart-5: oklch(0.65 0.2 320); /* 螢光粉 */
+  --sidebar: oklch(0.105 0.008 270);
+  --sidebar-foreground: oklch(0.97 0.005 270);
+  --sidebar-primary: oklch(0.7 0.2 264);
+  --sidebar-primary-foreground: oklch(0.97 0.005 270);
+  --sidebar-accent: oklch(0.22 0.005 270);
+  --sidebar-accent-foreground: oklch(0.97 0.005 270);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.6 0.02 264);
 }
 
 @layer base {
