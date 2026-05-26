@@ -18,7 +18,22 @@ export const runtime = "nodejs";
 const DEFAULT_USER_ID = "user-001";
 const PERSONAL_ACCOUNT_ID = "acc-001";       // 中信（百五個人）
 const SHARED_ACCOUNT_ID = "acc-taishin";     // 台新共同戶
-const SHARED_KEYWORDS = ["共同", "家庭"];
+
+/**
+ * 帳戶關鍵字：掃整段字串（不限位置、可被括弧包住）。命中第一個即停。
+ * 順序代表優先級：台新／共同／家庭 → 共同戶；中信 → 個人戶。
+ * 未來要加 郵局 / 合庫 等，需先在上方宣告對應的 accountId 常數。
+ */
+const ACCOUNT_KEYWORDS: Array<{
+  keyword: string;
+  accountId: string;
+  label: string;
+}> = [
+  { keyword: "台新", accountId: SHARED_ACCOUNT_ID, label: "台新共同" },
+  { keyword: "共同", accountId: SHARED_ACCOUNT_ID, label: "台新共同" },
+  { keyword: "家庭", accountId: SHARED_ACCOUNT_ID, label: "台新共同" },
+  { keyword: "中信", accountId: PERSONAL_ACCOUNT_ID, label: "中信" },
+];
 
 type ParsedEntry = {
   amount: number;
@@ -27,38 +42,83 @@ type ParsedEntry = {
   accountLabel: string;
 };
 
+/**
+ * 從 LINE 文字訊息抽出 {amount, title, accountId}。三段式：
+ *   1) 帳戶：indexOf 掃全段（修 Bug 2，過去只看 startsWith 抓不到「（台新）」）
+ *   2) 金額：優先「N 元/塊」「$N」「NT$N」，最後才退到「末端獨立整數」
+ *      （修 Bug 1，過去 /\d+/ 第一個贏，1TB 的 1 會吃掉 9150）
+ *   3) 標題：剩下的文字 trim
+ */
 function parseExpenseMessage(text: string): ParsedEntry | null {
   let working = text.trim();
   if (!working) return null;
 
+  // ── 1. 帳戶偵測（不限位置；連同緊鄰的全形/半形括弧一起吃掉，避免污染標題） ──
   let accountId = PERSONAL_ACCOUNT_ID;
   let accountLabel = "中信";
+  for (const { keyword, accountId: id, label } of ACCOUNT_KEYWORDS) {
+    if (!working.includes(keyword)) continue;
+    accountId = id;
+    accountLabel = label;
+    working = working.replace(
+      new RegExp(`[（(]?\\s*${keyword}\\s*[)）]?`),
+      " "
+    );
+    break;
+  }
 
-  for (const kw of SHARED_KEYWORDS) {
-    if (working.startsWith(kw)) {
-      working = working.slice(kw.length).trim();
-      accountId = SHARED_ACCOUNT_ID;
-      accountLabel = "台新共同";
-      break;
+  // ── 2. 金額擷取 ──
+  const amountResult = extractAmount(working);
+  if (!amountResult) return null;
+
+  // ── 3. 標題：working 移除金額匹配後 trim ──
+  const title = working
+    .replace(amountResult.matchText, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!title) return null;
+
+  return {
+    amount: amountResult.amount,
+    title,
+    accountId,
+    accountLabel,
+  };
+}
+
+function extractAmount(
+  text: string
+): { amount: number; matchText: string } | null {
+  // (a) 帶中文貨幣後綴：「9150 元」「200塊」 — 最高優先級
+  const cnSuffix = text.match(/(\d+(?:\.\d+)?)\s*(?:元|塊)/);
+  if (cnSuffix) {
+    const v = Number(cnSuffix[1]);
+    if (Number.isFinite(v) && v > 0) {
+      return { amount: v, matchText: cnSuffix[0] };
     }
   }
 
-  const amountMatch = working.match(/\d+(?:\.\d+)?/);
-  if (!amountMatch) return null;
+  // (b) $ / NT$ 前綴
+  const dollarPrefix = text.match(/(?:NT)?\$\s*(\d+(?:\.\d+)?)/i);
+  if (dollarPrefix) {
+    const v = Number(dollarPrefix[1]);
+    if (Number.isFinite(v) && v > 0) {
+      return { amount: v, matchText: dollarPrefix[0] };
+    }
+  }
 
-  const amount = Number(amountMatch[0]);
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-
-  const title = (
-    working.slice(0, amountMatch.index ?? 0) +
-    working.slice((amountMatch.index ?? 0) + amountMatch[0].length)
-  )
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!title) return null;
-
-  return { amount, title, accountId, accountLabel };
+  // (c) 退路：取「最後一個獨立整數」。前後都不能緊鄰字母/中文/星號，
+  //    避免 1TB*2 的 1 跟 2 被誤判為金額。
+  const candidates = [
+    ...text.matchAll(
+      /(?<![\dA-Za-z一-鿿*])(\d+(?:\.\d+)?)(?![A-Za-z一-鿿*])/g
+    ),
+  ];
+  if (candidates.length === 0) return null;
+  const last = candidates[candidates.length - 1];
+  const v = Number(last[1]);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  return { amount: v, matchText: last[0] };
 }
 
 function todayInTaipei(): string {
