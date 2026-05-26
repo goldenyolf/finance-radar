@@ -19,11 +19,14 @@ import {
   type RecurringRow,
   type TransactionRow,
 } from "@/lib/dashboard";
+import type { BudgetCategory } from "@/lib/system-settings";
 
 interface Props {
   accounts: AccountRow[];
   recurring: RecurringRow[];
   transactions: TransactionRow[];
+  /** 各分類本月預算上限，圓餅圖 legend 拿來畫進度條。 */
+  budgets: Partial<Record<BudgetCategory, number>>;
 }
 
 /**
@@ -40,6 +43,7 @@ export function TimeMachineDashboard({
   accounts,
   recurring,
   transactions,
+  budgets,
 }: Props) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
 
@@ -108,6 +112,7 @@ export function TimeMachineDashboard({
         transactions={transactions}
         accounts={accounts}
         now={selectedDate}
+        budgets={budgets}
       />
     </>
   );

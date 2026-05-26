@@ -21,17 +21,25 @@ import {
 import { getAccountLabel } from "@/lib/account-display";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { aggregateMonthlyByCategory } from "@/lib/expense-categories";
+import type { BudgetCategory } from "@/lib/system-settings";
 
 interface Props {
   transactions: TransactionRow[];
   accounts: AccountRow[];
   /** 統計的目標月份。歷史時光機切過去時傳入；省略時走真實本月。 */
   now?: Date;
+  /** 各分類本月預算上限，傳給圓餅圖 legend 畫進度條。可選。 */
+  budgets?: Partial<Record<BudgetCategory, number>>;
 }
 
 const ALL = "all";
 
-export function MonthCategoryCard({ transactions, accounts, now }: Props) {
+export function MonthCategoryCard({
+  transactions,
+  accounts,
+  now,
+  budgets,
+}: Props) {
   const [selectedAccount, setSelectedAccount] = useState<string>(ALL);
 
   // 先 filter 再 aggregate；'all' 走全量、否則只算該帳戶 row。
@@ -126,7 +134,7 @@ export function MonthCategoryCard({ transactions, accounts, now }: Props) {
               {isScoped ? "此帳戶該月份尚無花費紀錄" : "該月份尚無已記帳的花費"}
             </div>
           ) : (
-            <ExpensePieChart data={slices} />
+            <ExpensePieChart data={slices} budgets={budgets} />
           )}
         </CardContent>
       </Card>

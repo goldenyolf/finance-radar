@@ -6,12 +6,14 @@ import {
 } from "@line/bot-sdk";
 
 import { supabase } from "@/lib/supabase";
+import { formatCurrency } from "@/lib/dashboard";
 import {
   classifyByKeyword,
   EXPENSE_CATEGORY_LABEL,
   type ExpenseCategory,
 } from "@/lib/expense-categories";
 import { classifyByLlm } from "@/lib/llm-classify";
+import { budgetKey } from "@/lib/system-settings";
 
 export const runtime = "nodejs";
 
@@ -206,14 +208,83 @@ async function handleEvent(
       return;
     }
 
+    // 記帳成功後，順便檢查該分類本月預算是否爆表，附加警報到回覆尾端。
+    // 失敗（網路 / DB error）不影響記帳本身，warning = "" 而已。
+    const warning = await buildBudgetWarning(category);
+
     await replyText(
       client,
       replyToken,
-      `✅ 已成功記帳：[${categoryLabel}] ${parsed.title} $${parsed.amount}（${parsed.accountLabel}）`
+      `✅ 已成功記帳：[${categoryLabel}] ${parsed.title} $${parsed.amount}（${parsed.accountLabel}）${warning}`
     );
   } catch (err) {
     console.error("[LINE webhook] Unexpected error:", err);
     await replyText(client, replyToken, "❌ 記帳失敗，請稍後再試或檢查系統日誌。");
+  }
+}
+
+/**
+ * 取得本月第一天的 ISO date（Asia/Taipei）。
+ * 跟 todayInTaipei() 同套時區處理，避免跨日 / 跨月誤差。
+ */
+function monthStartInTaipei(): string {
+  return todayInTaipei().slice(0, 7) + "-01";
+}
+
+/**
+ * 檢查某分類本月已花費是否撞到 system_settings 設定的預算上限。
+ * - 沒設預算或預算 <= 0 → 不警告（回空字串）
+ * - 用 >= 100% → ⚠️ 警告
+ * - 用 >= 80%  → 💡 提示
+ * - 'other' 分類沒預算概念，直接 skip
+ *
+ * 統計範圍：跨所有帳戶、本月、type='expense'、status='completed'。
+ * 因為 budget 本身就是 per-category 全域設定，spending 也要對齊範圍才合理。
+ *
+ * 任何 DB 錯誤都靜默 fallback 成「不警告」，不影響記帳主流程。
+ */
+async function buildBudgetWarning(
+  category: ExpenseCategory
+): Promise<string> {
+  if (category === "other") return "";
+
+  try {
+    const { data: settingRow } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", budgetKey(category))
+      .maybeSingle();
+    if (!settingRow) return "";
+
+    const budget = Number(settingRow.value);
+    if (!Number.isFinite(budget) || budget <= 0) return "";
+
+    const monthStart = monthStartInTaipei();
+    const { data: txns } = await supabase
+      .from("transactions")
+      .select("amount")
+      .eq("type", "expense")
+      .eq("status", "completed")
+      .eq("category", category)
+      .gte("date", monthStart);
+
+    const total = (txns ?? []).reduce(
+      (sum, t) => sum + Number(t.amount),
+      0
+    );
+    const pct = (total / budget) * 100;
+    const label = EXPENSE_CATEGORY_LABEL[category];
+
+    if (total >= budget) {
+      return `\n\n⚠️ 警告：本月 [${label}] 已花費 ${formatCurrency(total)}，超過預算上限 ${formatCurrency(budget)}！請立刻克制消費！`;
+    }
+    if (pct >= 80) {
+      return `\n\n💡 提示：本月 [${label}] 預算已達 ${pct.toFixed(0)}%（${formatCurrency(total)} / ${formatCurrency(budget)}），快到天花板囉！`;
+    }
+    return "";
+  } catch (err) {
+    console.error("[LINE webhook] budget warning check failed:", err);
+    return "";
   }
 }
 

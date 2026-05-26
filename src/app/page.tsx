@@ -6,6 +6,7 @@ import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
 import { GlobalSearch } from "@/components/dashboard/global-search";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
+import { SystemSettingsDialog } from "@/components/dashboard/system-settings-dialog";
 import { TimeMachineDashboard } from "@/components/dashboard/time-machine-dashboard";
 import { TodayBadge } from "@/components/dashboard/today-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -31,6 +32,7 @@ import {
   type UserRow,
 } from "@/lib/dashboard";
 import { supabase } from "@/lib/supabase";
+import { loadSystemSettings } from "@/lib/system-settings";
 
 // 時間感知：強制每次請求都重跑 RSC，讓 new Date() 真的拿到當下時間
 // (預設靜態 prerender 會把 new Date() 凍在 build 時間)
@@ -82,12 +84,15 @@ interface PageProps {
 export default async function Dashboard({ searchParams }: PageProps) {
   const { account: accountParam } = await searchParams;
   const now = new Date();
-  const { user, assets, debts, recurring, transactions, accounts } =
-    await loadDashboard();
+  const [{ user, assets, debts, recurring, transactions, accounts }, settings] =
+    await Promise.all([loadDashboard(), loadSystemSettings()]);
 
   // 三大板塊 + 圓餅圖搬進 TimeMachineDashboard，selectedDate 在 client 端控管；
   // 這裡只負責把資料丟下去與算「未來預測」（永遠走真實 now）。
-  const threshold = user ? num(user.emergency_fund_threshold) : 0;
+  // 安全門檻優先順序：system_settings.safety_threshold → users.emergency_fund_threshold → 0
+  const threshold =
+    settings.safetyThreshold ??
+    (user ? num(user.emergency_fund_threshold) : 0);
 
   // 預測區塊套用帳戶過濾：選了帳戶就只算該帳戶的 recurring + upcoming + 起始現金
   const activeAccountId =
@@ -156,6 +161,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
               週期性收支
             </Link>
             <GlobalSearch accounts={accounts} />
+            <SystemSettingsDialog />
           </div>
         </div>
       </header>
@@ -211,6 +217,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
         accounts={accounts}
         recurring={recurring}
         transactions={transactions}
+        budgets={settings.budgets}
       />
 
       {/* 趨勢預測 (supplementary) */}
