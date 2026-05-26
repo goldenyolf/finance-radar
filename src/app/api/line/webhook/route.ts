@@ -126,6 +126,119 @@ function extractAmount(
   return { amount: v, matchText: last[0] };
 }
 
+/* ─────────────── Goal deposit intent parsing ─────────────── */
+
+interface GoalIntent {
+  amount: number;
+  /** 訊息中 explicit 指定的目標名（「到 XXX」後面那段）；null = 沒指定 */
+  goalNameHint: string | null;
+}
+
+/**
+ * 偵測「提撥 / 夢想基金 / 存入夢想」這類關鍵字，並擷取金額 + 可選目標名。
+ * 沒命中關鍵字直接回 null，由呼叫端走原本的支出 flow。
+ *
+ * 支援的句型：
+ *   - "存入夢想基金 2000"
+ *   - "提撥 500 到迪士尼之旅"
+ *   - "夢想基金 +500"
+ *   - "提撥 1000"
+ */
+function parseGoalMessage(text: string): GoalIntent | null {
+  if (!/夢想|提撥/.test(text)) return null;
+  const amt = extractAmount(text);
+  if (!amt) return null;
+
+  let goalNameHint: string | null = null;
+  // 「到 XXX」中的 XXX — 抓到下一個空白/數字/$ 結束
+  const hintMatch = text.match(/到\s*([^\d\s$]{1,20})/);
+  if (hintMatch) goalNameHint = hintMatch[1].trim();
+
+  return { amount: amt.amount, goalNameHint };
+}
+
+/**
+ * 試著當作夢想提撥處理。回 true 表示已處理完（不論成功失敗都回了 LINE 訊息），
+ * 呼叫端就不要再走 expense flow；回 false 代表「這不是夢想訊息」交給後面。
+ */
+async function tryGoalDeposit(
+  text: string,
+  client: messagingApi.MessagingApiClient,
+  replyToken: string,
+  replyPrefix: string
+): Promise<boolean> {
+  const intent = parseGoalMessage(text);
+  if (!intent) return false;
+
+  // 撈所有 goals 找最佳匹配
+  const { data: goals, error } = await supabase
+    .from("goals")
+    .select("id, name, current_amount, target_amount");
+  if (error) {
+    console.error("[LINE webhook] goals fetch failed:", error);
+    await replyText(
+      client,
+      replyToken,
+      `${replyPrefix}❌ 抓不到夢想清單，請稍後再試。`
+    );
+    return true;
+  }
+  if (!goals || goals.length === 0) {
+    await replyText(
+      client,
+      replyToken,
+      `${replyPrefix}⚠️ 還沒設定任何夢想，請先到網頁建立目標再提撥。`
+    );
+    return true;
+  }
+
+  // 名字模糊比對：包含 hint OR hint 包含 name；fallback 第一個
+  let target = goals[0];
+  if (intent.goalNameHint) {
+    const matched = goals.find(
+      (g) =>
+        g.name.includes(intent.goalNameHint!) ||
+        intent.goalNameHint!.includes(g.name)
+    );
+    if (matched) target = matched;
+  }
+
+  const current = Number(target.current_amount);
+  const targetAmount = Number(target.target_amount);
+  const newAmount = current + intent.amount;
+  const justCompleted = current < targetAmount && newAmount >= targetAmount;
+
+  // 更新累積金額
+  const { error: updateErr } = await supabase
+    .from("goals")
+    .update({ current_amount: newAmount })
+    .eq("id", target.id);
+  if (updateErr) {
+    console.error("[LINE webhook] goal update failed:", updateErr);
+    await replyText(
+      client,
+      replyToken,
+      `${replyPrefix}❌ 寫入失敗：${updateErr.message}`
+    );
+    return true;
+  }
+
+  // 寫 log（失敗不擋主流程）
+  const { error: logErr } = await supabase.from("goal_logs").insert({
+    goal_id: target.id,
+    amount: intent.amount,
+  });
+  if (logErr) console.error("[LINE webhook] goal log insert failed:", logErr);
+
+  const pct = (newAmount / targetAmount) * 100;
+  const baseMsg = `🌟 太棒了！已為【${target.name}】注入 $${intent.amount} 能量，目前進度已達 ${pct.toFixed(0)}%！加油！`;
+  const completedMsg = justCompleted
+    ? `\n\n🎉 夢想 100% 達成！恭喜，準備好出發了嗎？`
+    : "";
+  await replyText(client, replyToken, `${replyPrefix}${baseMsg}${completedMsg}`);
+  return true;
+}
+
 function todayInTaipei(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
@@ -224,6 +337,8 @@ async function handleEvent(
 /**
  * 文字訊息核心邏輯。也被 audio handler 在 Whisper 轉錄後重用 — 因此抽成
  * 獨立函式，加 prefix 參數讓 audio 能在回覆前加「🎙️ 語音辨識成功」。
+ *
+ * 流程：先試 goal deposit（夢想基金提撥）→ 沒命中再走 expense 記帳。
  */
 async function handleTextMessage(
   text: string,
@@ -231,6 +346,11 @@ async function handleTextMessage(
   replyToken: string,
   replyPrefix: string = ""
 ): Promise<void> {
+  // 1. 先試夢想基金提撥
+  const goalHandled = await tryGoalDeposit(text, client, replyToken, replyPrefix);
+  if (goalHandled) return;
+
+  // 2. 走原本的支出記帳
   const parsed = parseExpenseMessage(text);
   if (!parsed) {
     await replyText(

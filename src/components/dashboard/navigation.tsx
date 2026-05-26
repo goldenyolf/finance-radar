@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, PieChart, ScrollText, Settings, type LucideIcon } from "lucide-react";
+import {
+  Home,
+  PieChart,
+  ScrollText,
+  Settings,
+  Target,
+  type LucideIcon,
+} from "lucide-react";
 
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -15,6 +22,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "首頁", icon: Home },
+  { href: "/goals", label: "夢想", icon: Target },
   { href: "/analytics", label: "分析", icon: PieChart },
   { href: "/transactions", label: "明細", icon: ScrollText },
   { href: "/settings", label: "設定", icon: Settings },

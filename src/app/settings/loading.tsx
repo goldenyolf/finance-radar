@@ -33,6 +33,22 @@ export default function SettingsLoading() {
       <div className="mt-6 flex justify-end">
         <Skeleton className="h-11 w-28 rounded-full" />
       </div>
+
+      {/* 訂閱管理區塊 skeleton */}
+      <div className="mt-8 rounded-xl bg-card p-6 ring-1 ring-foreground/10">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-5 w-44" />
+            <Skeleton className="h-3 w-72" />
+          </div>
+          <Skeleton className="h-10 w-28 rounded-full" />
+        </div>
+        <div className="flex flex-col gap-2">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-14 w-full" />
+          ))}
+        </div>
+      </div>
     </main>
   );
 }

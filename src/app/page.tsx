@@ -6,9 +6,10 @@ import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { BoardCard } from "@/components/dashboard/board-card";
 import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
+import { GoalSummaryLink } from "@/components/dashboard/goal-summary-link";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
-import { SubscriptionsCard } from "@/components/dashboard/subscriptions-card";
+import { SubscriptionAlertWidget } from "@/components/dashboard/subscription-alert-widget";
 import { TodayBadge } from "@/components/dashboard/today-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import {
   BOARDS,
 } from "@/lib/dashboard";
 import { loadDashboard } from "@/lib/load-dashboard";
+import { loadGoals } from "@/lib/goals";
 import { loadSubscriptions } from "@/lib/subscriptions";
 import { loadSystemSettings } from "@/lib/system-settings";
 
@@ -52,10 +54,12 @@ export default async function HomePage({ searchParams }: PageProps) {
     { user, assets, debts, recurring, transactions, accounts },
     settings,
     subscriptions,
+    goals,
   ] = await Promise.all([
     loadDashboard(),
     loadSystemSettings(),
     loadSubscriptions(),
+    loadGoals(),
   ]);
 
   // 三大板塊：用真實當下；歷史月份切換已搬到 /analytics
@@ -179,6 +183,12 @@ export default async function HomePage({ searchParams }: PageProps) {
         </Alert>
       )}
 
+      {/* 訂閱扣款警報：≤7 天才出現，否則完全隱藏（return null）*/}
+      <SubscriptionAlertWidget
+        subscriptions={subscriptions}
+        accounts={accounts}
+      />
+
       {/* 三大板塊 — Desktop */}
       <section
         aria-label="三大財務板塊"
@@ -218,8 +228,8 @@ export default async function HomePage({ searchParams }: PageProps) {
         </Tabs>
       </section>
 
-      {/* 訂閱制扣款雷達 */}
-      <SubscriptionsCard subscriptions={subscriptions} accounts={accounts} />
+      {/* 夢想基金：首頁只放微型版，完整管理在 /goals */}
+      <GoalSummaryLink goals={goals} />
 
       {/* 趨勢預測 (supplementary) */}
       <section className="mt-8">
