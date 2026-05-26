@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarClock, TrendingUp } from "lucide-react";
 import { AccountSwitcher } from "@/components/dashboard/account-switcher";
 import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
+import { GlobalSearch } from "@/components/dashboard/global-search";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
 import { TimeMachineDashboard } from "@/components/dashboard/time-machine-dashboard";
 import { TodayBadge } from "@/components/dashboard/today-badge";
@@ -154,6 +155,7 @@ export default async function Dashboard({ searchParams }: PageProps) {
               <CalendarClock className="size-4" />
               週期性收支
             </Link>
+            <GlobalSearch accounts={accounts} />
           </div>
         </div>
       </header>
