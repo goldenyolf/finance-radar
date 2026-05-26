@@ -35,8 +35,8 @@ export function ExpensePieChart({ data }: Props) {
   const total = data.reduce((sum, s) => sum + s.amount, 0);
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <div className="h-72 w-full sm:flex-1">
+    <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_240px] sm:items-center">
+      <div className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -84,7 +84,7 @@ export function ExpensePieChart({ data }: Props) {
         </ResponsiveContainer>
       </div>
 
-      <ul className="flex w-full flex-col gap-1.5 text-sm sm:w-56">
+      <ul className="flex w-full flex-col gap-1.5 text-sm">
         {data.map((slice) => {
           const pct = total > 0 ? (slice.amount / total) * 100 : 0;
           return (

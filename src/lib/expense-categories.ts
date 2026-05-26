@@ -29,26 +29,27 @@ export const EXPENSE_CATEGORY_COLOR: Record<ExpenseCategory, string> = {
 };
 
 /**
- * 關鍵字 → 分類映射。匹配時走「最長關鍵字優先」（見 classifyByKeyword），
- * 所以「便當店」會勝過「便當」，避免「幫媽媽買便當店」被誤判為餐飲。
+ * 關鍵字 → 分類映射。匹配時走「最長關鍵字優先」（見 classifyByKeyword）：
+ *   - 「便當店」(3) 勝過「便當」(2)，「幫媽媽買便當店」會落在孝親長照
+ *   - 等長關鍵字打平時，物件 key 越前面優先級越高
+ *
+ * 因此 key 順序刻意安排：「人物上下文」型分類（eldercare / childcare）排在
+ * 「行為上下文」型（food / home / 等）之前，讓「幫媽媽買午餐」（媽媽 vs 午餐
+ * 都是 2 字）優先落到孝親長照而非餐飲。
  */
 export const EXPENSE_CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
-  food_dining: [
-    "三餐",
-    "午餐",
-    "晚餐",
-    "早餐",
-    "便當",
-    "手搖",
-    "飲料",
-    "超市",
-    "買菜",
-    "全聯",
-    "外送",
-    "Uber Eats",
-    "foodpanda",
-    "餐廳",
-    "宵夜",
+  eldercare: [
+    "長照",
+    "阿姨",
+    "媽媽",
+    "老家",
+    "便當店",
+    "孝親",
+    "長輩",
+    "代購",
+    "爸爸",
+    "外婆",
+    "奶奶",
   ],
   childcare_education: [
     "保母",
@@ -64,18 +65,16 @@ export const EXPENSE_CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
     "課後",
     "安親",
   ],
-  eldercare: [
-    "長照",
-    "阿姨",
-    "媽媽",
-    "老家",
-    "便當店",
-    "孝親",
-    "長輩",
-    "代購",
-    "爸爸",
-    "外婆",
-    "奶奶",
+  finance_insurance: [
+    "保險",
+    "醫療險",
+    "意外險",
+    "車險",
+    "儲蓄險",
+    "投資",
+    "基金",
+    "ETF",
+    "股票",
   ],
   home_living: [
     "水電",
@@ -92,17 +91,6 @@ export const EXPENSE_CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
     "網路",
     "第四台",
   ],
-  finance_insurance: [
-    "保險",
-    "醫療險",
-    "意外險",
-    "車險",
-    "儲蓄險",
-    "投資",
-    "基金",
-    "ETF",
-    "股票",
-  ],
   transport: [
     "加油",
     "eTag",
@@ -117,6 +105,24 @@ export const EXPENSE_CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
     "Uber",
     "火車",
     "機票",
+  ],
+  food_dining: [
+    "三餐",
+    "午餐",
+    "晚餐",
+    "早餐",
+    "便當",
+    "手搖",
+    "飲料",
+    "超市",
+    "買菜",
+    "全聯",
+    "外送",
+    "Uber Eats",
+    "foodpanda",
+    "餐廳",
+    "宵夜",
+    "聚餐",
   ],
   other: [],
 };
