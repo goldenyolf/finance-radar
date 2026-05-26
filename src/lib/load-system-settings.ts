@@ -22,10 +22,10 @@ export async function loadSystemSettings(): Promise<ResolvedSettings> {
       .from("system_settings")
       .select("key, value");
     if (error || !data) {
-      return { safetyThreshold: null, budgets: {} };
+      return { safetyThreshold: null };
     }
     return parseSettings(data as SystemSettingRow[]);
   } catch {
-    return { safetyThreshold: null, budgets: {} };
+    return { safetyThreshold: null };
   }
 }

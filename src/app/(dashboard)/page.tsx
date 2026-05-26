@@ -35,6 +35,7 @@ import {
   scopeForAccount,
   BOARDS,
 } from "@/lib/dashboard";
+import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
 import { loadGoals } from "@/lib/load-goals";
 import { loadSubscriptions } from "@/lib/load-subscriptions";
@@ -55,11 +56,13 @@ export default async function HomePage({ searchParams }: PageProps) {
     settings,
     subscriptions,
     goals,
+    categories,
   ] = await Promise.all([
     loadDashboard(),
     loadSystemSettings(),
     loadSubscriptions(),
     loadGoals(),
+    loadCategories(),
   ]);
 
   // 三大板塊：用真實當下；歷史月份切換已搬到 /analytics
@@ -199,6 +202,7 @@ export default async function HomePage({ searchParams }: PageProps) {
             key={b.key}
             data={boardData[b.key]}
             allAccounts={accounts}
+            categories={categories}
           />
         ))}
       </section>
@@ -222,7 +226,11 @@ export default async function HomePage({ searchParams }: PageProps) {
           </TabsList>
           {BOARDS.map((b) => (
             <TabsContent key={b.key} value={b.key}>
-              <BoardCard data={boardData[b.key]} allAccounts={accounts} />
+              <BoardCard
+                data={boardData[b.key]}
+                allAccounts={accounts}
+                categories={categories}
+              />
             </TabsContent>
           ))}
         </Tabs>

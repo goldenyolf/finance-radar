@@ -2,12 +2,16 @@ import { ScrollText } from "lucide-react";
 
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { TransactionsView } from "@/components/dashboard/transactions-view";
+import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
 
 export const dynamic = "force-dynamic";
 
 export default async function TransactionsPage() {
-  const { accounts, transactions } = await loadDashboard();
+  const [{ accounts, transactions }, categories] = await Promise.all([
+    loadDashboard(),
+    loadCategories(),
+  ]);
   // SSR 先排序後端拿到的全量，挑前 200 筆當預設清單。client 之後可走 supabase
   // 重撈（搜尋 / 重新整理）。
   const sorted = [...transactions]
@@ -30,7 +34,11 @@ export default async function TransactionsPage() {
         </p>
       </header>
 
-      <TransactionsView accounts={accounts} initial={sorted} />
+      <TransactionsView
+        accounts={accounts}
+        initial={sorted}
+        categories={categories}
+      />
     </main>
     </PageTransition>
   );

@@ -2,15 +2,15 @@ import { PieChart } from "lucide-react";
 
 import { AnalyticsView } from "@/components/dashboard/analytics-view";
 import { PageTransition } from "@/components/dashboard/page-transition";
+import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
-import { loadSystemSettings } from "@/lib/load-system-settings";
 
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
-  const [{ accounts, transactions }, settings] = await Promise.all([
+  const [{ accounts, transactions }, categories] = await Promise.all([
     loadDashboard(),
-    loadSystemSettings(),
+    loadCategories(),
   ]);
 
   return (
@@ -32,7 +32,7 @@ export default async function AnalyticsPage() {
       <AnalyticsView
         accounts={accounts}
         transactions={transactions}
-        budgets={settings.budgets}
+        categories={categories}
       />
     </main>
     </PageTransition>

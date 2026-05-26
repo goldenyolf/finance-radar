@@ -8,6 +8,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
+import type { CategoryRow } from "@/lib/categories";
 import {
   formatCurrency,
   type AccountRow,
@@ -21,6 +22,8 @@ interface Props {
   data: BoardData;
   /** 全部帳戶清單（跨板塊），給編輯 dialog 的「移動到其他帳戶」下拉用。 */
   allAccounts: AccountRow[];
+  /** 動態 categories — 編輯帳目的分類下拉用。 */
+  categories?: CategoryRow[];
 }
 
 const CATEGORY_STYLE: Record<DetailCategory, string> = {
@@ -71,7 +74,7 @@ function amountToneClass(item: BoardDetailItem) {
   return "text-foreground";
 }
 
-export function BoardCard({ data, allAccounts }: Props) {
+export function BoardCard({ data, allAccounts, categories }: Props) {
   const { def, accounts, metrics, items, hasAccounts, hasRecurringIncome } = data;
   const remainingPositive = metrics.remaining >= 0;
 
@@ -265,6 +268,7 @@ export function BoardCard({ data, allAccounts }: Props) {
                           expenseCategory={item.expenseCategory ?? null}
                           isTransfer={item.isTransfer ?? false}
                           accounts={allAccounts}
+                          categories={categories}
                         />
                       )}
                     </div>

@@ -7,6 +7,11 @@ import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { Input } from "@/components/ui/input";
 import { getAccountLabel } from "@/lib/account-display";
 import {
+  buildCategoryLookup,
+  type CategoryLookup,
+  type CategoryRow,
+} from "@/lib/categories";
+import {
   formatCurrency,
   num,
   type AccountRow,
@@ -23,6 +28,8 @@ interface Props {
   accounts: AccountRow[];
   /** SSR 預先抓的最近一批交易紀錄。沒有 query 時直接顯示這份。 */
   initial: TransactionRow[];
+  /** 動態 categories — 用來把分類 chip 的顏色 / 名稱換成使用者設定值。 */
+  categories?: CategoryRow[];
 }
 
 type SearchRow = Pick<
@@ -41,7 +48,11 @@ function formatDateShort(iso: string): string {
   return `${y}/${m}/${day}`;
 }
 
-export function TransactionsView({ accounts, initial }: Props) {
+export function TransactionsView({ accounts, initial, categories }: Props) {
+  const lookup = useMemo(
+    () => (categories ? buildCategoryLookup(categories) : null),
+    [categories]
+  );
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [results, setResults] = useState<SearchRow[]>(() =>
@@ -122,7 +133,7 @@ export function TransactionsView({ accounts, initial }: Props) {
           id={searchId}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="輸入關鍵字，例如：尿布、保母、午餐（留空顯示最新 200 筆）"
+          placeholder="輸入關鍵字，例如：尿布、托育、午餐（留空顯示最新 200 筆）"
           className="h-11 pl-9 text-base"
           autoComplete="off"
           spellCheck={false}
@@ -170,7 +181,12 @@ export function TransactionsView({ accounts, initial }: Props) {
       {results.length > 0 && (
         <ul className="flex flex-col gap-0.5">
           {results.map((r) => (
-            <TransactionRow key={r.id} row={r} accounts={accounts} />
+            <TransactionRow
+              key={r.id}
+              row={r}
+              accounts={accounts}
+              lookup={lookup}
+            />
           ))}
         </ul>
       )}
@@ -181,16 +197,20 @@ export function TransactionsView({ accounts, initial }: Props) {
 interface RowProps {
   row: SearchRow;
   accounts: AccountRow[];
+  lookup: CategoryLookup | null;
 }
 
-function TransactionRow({ row, accounts }: RowProps) {
+function TransactionRow({ row, accounts, lookup }: RowProps) {
   const accName = getAccountLabel(
     row.account_id,
     accounts.find((a) => a.id === row.account_id)?.name
   );
   const categoryKey = (row.category ?? "other") as ExpenseCategory;
-  const categoryLabel = EXPENSE_CATEGORY_LABEL[categoryKey] ?? "其他";
-  const categoryColor = EXPENSE_CATEGORY_COLOR[categoryKey] ?? "#94A3B8";
+  const dyn = lookup?.byCode.get(categoryKey);
+  const categoryLabel =
+    dyn?.name ?? EXPENSE_CATEGORY_LABEL[categoryKey] ?? "其他";
+  const categoryColor =
+    dyn?.color ?? EXPENSE_CATEGORY_COLOR[categoryKey] ?? "#94A3B8";
   const isExpense = row.type === "expense";
   const sign = isExpense ? "−" : row.type === "income" ? "+" : "";
 

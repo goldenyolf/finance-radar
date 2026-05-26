@@ -14,9 +14,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { CategoryRow } from "@/lib/categories";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { buildSankeyData } from "@/lib/sankey-data";
-import type { BudgetCategory } from "@/lib/system-settings";
 
 /** 月份切換時短暫顯示 skeleton 的視覺延遲（ms）。 */
 const MONTH_SWITCH_DELAY_MS = 280;
@@ -24,21 +24,26 @@ const MONTH_SWITCH_DELAY_MS = 280;
 interface Props {
   accounts: AccountRow[];
   transactions: TransactionRow[];
-  budgets: Partial<Record<BudgetCategory, number>>;
+  /** 動態 categories — 即時連動 /settings 的顏色 / 名稱 / 預算。 */
+  categories?: CategoryRow[];
 }
 
 /**
  * 分析頁的時光機 wrapper：管 selectedDate 並把它傳給圓餅圖。
  * 跟 /  首頁刻意分家 — 首頁的 boards 永遠走真實當下，這裡才允許切歷史。
  */
-export function AnalyticsView({ accounts, transactions, budgets }: Props) {
+export function AnalyticsView({
+  accounts,
+  transactions,
+  categories,
+}: Props) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [isMonthSwitching, setIsMonthSwitching] = useState(false);
 
   // selectedDate 變動時自動重建 sankey；transactions 上百筆時也只是 ms 等級
   const sankeyData = useMemo(
-    () => buildSankeyData(transactions, accounts, selectedDate),
-    [transactions, accounts, selectedDate]
+    () => buildSankeyData(transactions, accounts, selectedDate, categories),
+    [transactions, accounts, selectedDate, categories]
   );
 
   /**
@@ -113,7 +118,7 @@ export function AnalyticsView({ accounts, transactions, budgets }: Props) {
           transactions={transactions}
           accounts={accounts}
           now={selectedDate}
-          budgets={budgets}
+          categories={categories}
         />
       )}
     </>

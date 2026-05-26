@@ -1,10 +1,12 @@
 import { Settings } from "lucide-react";
 
+import { CategoriesCard } from "@/components/dashboard/categories-card";
 import { LineBindingCard } from "@/components/dashboard/line-binding-card";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { SignOutButton } from "@/components/dashboard/sign-out-button";
 import { SubscriptionsCard } from "@/components/dashboard/subscriptions-card";
 import { SystemSettingsForm } from "@/components/dashboard/system-settings-form";
+import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
 import { loadSubscriptions } from "@/lib/load-subscriptions";
 import { createClient } from "@/lib/supabase/server";
@@ -23,12 +25,13 @@ async function loadLineBinding(): Promise<string | null> {
 }
 
 export default async function SettingsPage() {
-  const [settings, subscriptions, { accounts }, lineUserId] =
+  const [settings, subscriptions, { accounts }, lineUserId, categories] =
     await Promise.all([
       loadSystemSettings(),
       loadSubscriptions(),
       loadDashboard(),
       loadLineBinding(),
+      loadCategories(),
     ]);
 
   return (
@@ -49,6 +52,9 @@ export default async function SettingsPage() {
         </header>
 
         <SystemSettingsForm initial={settings} />
+
+        {/* 🎨 分類管理 — 動態取代靜態 EXPENSE_CATEGORY_*；改顏色 / 名稱會即時連動圖表 */}
+        <CategoriesCard categories={categories} />
 
         {/* LINE 綁定區塊 — 多租戶版才有，把 LINE userId 寫進 profiles */}
         <LineBindingCard currentLineUserId={lineUserId} />

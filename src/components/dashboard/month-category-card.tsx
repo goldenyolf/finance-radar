@@ -19,17 +19,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getAccountLabel } from "@/lib/account-display";
+import type { CategoryRow } from "@/lib/categories";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { aggregateMonthlyByCategory } from "@/lib/expense-categories";
-import type { BudgetCategory } from "@/lib/system-settings";
 
 interface Props {
   transactions: TransactionRow[];
   accounts: AccountRow[];
   /** 統計的目標月份。歷史時光機切過去時傳入；省略時走真實本月。 */
   now?: Date;
-  /** 各分類本月預算上限，傳給圓餅圖 legend 畫進度條。可選。 */
-  budgets?: Partial<Record<BudgetCategory, number>>;
+  /** 動態 categories（含使用者自訂顏色 / 名稱 / 預算）；省略時走靜態常數。 */
+  categories?: CategoryRow[];
 }
 
 const ALL = "all";
@@ -38,7 +38,7 @@ export function MonthCategoryCard({
   transactions,
   accounts,
   now,
-  budgets,
+  categories,
 }: Props) {
   const [selectedAccount, setSelectedAccount] = useState<string>(ALL);
 
@@ -51,8 +51,8 @@ export function MonthCategoryCard({
       selectedAccount === ALL
         ? transactions
         : transactions.filter((t) => t.account_id === selectedAccount);
-    return aggregateMonthlyByCategory(scoped, base);
-  }, [transactions, selectedAccount, now]);
+    return aggregateMonthlyByCategory(scoped, base, categories);
+  }, [transactions, selectedAccount, now, categories]);
 
   const isScoped = selectedAccount !== ALL;
   const scopedAccountName = isScoped
@@ -134,7 +134,7 @@ export function MonthCategoryCard({
               {isScoped ? "此帳戶該月份尚無花費紀錄" : "該月份尚無已記帳的花費"}
             </div>
           ) : (
-            <ExpensePieChart data={slices} budgets={budgets} />
+            <ExpensePieChart data={slices} />
           )}
         </CardContent>
       </Card>

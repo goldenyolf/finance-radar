@@ -10,12 +10,9 @@ import {
 } from "recharts";
 
 import type { CategorySlice } from "@/lib/expense-categories";
-import type { BudgetCategory } from "@/lib/system-settings";
 
 type Props = {
   data: CategorySlice[];
-  /** 各分類本月預算上限；提供時 legend 會多畫一條進度條與 budget 數字。 */
-  budgets?: Partial<Record<BudgetCategory, number>>;
 };
 
 function formatTwd(n: number) {
@@ -53,7 +50,7 @@ function budgetTone(pct: number): {
   };
 }
 
-export function ExpensePieChart({ data, budgets }: Props) {
+export function ExpensePieChart({ data }: Props) {
   if (data.length === 0) {
     return (
       <div className="grid h-72 w-full place-items-center rounded-lg border border-dashed border-foreground/10 bg-muted/30 text-center text-xs text-muted-foreground">
@@ -116,7 +113,7 @@ export function ExpensePieChart({ data, budgets }: Props) {
 
       <ul className="flex w-full flex-col gap-2 text-sm">
         {data.map((slice) => {
-          const budget = budgets?.[slice.category as BudgetCategory];
+          const budget = slice.budget > 0 ? slice.budget : undefined;
           const totalPct = total > 0 ? (slice.amount / total) * 100 : 0;
 
           if (budget && budget > 0) {

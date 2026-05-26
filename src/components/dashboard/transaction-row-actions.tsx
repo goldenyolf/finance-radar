@@ -28,6 +28,7 @@ import {
   updateTransaction,
 } from "@/lib/actions/transactions";
 import { getAccountLabel } from "@/lib/account-display";
+import type { CategoryRow } from "@/lib/categories";
 import type { AccountRow } from "@/lib/dashboard";
 import {
   EXPENSE_CATEGORY_LABEL,
@@ -43,9 +44,11 @@ interface Props {
   expenseCategory: ExpenseCategory | null;
   isTransfer: boolean;
   accounts: AccountRow[];
+  /** 動態 categories — 編輯 dialog 的分類下拉用使用者自訂清單；省略時走靜態 7 大類。 */
+  categories?: CategoryRow[];
 }
 
-const CATEGORY_OPTIONS = Object.entries(EXPENSE_CATEGORY_LABEL) as Array<
+const STATIC_CATEGORY_OPTIONS = Object.entries(EXPENSE_CATEGORY_LABEL) as Array<
   [ExpenseCategory, string]
 >;
 
@@ -57,7 +60,25 @@ export function TransactionRowActions({
   expenseCategory,
   isTransfer,
   accounts,
+  categories,
 }: Props) {
+  // 動態下拉：只列出 type='expense' 且有穩定 code 的分類；自訂分類（code=null）
+  // 暫不放這裡，因為 transactions.category 還是 ExpenseCategory enum。Phase 5
+  // 把欄位改成 category_id UUID 之後，整段就可以平鋪所有 categories。
+  const categoryOptions: Array<[ExpenseCategory, string]> = categories
+    ? categories
+        .filter((c): c is CategoryRow & { code: string } =>
+          c.type === "expense" && !!c.code
+        )
+        .map((c) => [c.code as ExpenseCategory, c.name])
+    : STATIC_CATEGORY_OPTIONS;
+  const dynamicLabelMap = new Map(categoryOptions);
+  const renderCategoryLabel = (value: unknown): string => {
+    if (typeof value !== "string" || !value) return "選擇花費類型";
+    return (
+      dynamicLabelMap.get(value as ExpenseCategory) ?? getCategoryLabel(value)
+    );
+  };
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deletePending, startDeleteTransition] = useTransition();
@@ -250,11 +271,11 @@ export function TransactionRowActions({
                   >
                     <SelectTrigger id={categoryFieldId} className="w-full">
                       <SelectValue placeholder="選擇花費類型">
-                        {(v) => getCategoryLabel(v)}
+                        {(v) => renderCategoryLabel(v)}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {CATEGORY_OPTIONS.map(([key, label]) => (
+                      {categoryOptions.map(([key, label]) => (
                         <SelectItem key={key} value={key}>
                           {label}
                         </SelectItem>

@@ -6,6 +6,12 @@ import {
 } from "@line/bot-sdk";
 
 import { createServiceClient } from "@/lib/supabase/service";
+import {
+  buildCategoryLookup,
+  classifyByCategoryKeywords,
+  type CategoryLookup,
+  type CategoryRow,
+} from "@/lib/categories";
 import { formatCurrency } from "@/lib/dashboard";
 import {
   classifyByKeyword,
@@ -16,7 +22,6 @@ import { downloadLineMedia } from "@/lib/line-media";
 import { classifyByLlm } from "@/lib/llm-classify";
 import { extractInvoiceItems, type InvoiceItem } from "@/lib/openai-vision";
 import { transcribeAudio } from "@/lib/openai-whisper";
-import { budgetKey } from "@/lib/system-settings";
 
 export const runtime = "nodejs";
 
@@ -29,27 +34,27 @@ function db() {
   return _supabase;
 }
 
-// TODO multi-tenant：目前帳戶 ID 還是寫死「acc-001 / acc-taishin」，
-// 假設只有 Austin（最早期使用者）綁了 LINE。若未來有其他會員綁 LINE，
-// 需改成從各自的 accounts 表撈他們自己的 acc 對應；現階段保留是因為
-// 只有一位 LINE 綁定者。
-const PERSONAL_ACCOUNT_ID = "acc-001";       // 中信（百五個人）
-const SHARED_ACCOUNT_ID = "acc-taishin";     // 台新共同戶
+// TODO multi-tenant：目前帳戶 ID 寫死「acc-001 / acc-taishin」，假設只有
+// 最早期綁定 LINE 的會員。未來其他會員綁 LINE 時，需改成從各自的 accounts
+// 表撈對應的 account id；現階段保留是因為目前只有一位 LINE 綁定者。
+// Fork 提示：把這兩個常數替換成你的 accounts 表內的真實 ID 即可。
+const PERSONAL_ACCOUNT_ID = "acc-001";       // 個人主帳戶
+const SHARED_ACCOUNT_ID = "acc-taishin";     // 家庭共同帳戶
 
 /**
  * 帳戶關鍵字：掃整段字串（不限位置、可被括弧包住）。命中第一個即停。
- * 順序代表優先級：台新／共同／家庭 → 共同戶；中信 → 個人戶。
- * 未來要加 郵局 / 合庫 等，需先在上方宣告對應的 accountId 常數。
+ * 順序代表優先級：共同 / 家庭 → 共同戶；個人 / 主要 → 個人戶。
+ * 用「角色概念詞」避免綁定特定銀行；fork 後可依需求補入自己銀行的名稱。
  */
 const ACCOUNT_KEYWORDS: Array<{
   keyword: string;
   accountId: string;
   label: string;
 }> = [
-  { keyword: "台新", accountId: SHARED_ACCOUNT_ID, label: "台新共同" },
-  { keyword: "共同", accountId: SHARED_ACCOUNT_ID, label: "台新共同" },
-  { keyword: "家庭", accountId: SHARED_ACCOUNT_ID, label: "台新共同" },
-  { keyword: "中信", accountId: PERSONAL_ACCOUNT_ID, label: "中信" },
+  { keyword: "共同", accountId: SHARED_ACCOUNT_ID, label: "家庭共同" },
+  { keyword: "家庭", accountId: SHARED_ACCOUNT_ID, label: "家庭共同" },
+  { keyword: "個人", accountId: PERSONAL_ACCOUNT_ID, label: "個人主帳戶" },
+  { keyword: "主要", accountId: PERSONAL_ACCOUNT_ID, label: "個人主帳戶" },
 ];
 
 type ParsedEntry = {
@@ -61,9 +66,9 @@ type ParsedEntry = {
 
 /**
  * 從 LINE 文字訊息抽出 {amount, title, accountId}。三段式：
- *   1) 帳戶：indexOf 掃全段（修 Bug 2，過去只看 startsWith 抓不到「（台新）」）
- *   2) 金額：優先「N 元/塊」「$N」「NT$N」，最後才退到「末端獨立整數」
- *      （修 Bug 1，過去 /\d+/ 第一個贏，1TB 的 1 會吃掉 9150）
+ *   1) 帳戶：indexOf 掃全段（不限關鍵字位置，括弧包住的「（共同）」也能抓）
+ *   2) 金額：優先「N 元/塊」「$N」「NT$N」，最後才退到「末端獨立整數」，
+ *      並排除緊鄰字母 / 中文 / 星號的數字（避免 1TB*2 的 1 / 2 被誤判金額）
  *   3) 標題：剩下的文字 trim
  */
 function parseExpenseMessage(text: string): ParsedEntry | null {
@@ -72,7 +77,7 @@ function parseExpenseMessage(text: string): ParsedEntry | null {
 
   // ── 1. 帳戶偵測（不限位置；連同緊鄰的全形/半形括弧一起吃掉，避免污染標題） ──
   let accountId = PERSONAL_ACCOUNT_ID;
-  let accountLabel = "中信";
+  let accountLabel = "個人主帳戶";
   for (const { keyword, accountId: id, label } of ACCOUNT_KEYWORDS) {
     if (!working.includes(keyword)) continue;
     accountId = id;
@@ -254,6 +259,23 @@ async function tryGoalDeposit(
   return true;
 }
 
+/**
+ * service client 沒 RLS context — 必須顯式 .eq("user_id", ...)。
+ * 撈失敗回空陣列；下游所有 classifier / label resolver 看到 [] 都會 fallback
+ * 到靜態 7 大類 + EXPENSE_CATEGORY_LABEL，整條 pipeline 不會崩。
+ */
+async function loadUserCategories(userId: string): Promise<CategoryRow[]> {
+  const { data, error } = await db()
+    .from("categories")
+    .select("*")
+    .eq("user_id", userId);
+  if (error) {
+    console.error("[LINE webhook] categories fetch failed:", error);
+    return [];
+  }
+  return (data ?? []) as CategoryRow[];
+}
+
 function todayInTaipei(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
@@ -340,11 +362,20 @@ async function handleEvent(
     }
 
     const userId = profile.user_id as string;
+    // 撈一次當前使用者的 categories — 在 text / audio / image 三條 pipeline
+    // 共用，避免每條都自己撈。
+    const userCategories = await loadUserCategories(userId);
 
     switch (messageEvent.message.type) {
       case "text": {
         const text = (messageEvent.message as webhook.TextMessageContent).text;
-        await handleTextMessage(text, userId, client, replyToken);
+        await handleTextMessage(
+          text,
+          userId,
+          userCategories,
+          client,
+          replyToken
+        );
         return;
       }
       case "audio": {
@@ -352,6 +383,7 @@ async function handleEvent(
         await handleAudioMessage(
           messageId,
           userId,
+          userCategories,
           channelAccessToken,
           client,
           replyToken
@@ -363,6 +395,7 @@ async function handleEvent(
         await handleImageMessage(
           messageId,
           userId,
+          userCategories,
           channelAccessToken,
           client,
           replyToken
@@ -394,6 +427,7 @@ async function handleEvent(
 async function handleTextMessage(
   text: string,
   userId: string,
+  userCategories: CategoryRow[],
   client: messagingApi.MessagingApiClient,
   replyToken: string,
   replyPrefix: string = ""
@@ -408,13 +442,14 @@ async function handleTextMessage(
     await replyText(
       client,
       replyToken,
-      `${replyPrefix}💡 記帳格式錯誤囉！\n• 個人（中信）：午餐 120\n• 共同（台新）：共同 牛奶 80`
+      `${replyPrefix}💡 記帳格式錯誤囉！\n• 個人帳戶：午餐 120\n• 家庭共同戶：共同 牛奶 80`
     );
     return;
   }
 
-  const category = await classifyExpense(parsed.title);
-  const categoryLabel = EXPENSE_CATEGORY_LABEL[category];
+  const lookup = buildCategoryLookup(userCategories);
+  const category = await classifyExpense(parsed.title, userCategories);
+  const categoryLabel = resolveCategoryLabel(category, lookup);
 
   try {
     const { error } = await db().from("transactions").insert({
@@ -439,7 +474,7 @@ async function handleTextMessage(
       return;
     }
 
-    const warning = await buildBudgetWarning(userId, category);
+    const warning = await buildBudgetWarning(userId, category, lookup);
     await replyText(
       client,
       replyToken,
@@ -455,6 +490,21 @@ async function handleTextMessage(
   }
 }
 
+/**
+ * 取得 category 在 LINE 回覆中顯示用的中文名稱。
+ * 優先使用者自訂的 categories.name，沒有再 fallback 到靜態 7 大類 label。
+ */
+function resolveCategoryLabel(
+  category: ExpenseCategory,
+  lookup: CategoryLookup
+): string {
+  return (
+    lookup.byCode.get(category)?.name ??
+    EXPENSE_CATEGORY_LABEL[category] ??
+    "其他"
+  );
+}
+
 /* ─────────────────────────── Audio (Whisper STT) ─────────────────────────── */
 
 /**
@@ -464,6 +514,7 @@ async function handleTextMessage(
 async function handleAudioMessage(
   messageId: string,
   userId: string,
+  userCategories: CategoryRow[],
   channelAccessToken: string,
   client: messagingApi.MessagingApiClient,
   replyToken: string
@@ -500,7 +551,14 @@ async function handleAudioMessage(
   }
 
   const prefix = `🎙️ 語音辨識成功：「${transcript}」\n\n`;
-  await handleTextMessage(transcript, userId, client, replyToken, prefix);
+  await handleTextMessage(
+    transcript,
+    userId,
+    userCategories,
+    client,
+    replyToken,
+    prefix
+  );
 }
 
 /* ─────────────────────────── Image (Vision LLM) ─────────────────────────── */
@@ -515,6 +573,7 @@ async function handleAudioMessage(
 async function handleImageMessage(
   messageId: string,
   userId: string,
+  userCategories: CategoryRow[],
   channelAccessToken: string,
   client: messagingApi.MessagingApiClient,
   replyToken: string
@@ -539,6 +598,7 @@ async function handleImageMessage(
       apiKey,
       image: buffer,
       contentType,
+      categories: userCategories,
     });
   } catch (err) {
     console.error("[LINE webhook] image pipeline failed:", err);
@@ -594,14 +654,15 @@ async function handleImageMessage(
     return;
   }
 
+  const lookup = buildCategoryLookup(userCategories);
   // 多筆預算警報：抓有預算的分類，逐一檢查，但別發太多條（取前 3 條最緊張的）
-  const warnings = await collectBudgetWarnings(userId, items);
+  const warnings = await collectBudgetWarnings(userId, items, lookup);
 
   // 組合回覆
   const total = items.reduce((sum, i) => sum + i.amount, 0);
   const lines = items.map(
     (i, idx) =>
-      `${idx + 1}. [${EXPENSE_CATEGORY_LABEL[i.category]}] ${i.name} $${i.amount}`
+      `${idx + 1}. [${resolveCategoryLabel(i.category, lookup)}] ${i.name} $${i.amount}`
   );
 
   const reply = [
@@ -620,7 +681,8 @@ async function handleImageMessage(
  */
 async function collectBudgetWarnings(
   userId: string,
-  items: InvoiceItem[]
+  items: InvoiceItem[],
+  lookup: CategoryLookup
 ): Promise<string[]> {
   const byCategory = new Map<ExpenseCategory, number>();
   for (const it of items) {
@@ -628,7 +690,7 @@ async function collectBudgetWarnings(
   }
   const warnings: string[] = [];
   for (const cat of byCategory.keys()) {
-    const w = await buildBudgetWarning(userId, cat);
+    const w = await buildBudgetWarning(userId, cat, lookup);
     if (w) warnings.push(w.trim());
   }
   return warnings.slice(0, 3);
@@ -671,21 +733,15 @@ function monthStartInTaipei(): string {
  */
 async function buildBudgetWarning(
   userId: string,
-  category: ExpenseCategory
+  category: ExpenseCategory,
+  lookup: CategoryLookup
 ): Promise<string> {
   if (category === "other") return "";
 
   try {
-    // service client 沒 RLS context，所有查詢都要顯式 .eq("user_id", ...)
-    const { data: settingRow } = await db()
-      .from("system_settings")
-      .select("value")
-      .eq("user_id", userId)
-      .eq("key", budgetKey(category))
-      .maybeSingle();
-    if (!settingRow) return "";
-
-    const budget = Number(settingRow.value);
+    // 預算從 categories.budget_monthly 拿（Phase 5 之後不再走 system_settings）
+    const row = lookup.byCode.get(category);
+    const budget = row?.budget_monthly ?? 0;
     if (!Number.isFinite(budget) || budget <= 0) return "";
 
     const monthStart = monthStartInTaipei();
@@ -703,7 +759,7 @@ async function buildBudgetWarning(
       0
     );
     const pct = (total / budget) * 100;
-    const label = EXPENSE_CATEGORY_LABEL[category];
+    const label = resolveCategoryLabel(category, lookup);
 
     if (total >= budget) {
       return `\n\n⚠️ 警告：本月 [${label}] 已花費 ${formatCurrency(total)}，超過預算上限 ${formatCurrency(budget)}！請立刻克制消費！`;
@@ -719,14 +775,35 @@ async function buildBudgetWarning(
 }
 
 /**
- * 兩段式分類：先用關鍵字（快、免費、deterministic），
- * 命中 'other' 時若有 GEMINI_API_KEY 才打 LLM 補上。
+ * 三段式分類，優先用使用者自訂的關鍵字 / LLM prompt，缺資料時 fallback：
+ *   1. 使用者 categories.keywords 比對（最長關鍵字優先）—— 命中且是內建 code 直接用
+ *   2. 沒命中時打 LLM（Gemini），prompt 用使用者的 name + keywords 客製
+ *   3. 仍無 → 退到舊的靜態關鍵字 classifier，最後 fallback 'other'
+ *
+ * 為什麼第一段命中還要檢查 row.code != null：transactions.category 還是
+ * snake_case enum 欄位，自訂分類（code=null）目前無法落到該欄；Phase 5
+ * 切換到 category_id UUID 之後就可以放開這個限制。
  */
-async function classifyExpense(title: string): Promise<ExpenseCategory> {
-  const keyword = classifyByKeyword(title);
-  if (keyword !== "other") return keyword;
-  const llm = await classifyByLlm(title);
-  return llm ?? "other";
+async function classifyExpense(
+  title: string,
+  categories: CategoryRow[]
+): Promise<ExpenseCategory> {
+  // (1) 使用者自訂關鍵字
+  if (categories.length > 0) {
+    const matched = classifyByCategoryKeywords(title, categories);
+    if (matched?.code) return matched.code as ExpenseCategory;
+  }
+
+  // (2) LLM with dynamic prompt
+  const llm = await classifyByLlm(
+    title,
+    categories.length > 0 ? categories : undefined
+  );
+  if (llm) return llm;
+
+  // (3) 退路：靜態關鍵字（fork 友善 — 沒設 categories 也能用）
+  const fallback = classifyByKeyword(title);
+  return fallback;
 }
 
 async function replyText(

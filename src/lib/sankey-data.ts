@@ -1,4 +1,5 @@
 import { getAccountLabel } from "@/lib/account-display";
+import { buildCategoryLookup, type CategoryRow } from "@/lib/categories";
 import {
   num,
   type AccountRow,
@@ -45,14 +46,26 @@ function isInMonth(dateStr: string, ref: Date): boolean {
   );
 }
 
-function categoryLabel(cat: ExpenseCategory | null | undefined): string {
+type CategoryLookup = ReturnType<typeof buildCategoryLookup> | null;
+
+function categoryLabel(
+  cat: ExpenseCategory | null | undefined,
+  lookup: CategoryLookup
+): string {
   const key = (cat ?? "other") as ExpenseCategory;
-  return EXPENSE_CATEGORY_LABEL[key] ?? "其他";
+  return (
+    lookup?.byCode.get(key)?.name ?? EXPENSE_CATEGORY_LABEL[key] ?? "其他"
+  );
 }
 
-function categoryColor(cat: ExpenseCategory | null | undefined): string {
+function categoryColor(
+  cat: ExpenseCategory | null | undefined,
+  lookup: CategoryLookup
+): string {
   const key = (cat ?? "other") as ExpenseCategory;
-  return EXPENSE_CATEGORY_COLOR[key] ?? "#94A3B8";
+  return (
+    lookup?.byCode.get(key)?.color ?? EXPENSE_CATEGORY_COLOR[key] ?? "#94A3B8"
+  );
 }
 
 /**
@@ -68,8 +81,10 @@ function categoryColor(cat: ExpenseCategory | null | undefined): string {
 export function buildSankeyData(
   transactions: TransactionRow[],
   accounts: AccountRow[],
-  now: Date
+  now: Date,
+  categories?: CategoryRow[]
 ): SankeyData {
+  const lookup = categories ? buildCategoryLookup(categories) : null;
   // 1. 撈本月、completed、非 transfer
   const monthTxns = transactions.filter(
     (t) =>
@@ -161,9 +176,9 @@ export function buildSankeyData(
   for (const cat of usedExpenseCats) {
     expenseIndex.set(cat, nodes.length);
     nodes.push({
-      name: categoryLabel(cat),
+      name: categoryLabel(cat, lookup),
       type: "expense",
-      color: categoryColor(cat),
+      color: categoryColor(cat, lookup),
     });
   }
 

@@ -1,3 +1,4 @@
+import { buildCategoryLookup, type CategoryRow } from "@/lib/categories";
 import {
   num,
   type ExpenseCategory,
@@ -43,29 +44,33 @@ export const EXPENSE_CATEGORY_COLOR: Record<ExpenseCategory, string> = {
 
 /**
  * 關鍵字 → 分類映射。匹配時走「最長關鍵字優先」（見 classifyByKeyword）：
- *   - 「便當店」(3) 勝過「便當」(2)，「幫媽媽買便當店」會落在孝親長照
+ *   - 「托育機構」(4) 勝過「托育」(2)，避免短關鍵字提早 hijack 長句
  *   - 等長關鍵字打平時，物件 key 越前面優先級越高
  *
  * 因此 key 順序刻意安排：「人物上下文」型分類（eldercare / childcare）排在
- * 「行為上下文」型（food / home / 等）之前，讓「幫媽媽買午餐」（媽媽 vs 午餐
+ * 「行為上下文」型（food / home / 等）之前，讓「幫長輩買午餐」（長輩 vs 午餐
  * 都是 2 字）優先落到孝親長照而非餐飲。
+ *
+ * Fork 提示：可依自己家庭結構在各 category 內補關鍵字，例如把家人暱稱
+ * 加進 eldercare / childcare 提升精準度。
  */
 export const EXPENSE_CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
   eldercare: [
     "長照",
-    "阿姨",
-    "媽媽",
+    "長輩",
+    "父母",
     "老家",
     "便當店",
     "孝親",
-    "長輩",
+    "原生家庭",
     "代購",
-    "爸爸",
     "外婆",
+    "外公",
     "奶奶",
+    "爺爺",
   ],
   childcare_education: [
-    "保母",
+    "托育",
     "幼兒園",
     "學費",
     "月費",
@@ -73,7 +78,8 @@ export const EXPENSE_CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
     "奶粉",
     "童裝",
     "玩具",
-    "兒童",
+    "孩子",
+    "子女",
     "繪本",
     "課後",
     "安親",
@@ -169,15 +175,21 @@ export interface CategorySlice {
   label: string;
   color: string;
   amount: number;
+  /** 每月預算上限；0 = 未設預算 — pie chart 用這個決定要不要畫進度條 */
+  budget: number;
 }
 
 /**
  * 統計給定 transactions 中「當月已發生」的 expense，按 category 加總。
  * 回傳已過濾零項目、由大到小排序的陣列；只含 amount > 0 的分類。
+ *
+ * 若提供 `categories`（動態 DB 來源），label/color 會從那邊 byCode 查詢，
+ * 讓使用者在 /settings 改色名後即時反映到圖表；否則 fallback 到靜態常數。
  */
 export function aggregateMonthlyByCategory(
   transactions: TransactionRow[],
-  now: Date = new Date()
+  now: Date = new Date(),
+  categories?: CategoryRow[]
 ): CategorySlice[] {
   const year = now.getFullYear();
   const month = now.getMonth();
@@ -193,13 +205,19 @@ export function aggregateMonthlyByCategory(
     totals.set(key, (totals.get(key) ?? 0) + num(t.amount));
   }
 
+  const lookup = categories ? buildCategoryLookup(categories) : null;
+
   return Array.from(totals.entries())
     .filter(([, amount]) => amount > 0)
-    .map(([category, amount]) => ({
-      category,
-      label: EXPENSE_CATEGORY_LABEL[category],
-      color: EXPENSE_CATEGORY_COLOR[category],
-      amount: Math.round(amount),
-    }))
+    .map(([category, amount]) => {
+      const dyn = lookup?.byCode.get(category);
+      return {
+        category,
+        label: dyn?.name ?? EXPENSE_CATEGORY_LABEL[category],
+        color: dyn?.color ?? EXPENSE_CATEGORY_COLOR[category],
+        amount: Math.round(amount),
+        budget: dyn?.budget_monthly ?? 0,
+      };
+    })
     .sort((a, b) => b.amount - a.amount);
 }

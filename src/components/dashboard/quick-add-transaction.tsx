@@ -256,7 +256,7 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
                 isTransfer
                   ? "例：薪水帳戶 → 投資帳戶"
                   : type === "income"
-                    ? "例：老公薪水"
+                    ? "例：每月薪資"
                     : "例：六月房租、麥當勞"
               }
               value={description}

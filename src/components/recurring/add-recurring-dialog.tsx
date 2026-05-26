@@ -172,7 +172,7 @@ export function AddRecurringDialog({ userId, accounts }: Props) {
               id={titleId}
               required
               placeholder={
-                type === "income" ? "例：老婆薪水" : "例：房貸、Netflix"
+                type === "income" ? "例：每月薪資" : "例：房貸、Netflix"
               }
               value={title}
               onChange={(e) => setTitle(e.target.value)}

@@ -435,7 +435,7 @@ export const BOARDS: BoardDef[] = [
     key: "family",
     emoji: "🏠",
     title: "家庭財務",
-    subtitle: "共同帳戶：房貸、保母、學費、小朋友花費",
+    subtitle: "共同帳戶：房貸、托育、學費、子女花費",
   },
   {
     key: "subsidy",
@@ -455,10 +455,16 @@ export const BOARD_DEF: Record<BoardKey, BoardDef> = Object.fromEntries(
   BOARDS.map((b) => [b.key, b])
 ) as Record<BoardKey, BoardDef>;
 
-/** 依帳戶名稱關鍵字分類到三個板塊，預設落到 personal。 */
+/**
+ * 依帳戶名稱關鍵字分類到三個板塊，預設落到 personal。
+ *
+ * 關鍵字以「角色概念」為主（共同 / 家庭 / 補助 / 投資），方便 fork 後不需
+ * 改動就能適配任何銀行命名。若你的帳戶名稱不含這些關鍵字，預設都會落到
+ * personal — 可在這裡擴充 regex 加入自己的關鍵字（例如特定銀行名）。
+ */
 export function classifyAccount(name: string): BoardKey {
-  if (/共同|台新/.test(name)) return "family";
-  if (/補助|郵局/.test(name)) return "subsidy";
+  if (/共同|家庭/.test(name)) return "family";
+  if (/補助|投資/.test(name)) return "subsidy";
   return "personal";
 }
 

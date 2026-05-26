@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 import { LogOut } from "lucide-react";
 
-import { signOut } from "@/app/login/actions";
+import { signOut } from "@/lib/actions/auth";
 import { cn } from "@/lib/utils";
 
 interface Props {

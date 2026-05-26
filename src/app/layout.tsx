@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
-import { Navigation } from "@/components/dashboard/navigation";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -21,6 +20,12 @@ export const metadata: Metadata = {
   description: "一目了然掌握你的財務狀況",
 };
 
+/**
+ * Root layout — 全 app 共用：html/body + 字型 + 主題 + Toaster。
+ *
+ * Navigation 跟「sidebar 留白 / mobile 底部」這套架構已搬到
+ * (dashboard)/layout.tsx，因為登入頁 (auth) 不需要這些。
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -39,16 +44,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <Navigation />
-          {/*
-           * 主內容 padding：
-           *   - md+：左側保留 sidebar 寬度 (14rem = w-56)
-           *   - <md：底部保留 tab bar 高度 (h-16 = 4rem) + 一點呼吸空間（pb-24 = 6rem），
-           *           並加上 safe-area 處理瀏海手機
-           */}
-          <div className="flex-1 md:pl-56">
-            <div className="pb-24 md:pb-0">{children}</div>
-          </div>
+          {children}
           <Toaster richColors closeButton position="top-center" />
         </ThemeProvider>
       </body>
