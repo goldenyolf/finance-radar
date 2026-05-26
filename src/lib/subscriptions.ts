@@ -1,5 +1,3 @@
-import { supabase } from "@/lib/supabase";
-
 /**
  * subscriptions 表存「訂閱制扣款」項目，跟既有 recurring_payments 區別：
  *   - recurring_payments：給 forecast 算未來 8 個月用，所有月度金流
@@ -22,22 +20,6 @@ export interface SubscriptionRow {
   next_billing_date: string;
   account_id: string;
   category: string;
-}
-
-/**
- * 失敗時回空陣列。subscriptions 是非關鍵資料，撈不到不該讓首頁整個 500。
- */
-export async function loadSubscriptions(): Promise<SubscriptionRow[]> {
-  try {
-    const { data, error } = await supabase
-      .from("subscriptions")
-      .select("*")
-      .order("next_billing_date", { ascending: true });
-    if (error || !data) return [];
-    return data as SubscriptionRow[];
-  } catch {
-    return [];
-  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { supabase } from "@/lib/supabase";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getAccountLabel } from "@/lib/account-display";
 import { formatCurrency } from "@/lib/dashboard";
 import { sendLinePushNotification } from "@/lib/line-push";
@@ -41,23 +41,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const lineUserId = process.env.LINE_USER_ID;
   const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
-  if (!lineUserId || !channelAccessToken) {
-    console.error(
-      "[cron] LINE_USER_ID 或 LINE_CHANNEL_ACCESS_TOKEN 未設定，無法推播"
-    );
+  if (!channelAccessToken) {
+    console.error("[cron] LINE_CHANNEL_ACCESS_TOKEN 未設定，無法推播");
     return NextResponse.json({
       ok: false,
-      reason: "missing LINE_USER_ID or LINE_CHANNEL_ACCESS_TOKEN",
+      reason: "missing LINE_CHANNEL_ACCESS_TOKEN",
     });
   }
 
-  // 撈所有訂閱 + 對應帳戶（給 push message 顯示帳戶名用）
-  const [subsRes, accountsRes] = await Promise.all([
+  // service client 繞過 RLS，跨使用者掃所有訂閱
+  const supabase = createServiceClient();
+
+  // 撈所有訂閱 + 帳戶 + 所有 profile bindings；profiles 是 user_id → line_user_id 的對應
+  const [subsRes, accountsRes, profilesRes] = await Promise.all([
     supabase.from("subscriptions").select("*"),
     supabase.from("accounts").select("id, name"),
+    supabase.from("profiles").select("user_id, line_user_id"),
   ]);
 
   if (subsRes.error) {
@@ -68,11 +69,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const subs = (subsRes.data ?? []) as SubscriptionRow[];
+  const subs = (subsRes.data ?? []) as Array<
+    SubscriptionRow & { user_id: string }
+  >;
   const accountsData = (accountsRes.data ?? []) as Array<{
     id: string;
     name: string;
   }>;
+  const profiles = (profilesRes.data ?? []) as Array<{
+    user_id: string;
+    line_user_id: string | null;
+  }>;
+  const profileByUser = new Map(profiles.map((p) => [p.user_id, p.line_user_id]));
 
   const now = new Date();
   const due = subs.filter(
@@ -86,7 +94,27 @@ export async function GET(request: NextRequest) {
   // 逐筆推 LINE 警報 + 把 next_billing_date 往後推一輪
   let pushed = 0;
   let advanced = 0;
+  let skipped = 0;
   for (const sub of due) {
+    // 找這筆訂閱的擁有者綁了哪個 LINE user — 沒綁的就跳過 push
+    const lineUserId = profileByUser.get(sub.user_id);
+    if (!lineUserId) {
+      skipped++;
+      console.warn(
+        `[cron] subscription ${sub.id} (user ${sub.user_id}) 沒綁 LINE，跳過推播`
+      );
+      // 仍然要 advance，否則下次 cron 又會卡在這筆
+      const nextDate = advanceBillingDate(
+        sub.next_billing_date,
+        sub.billing_cycle
+      );
+      await supabase
+        .from("subscriptions")
+        .update({ next_billing_date: nextDate })
+        .eq("id", sub.id);
+      continue;
+    }
+
     const accName = getAccountLabel(
       sub.account_id,
       accountsData.find((a) => a.id === sub.account_id)?.name
@@ -132,5 +160,6 @@ export async function GET(request: NextRequest) {
     matched: due.length,
     pushed,
     advanced,
+    skipped,
   });
 }

@@ -5,7 +5,7 @@ import {
   type webhook,
 } from "@line/bot-sdk";
 
-import { supabase } from "@/lib/supabase";
+import { createServiceClient } from "@/lib/supabase/service";
 import { formatCurrency } from "@/lib/dashboard";
 import {
   classifyByKeyword,
@@ -20,7 +20,19 @@ import { budgetKey } from "@/lib/system-settings";
 
 export const runtime = "nodejs";
 
-const DEFAULT_USER_ID = "user-001";
+// Lazy service client — 不在 module load 期間建（否則 build 階段 collect
+// page data 會因為沒 SUPABASE_SERVICE_ROLE_KEY 而崩）。同一 worker 內建一
+// 次後續重用，無 session 狀態跨 request 安全。
+let _supabase: ReturnType<typeof createServiceClient> | null = null;
+function db() {
+  if (!_supabase) _supabase = createServiceClient();
+  return _supabase;
+}
+
+// TODO multi-tenant：目前帳戶 ID 還是寫死「acc-001 / acc-taishin」，
+// 假設只有 Austin（最早期使用者）綁了 LINE。若未來有其他會員綁 LINE，
+// 需改成從各自的 accounts 表撈他們自己的 acc 對應；現階段保留是因為
+// 只有一位 LINE 綁定者。
 const PERSONAL_ACCOUNT_ID = "acc-001";       // 中信（百五個人）
 const SHARED_ACCOUNT_ID = "acc-taishin";     // 台新共同戶
 
@@ -163,6 +175,7 @@ function parseGoalMessage(text: string): GoalIntent | null {
  */
 async function tryGoalDeposit(
   text: string,
+  userId: string,
   client: messagingApi.MessagingApiClient,
   replyToken: string,
   replyPrefix: string
@@ -170,10 +183,11 @@ async function tryGoalDeposit(
   const intent = parseGoalMessage(text);
   if (!intent) return false;
 
-  // 撈所有 goals 找最佳匹配
-  const { data: goals, error } = await supabase
+  // 撈這位使用者的 goals 找最佳匹配（service client 沒 auth，要顯式 filter）
+  const { data: goals, error } = await db()
     .from("goals")
-    .select("id, name, current_amount, target_amount");
+    .select("id, name, current_amount, target_amount")
+    .eq("user_id", userId);
   if (error) {
     console.error("[LINE webhook] goals fetch failed:", error);
     await replyText(
@@ -209,7 +223,7 @@ async function tryGoalDeposit(
   const justCompleted = current < targetAmount && newAmount >= targetAmount;
 
   // 更新累積金額
-  const { error: updateErr } = await supabase
+  const { error: updateErr } = await db()
     .from("goals")
     .update({ current_amount: newAmount })
     .eq("id", target.id);
@@ -224,8 +238,9 @@ async function tryGoalDeposit(
   }
 
   // 寫 log（失敗不擋主流程）
-  const { error: logErr } = await supabase.from("goal_logs").insert({
+  const { error: logErr } = await db().from("goal_logs").insert({
     goal_id: target.id,
+    user_id: userId,
     amount: intent.amount,
   });
   if (logErr) console.error("[LINE webhook] goal log insert failed:", logErr);
@@ -292,16 +307,51 @@ async function handleEvent(
   const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN!;
 
   try {
+    // ── 多租戶身份解析：LINE userId → profiles → Supabase user_id ──
+    const lineUserId = event.source?.userId;
+    if (!lineUserId) {
+      await safeReply(
+        client,
+        replyToken,
+        "⚠️ 無法識別你的 LINE 帳號，請確認對話來源後再試。"
+      );
+      return;
+    }
+
+    const { data: profile, error: profileErr } = await db()
+      .from("profiles")
+      .select("user_id")
+      .eq("line_user_id", lineUserId)
+      .maybeSingle();
+
+    if (profileErr) {
+      console.error("[LINE webhook] profile lookup failed:", profileErr);
+      await safeReply(client, replyToken, "❌ 系統繁忙，請稍後再試。");
+      return;
+    }
+
+    if (!profile) {
+      await safeReply(
+        client,
+        replyToken,
+        "⚠️ 您的 LINE 帳號尚未綁定 Money Radar 會員，請先至網頁端『系統設定』完成綁定才能開始記帳喔！"
+      );
+      return;
+    }
+
+    const userId = profile.user_id as string;
+
     switch (messageEvent.message.type) {
       case "text": {
         const text = (messageEvent.message as webhook.TextMessageContent).text;
-        await handleTextMessage(text, client, replyToken);
+        await handleTextMessage(text, userId, client, replyToken);
         return;
       }
       case "audio": {
         const messageId = messageEvent.message.id;
         await handleAudioMessage(
           messageId,
+          userId,
           channelAccessToken,
           client,
           replyToken
@@ -312,6 +362,7 @@ async function handleEvent(
         const messageId = messageEvent.message.id;
         await handleImageMessage(
           messageId,
+          userId,
           channelAccessToken,
           client,
           replyToken
@@ -342,12 +393,13 @@ async function handleEvent(
  */
 async function handleTextMessage(
   text: string,
+  userId: string,
   client: messagingApi.MessagingApiClient,
   replyToken: string,
   replyPrefix: string = ""
 ): Promise<void> {
   // 1. 先試夢想基金提撥
-  const goalHandled = await tryGoalDeposit(text, client, replyToken, replyPrefix);
+  const goalHandled = await tryGoalDeposit(text, userId, client, replyToken, replyPrefix);
   if (goalHandled) return;
 
   // 2. 走原本的支出記帳
@@ -365,8 +417,8 @@ async function handleTextMessage(
   const categoryLabel = EXPENSE_CATEGORY_LABEL[category];
 
   try {
-    const { error } = await supabase.from("transactions").insert({
-      user_id: DEFAULT_USER_ID,
+    const { error } = await db().from("transactions").insert({
+      user_id: userId,
       account_id: parsed.accountId,
       description: parsed.title,
       amount: parsed.amount,
@@ -387,7 +439,7 @@ async function handleTextMessage(
       return;
     }
 
-    const warning = await buildBudgetWarning(category);
+    const warning = await buildBudgetWarning(userId, category);
     await replyText(
       client,
       replyToken,
@@ -411,6 +463,7 @@ async function handleTextMessage(
  */
 async function handleAudioMessage(
   messageId: string,
+  userId: string,
   channelAccessToken: string,
   client: messagingApi.MessagingApiClient,
   replyToken: string
@@ -447,7 +500,7 @@ async function handleAudioMessage(
   }
 
   const prefix = `🎙️ 語音辨識成功：「${transcript}」\n\n`;
-  await handleTextMessage(transcript, client, replyToken, prefix);
+  await handleTextMessage(transcript, userId, client, replyToken, prefix);
 }
 
 /* ─────────────────────────── Image (Vision LLM) ─────────────────────────── */
@@ -461,6 +514,7 @@ async function handleAudioMessage(
  */
 async function handleImageMessage(
   messageId: string,
+  userId: string,
   channelAccessToken: string,
   client: messagingApi.MessagingApiClient,
   replyToken: string
@@ -508,7 +562,7 @@ async function handleImageMessage(
   // 批次寫入 — supabase.insert 接受 array 自動 batch
   const today = todayInTaipei();
   const rows = items.map((item) => ({
-    user_id: DEFAULT_USER_ID,
+    user_id: userId,
     account_id: PERSONAL_ACCOUNT_ID, // 圖片沒帳戶 context，預設記到個人
     description: item.name,
     amount: item.amount,
@@ -520,7 +574,7 @@ async function handleImageMessage(
   }));
 
   try {
-    const { error } = await supabase.from("transactions").insert(rows);
+    const { error } = await db().from("transactions").insert(rows);
     if (error) {
       console.error("[LINE webhook] batch insert error:", error);
       await replyText(
@@ -541,7 +595,7 @@ async function handleImageMessage(
   }
 
   // 多筆預算警報：抓有預算的分類，逐一檢查，但別發太多條（取前 3 條最緊張的）
-  const warnings = await collectBudgetWarnings(items);
+  const warnings = await collectBudgetWarnings(userId, items);
 
   // 組合回覆
   const total = items.reduce((sum, i) => sum + i.amount, 0);
@@ -565,6 +619,7 @@ async function handleImageMessage(
  * 為避免 LINE 訊息爆炸，最多顯示 3 條最嚴重的。
  */
 async function collectBudgetWarnings(
+  userId: string,
   items: InvoiceItem[]
 ): Promise<string[]> {
   const byCategory = new Map<ExpenseCategory, number>();
@@ -573,7 +628,7 @@ async function collectBudgetWarnings(
   }
   const warnings: string[] = [];
   for (const cat of byCategory.keys()) {
-    const w = await buildBudgetWarning(cat);
+    const w = await buildBudgetWarning(userId, cat);
     if (w) warnings.push(w.trim());
   }
   return warnings.slice(0, 3);
@@ -615,14 +670,17 @@ function monthStartInTaipei(): string {
  * 任何 DB 錯誤都靜默 fallback 成「不警告」，不影響記帳主流程。
  */
 async function buildBudgetWarning(
+  userId: string,
   category: ExpenseCategory
 ): Promise<string> {
   if (category === "other") return "";
 
   try {
-    const { data: settingRow } = await supabase
+    // service client 沒 RLS context，所有查詢都要顯式 .eq("user_id", ...)
+    const { data: settingRow } = await db()
       .from("system_settings")
       .select("value")
+      .eq("user_id", userId)
       .eq("key", budgetKey(category))
       .maybeSingle();
     if (!settingRow) return "";
@@ -631,9 +689,10 @@ async function buildBudgetWarning(
     if (!Number.isFinite(budget) || budget <= 0) return "";
 
     const monthStart = monthStartInTaipei();
-    const { data: txns } = await supabase
+    const { data: txns } = await db()
       .from("transactions")
       .select("amount")
+      .eq("user_id", userId)
       .eq("type", "expense")
       .eq("status", "completed")
       .eq("category", category)

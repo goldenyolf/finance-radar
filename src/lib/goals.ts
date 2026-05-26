@@ -1,5 +1,3 @@
-import { supabase } from "@/lib/supabase";
-
 /**
  * 夢想基金（Goal Tracker）— 跟其他金流概念都不同的「儲蓄目標」：
  *   - goals       ：每個目標一筆，target / current / deadline / image
@@ -26,20 +24,6 @@ export interface GoalLogRow {
   goal_id: string;
   amount: number | string;
   created_at: string;
-}
-
-/** 失敗回空陣列；首頁不該因為這張表撈失敗就 500。 */
-export async function loadGoals(): Promise<GoalRow[]> {
-  try {
-    const { data, error } = await supabase
-      .from("goals")
-      .select("*")
-      .order("created_at", { ascending: true });
-    if (error || !data) return [];
-    return data as GoalRow[];
-  } catch {
-    return [];
-  }
 }
 
 /** 進度百分比；超過 100% 也維持實際值給達成 badge 用，UI 顯示再 clamp。 */

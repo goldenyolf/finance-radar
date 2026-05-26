@@ -2,7 +2,7 @@ import { Target } from "lucide-react";
 
 import { GoalTrackerCard } from "@/components/dashboard/goal-tracker-card";
 import { PageTransition } from "@/components/dashboard/page-transition";
-import { loadGoals } from "@/lib/goals";
+import { loadGoals } from "@/lib/load-goals";
 
 export const dynamic = "force-dynamic";
 

@@ -1,60 +1,93 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { signAuthToken } from "@/lib/auth-token";
+import { createClient } from "@/lib/supabase/server";
 
-const COOKIE_NAME = "money_radar_auth";
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 天
-
-export interface LoginState {
+export interface AuthState {
   error: string | null;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validate(formData: FormData): { email: string; password: string } | string {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  if (!email) return "請輸入 email";
+  if (!EMAIL_RE.test(email)) return "email 格式錯誤";
+  if (password.length < 6) return "密碼至少 6 個字元";
+  return { email, password };
+}
+
 /**
- * 驗 PIN → 簽 HMAC token → 設 HttpOnly cookie → redirect 回首頁。
- * 配合 useActionState 使用：成功時不會回 state（redirect 直接終止），
- * 失敗時回 { error } 讓 client form 顯示紅字。
- *
- * Cookie 值不再是字面 "true"，改放 HMAC 簽章 token，proxy 端會驗證
- * 簽章 + 過期，達到「無法偽造 cookie 繞過」的安全等級。
+ * Sign in：用既有帳號 + 密碼登入。成功後 redirect 到 /，session cookie
+ * 由 @supabase/ssr 寫到 response headers。
  */
-export async function login(
-  _prevState: LoginState,
+export async function signIn(
+  _prev: AuthState,
   formData: FormData
-): Promise<LoginState> {
-  const sitePin = process.env.SITE_PIN;
-  const authSecret = process.env.SITE_AUTH_SECRET;
+): Promise<AuthState> {
+  const v = validate(formData);
+  if (typeof v === "string") return { error: v };
 
-  if (!sitePin) {
-    console.error("[login] SITE_PIN env 未設定，無法驗證");
-    return { error: "伺服器尚未設定密碼，請聯絡管理員。" };
-  }
-  if (!authSecret) {
-    console.error("[login] SITE_AUTH_SECRET env 未設定，無法簽章 cookie");
-    return { error: "伺服器尚未設定 SITE_AUTH_SECRET，請聯絡管理員。" };
-  }
-
-  const pin = formData.get("pin");
-  if (typeof pin !== "string" || pin.length === 0) {
-    return { error: "請輸入密碼" };
-  }
-
-  if (pin !== sitePin) {
-    return { error: "密碼錯誤，請重試" };
-  }
-
-  const token = await signAuthToken(authSecret);
-  const cookieStore = await cookies();
-  cookieStore.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: COOKIE_MAX_AGE,
-    path: "/",
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword({
+    email: v.email,
+    password: v.password,
   });
 
-  // redirect 會 throw NEXT_REDIRECT，不需要回傳值；放在最後一行
+  if (error) {
+    return { error: friendlyAuthError(error.message) };
+  }
+
   redirect("/");
+}
+
+/**
+ * Sign up：建立新帳號。Email confirmation 在 Supabase Dashboard 那邊
+ * 關閉時，註冊完即時拿到 session、直接 redirect 進 app；如果使用者忘了
+ * 關 confirm email，這裡 user 還是會回傳但 session 是 null，需要登出再
+ * 來過。
+ */
+export async function signUp(
+  _prev: AuthState,
+  formData: FormData
+): Promise<AuthState> {
+  const v = validate(formData);
+  if (typeof v === "string") return { error: v };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signUp({
+    email: v.email,
+    password: v.password,
+  });
+
+  if (error) {
+    return { error: friendlyAuthError(error.message) };
+  }
+
+  // confirm email 開著時 session 會是 null，提示去收信
+  if (!data.session) {
+    return {
+      error: "帳號已建立，請到信箱點驗證連結後再回來登入。",
+    };
+  }
+
+  redirect("/");
+}
+
+/** 登出後送回 /login。 */
+export async function signOut() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect("/login");
+}
+
+function friendlyAuthError(raw: string): string {
+  // 把 Supabase 原始錯誤訊息翻成中文
+  if (/Invalid login credentials/i.test(raw)) return "Email 或密碼錯誤";
+  if (/User already registered/i.test(raw)) return "這個 Email 已經註冊過了";
+  if (/Email rate limit/i.test(raw)) return "請求過於頻繁，請稍後再試";
+  if (/Password should be at least/i.test(raw)) return "密碼至少 6 個字元";
+  return raw;
 }

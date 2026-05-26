@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { SignOutButton } from "@/components/dashboard/sign-out-button";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { cn } from "@/lib/utils";
 
@@ -99,9 +100,10 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
         })}
       </nav>
 
-      {/* Sidebar 底部：主題切換 */}
-      <div className="border-t border-foreground/10 p-3">
+      {/* Sidebar 底部：主題切換 + 登出 */}
+      <div className="border-t border-foreground/10 p-3 flex flex-col gap-1">
         <ThemeToggle variant="sidebar" />
+        <SignOutButton />
       </div>
     </aside>
   );

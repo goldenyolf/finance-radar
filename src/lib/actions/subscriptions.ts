@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 import type { BillingCycle } from "@/lib/subscriptions";
 
 export interface CreateSubscriptionInput {
@@ -41,6 +41,8 @@ export async function createSubscription(
   const err = validate(input);
   if (err) return { ok: false, error: err };
 
+  const supabase = await createClient();
+  // user_id 走 DB DEFAULT auth.uid()
   const { error } = await supabase.from("subscriptions").insert({
     name: input.name.trim(),
     amount: input.amount,
@@ -63,6 +65,7 @@ export async function updateSubscription(
   const err = validate(input);
   if (err) return { ok: false, error: err };
 
+  const supabase = await createClient();
   const { error } = await supabase
     .from("subscriptions")
     .update({
@@ -86,6 +89,7 @@ export async function deleteSubscription(
 ): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少訂閱 ID" };
 
+  const supabase = await createClient();
   const { error } = await supabase.from("subscriptions").delete().eq("id", id);
 
   if (error) return { ok: false, error: error.message };

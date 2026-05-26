@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 import type { ExpenseCategory } from "@/lib/dashboard";
 
@@ -14,7 +14,8 @@ export type TransactionStatus = "completed" | "upcoming";
 export type TransferDirection = "out" | "in";
 
 export interface CreateTransactionInput {
-  userId: string;
+  /** Deprecated：後端走 auth.uid()，這個欄位忽略；保留是為了避免改 caller */
+  userId?: string;
   accountId: string;
   description: string;
   amount: number;
@@ -27,7 +28,8 @@ export interface CreateTransactionInput {
 }
 
 export interface CreateTransferInput {
-  userId: string;
+  /** Deprecated：後端走 auth.uid() */
+  userId?: string;
   fromAccountId: string;
   toAccountId: string;
   description: string;
@@ -57,6 +59,7 @@ export async function updateTransaction(
     return { ok: false, error: "金額必須為大於 0 的數字" };
   }
 
+  const supabase = await createClient();
   // 先查出這筆是否為 transfer（amount/description 需要同步另一腿）
   const { data: existing, error: fetchError } = await supabase
     .from("transactions")
@@ -110,6 +113,7 @@ export async function updateTransaction(
 export async function deleteTransaction(id: string): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少交易 ID" };
 
+  const supabase = await createClient();
   // 若是 transfer，連同另一腿一起刪
   const { data: existing, error: fetchError } = await supabase
     .from("transactions")
@@ -140,7 +144,6 @@ export async function deleteTransaction(id: string): Promise<MutationResult> {
 export async function createTransaction(
   input: CreateTransactionInput
 ): Promise<MutationResult> {
-  if (!input.userId) return { ok: false, error: "缺少使用者 ID" };
   if (!input.accountId) return { ok: false, error: "請選擇帳戶" };
   if (!input.description.trim()) return { ok: false, error: "請輸入項目名稱" };
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
@@ -148,8 +151,9 @@ export async function createTransaction(
   }
   if (!input.date) return { ok: false, error: "請選擇交易日期" };
 
+  const supabase = await createClient();
+  // user_id 走 DB DEFAULT auth.uid()
   const { error } = await supabase.from("transactions").insert({
-    user_id: input.userId,
     account_id: input.accountId,
     description: input.description.trim(),
     amount: input.amount,
@@ -169,7 +173,6 @@ export async function createTransaction(
 export async function createTransfer(
   input: CreateTransferInput
 ): Promise<MutationResult> {
-  if (!input.userId) return { ok: false, error: "缺少使用者 ID" };
   if (!input.fromAccountId || !input.toAccountId) {
     return { ok: false, error: "請選擇轉出與轉入帳戶" };
   }
@@ -182,12 +185,13 @@ export async function createTransfer(
   }
   if (!input.date) return { ok: false, error: "請選擇交易日期" };
 
+  const supabase = await createClient();
   const groupId = randomUUID();
   const description = input.description.trim();
 
+  // user_id 兩腿都走 DB DEFAULT auth.uid()
   const { error } = await supabase.from("transactions").insert([
     {
-      user_id: input.userId,
       account_id: input.fromAccountId,
       description,
       amount: input.amount,
@@ -200,7 +204,6 @@ export async function createTransfer(
       transfer_direction: "out" satisfies TransferDirection,
     },
     {
-      user_id: input.userId,
       account_id: input.toAccountId,
       description,
       amount: input.amount,

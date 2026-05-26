@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 import type {
   AccountRow,
   AssetRow,
@@ -35,6 +35,7 @@ export interface DashboardSnapshot {
  * 內會 dedupe，但跨頁切換每次都會重抓 — 對個人記帳規模可接受。
  */
 export async function loadDashboard(): Promise<DashboardSnapshot> {
+  const supabase = await createClient();
   const userPromise = (async () => {
     try {
       const { data } = await supabase

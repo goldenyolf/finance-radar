@@ -3,7 +3,7 @@ import { PieChart } from "lucide-react";
 import { AnalyticsView } from "@/components/dashboard/analytics-view";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { loadDashboard } from "@/lib/load-dashboard";
-import { loadSystemSettings } from "@/lib/system-settings";
+import { loadSystemSettings } from "@/lib/load-system-settings";
 
 export const dynamic = "force-dynamic";
 

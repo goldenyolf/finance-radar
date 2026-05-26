@@ -36,9 +36,9 @@ import {
   BOARDS,
 } from "@/lib/dashboard";
 import { loadDashboard } from "@/lib/load-dashboard";
-import { loadGoals } from "@/lib/goals";
-import { loadSubscriptions } from "@/lib/subscriptions";
-import { loadSystemSettings } from "@/lib/system-settings";
+import { loadGoals } from "@/lib/load-goals";
+import { loadSubscriptions } from "@/lib/load-subscriptions";
+import { loadSystemSettings } from "@/lib/load-system-settings";
 
 // 時間感知：強制每次請求都重跑 RSC，讓 new Date() 真的拿到當下時間
 export const dynamic = "force-dynamic";

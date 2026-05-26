@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 import {
   BUDGET_CATEGORIES,
   budgetKey,
@@ -49,9 +49,19 @@ export async function saveSystemSettings(
     return { ok: false, error: "沒有有效的設定值可儲存" };
   }
 
+  const supabase = await createClient();
+  // system_settings PK 改成 (user_id, key) 複合鍵；upsert 需要顯式 user_id
+  // 才能正確 conflict 到「同一個使用者的同一個 key」
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) {
+    return { ok: false, error: "尚未登入，無法儲存設定" };
+  }
+
+  const rowsWithUser = rows.map((r) => ({ ...r, user_id: userData.user.id }));
+
   const { error } = await supabase
     .from("system_settings")
-    .upsert(rows, { onConflict: "key" });
+    .upsert(rowsWithUser, { onConflict: "user_id,key" });
 
   if (error) {
     return { ok: false, error: error.message };

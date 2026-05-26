@@ -27,7 +27,7 @@ import {
   type RecurringRow,
   type UserRow,
 } from "@/lib/dashboard";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +44,7 @@ async function safeList<T>(
 }
 
 async function loadRecurringPage() {
+  const supabase = await createClient();
   const userPromise = (async () => {
     try {
       const { data } = await supabase

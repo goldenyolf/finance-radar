@@ -17,7 +17,7 @@ import {
   EXPENSE_CATEGORY_LABEL,
   type ExpenseCategory,
 } from "@/lib/expense-categories";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 
 interface Props {
   accounts: AccountRow[];
@@ -74,6 +74,7 @@ export function TransactionsView({ accounts, initial }: Props) {
     setError(null);
 
     (async () => {
+      const supabase = createClient();
       let queryBuilder = supabase
         .from("transactions")
         .select(

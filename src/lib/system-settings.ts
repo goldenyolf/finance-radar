@@ -1,5 +1,4 @@
 import type { ExpenseCategory } from "@/lib/expense-categories";
-import { supabase } from "@/lib/supabase";
 
 /**
  * system_settings 表是個 key-value 倉庫，存使用者自訂的預算 / 門檻設定。
@@ -51,24 +50,6 @@ export interface ResolvedSettings {
   safetyThreshold: number | null;
   /** 各分類預算上限；只列「user 有設且 > 0」的分類。沒設就 undefined。 */
   budgets: Partial<Record<BudgetCategory, number>>;
-}
-
-/**
- * 一次撈所有 system_settings rows，整理成型別友善的物件。
- * 沒撈到（表不存在或全空）就回傳全 null 結構，下游應用各自 fallback。
- */
-export async function loadSystemSettings(): Promise<ResolvedSettings> {
-  try {
-    const { data, error } = await supabase
-      .from("system_settings")
-      .select("key, value");
-    if (error || !data) {
-      return { safetyThreshold: null, budgets: {} };
-    }
-    return parseSettings(data as SystemSettingRow[]);
-  } catch {
-    return { safetyThreshold: null, budgets: {} };
-  }
 }
 
 /** 把 KV rows 解析成型別 object。Pure function，給 server / client 共用。 */

@@ -42,3 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 手動 CSV 備份目錄 — 內含私人財務資料，永遠不 commit
+money-radar-backup-*/

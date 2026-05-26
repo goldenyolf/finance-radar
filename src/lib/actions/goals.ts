@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 export interface CreateGoalInput {
   name: string;
@@ -30,6 +30,8 @@ export async function createGoal(
   const err = validateGoal(input);
   if (err) return { ok: false, error: err };
 
+  const supabase = await createClient();
+  // user_id 走 DB DEFAULT auth.uid()
   const { error } = await supabase.from("goals").insert({
     name: input.name.trim(),
     target_amount: input.targetAmount,
@@ -45,6 +47,7 @@ export async function createGoal(
 
 export async function deleteGoal(id: string): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少目標 ID" };
+  const supabase = await createClient();
   const { error } = await supabase.from("goals").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/");
@@ -79,6 +82,7 @@ export async function addFundsToGoal(
     return { ok: false, error: "提撥金額必須為大於 0 的數字" };
   }
 
+  const supabase = await createClient();
   // 1. 撈現值 + target
   const { data: goal, error: fetchErr } = await supabase
     .from("goals")

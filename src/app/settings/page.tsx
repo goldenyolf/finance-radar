@@ -1,22 +1,35 @@
 import { Settings } from "lucide-react";
 
+import { LineBindingCard } from "@/components/dashboard/line-binding-card";
 import { PageTransition } from "@/components/dashboard/page-transition";
+import { SignOutButton } from "@/components/dashboard/sign-out-button";
 import { SubscriptionsCard } from "@/components/dashboard/subscriptions-card";
 import { SystemSettingsForm } from "@/components/dashboard/system-settings-form";
 import { loadDashboard } from "@/lib/load-dashboard";
-import { loadSubscriptions } from "@/lib/subscriptions";
-import { loadSystemSettings } from "@/lib/system-settings";
+import { loadSubscriptions } from "@/lib/load-subscriptions";
+import { createClient } from "@/lib/supabase/server";
+import { loadSystemSettings } from "@/lib/load-system-settings";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+async function loadLineBinding(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("line_user_id")
+    .maybeSingle();
+  return (data?.line_user_id as string | null) ?? null;
+}
 
 export default async function SettingsPage() {
-  // 並行載入：settings 給 SystemSettingsForm；subscriptions 給訂閱管理 card；
-  // accounts 給訂閱 card 顯示扣款帳戶下拉。
-  const [settings, subscriptions, { accounts }] = await Promise.all([
-    loadSystemSettings(),
-    loadSubscriptions(),
-    loadDashboard(),
-  ]);
+  const [settings, subscriptions, { accounts }, lineUserId] =
+    await Promise.all([
+      loadSystemSettings(),
+      loadSubscriptions(),
+      loadDashboard(),
+      loadLineBinding(),
+    ]);
 
   return (
     <PageTransition>
@@ -37,11 +50,19 @@ export default async function SettingsPage() {
 
         <SystemSettingsForm initial={settings} />
 
-        {/* 🗓️ 固定扣款與訂閱管理 — 從首頁搬過來，CRUD 操作集中在設定頁 */}
+        {/* LINE 綁定區塊 — 多租戶版才有，把 LINE userId 寫進 profiles */}
+        <LineBindingCard currentLineUserId={lineUserId} />
+
+        {/* 🗓️ 固定扣款與訂閱管理 */}
         <SubscriptionsCard
           subscriptions={subscriptions}
           accounts={accounts}
         />
+
+        {/* 帳號操作 — 行動裝置上 sidebar 看不到，這邊也放一份 */}
+        <div className="mt-8 flex justify-center md:hidden">
+          <SignOutButton className="rounded-full ring-1 ring-foreground/10" />
+        </div>
       </main>
     </PageTransition>
   );
