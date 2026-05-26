@@ -1,6 +1,7 @@
 import { PieChart } from "lucide-react";
 
 import { AnalyticsView } from "@/components/dashboard/analytics-view";
+import { PageTransition } from "@/components/dashboard/page-transition";
 import { loadDashboard } from "@/lib/load-dashboard";
 import { loadSystemSettings } from "@/lib/system-settings";
 
@@ -13,6 +14,7 @@ export default async function AnalyticsPage() {
   ]);
 
   return (
+    <PageTransition>
     <main className="mx-auto w-full max-w-6xl px-5 pt-10 pb-10 sm:px-6 lg:py-14">
       <header className="mb-8">
         <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
@@ -33,5 +35,6 @@ export default async function AnalyticsPage() {
         budgets={settings.budgets}
       />
     </main>
+    </PageTransition>
   );
 }

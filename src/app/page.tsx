@@ -2,9 +2,11 @@ import Link from "next/link";
 import { AlertTriangle, CalendarClock, TrendingUp } from "lucide-react";
 
 import { AccountSwitcher } from "@/components/dashboard/account-switcher";
+import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { BoardCard } from "@/components/dashboard/board-card";
 import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
+import { PageTransition } from "@/components/dashboard/page-transition";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
 import { TodayBadge } from "@/components/dashboard/today-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -81,6 +83,7 @@ export default async function HomePage({ searchParams }: PageProps) {
   const breach = forecastPoints.find((p) => p.cash < safetyFloor);
 
   return (
+    <PageTransition>
     <main className="mx-auto w-full max-w-6xl px-5 pt-10 pb-10 sm:px-6 lg:py-14">
       {/* Header */}
       <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -141,11 +144,11 @@ export default async function HomePage({ searchParams }: PageProps) {
                 系統偵測到 <strong>{breach.monthLabel}</strong>{" "}
                 將有大額支出（預估該月淨流出{" "}
                 <strong className="tabular-nums">
-                  {formatCurrency(-breach.netCashflow)}
+                  <AnimatedNumber value={-breach.netCashflow} />
                 </strong>
                 ），資金池將跌破安全門檻{" "}
                 <strong className="tabular-nums">
-                  {formatCurrency(safetyFloor)}
+                  <AnimatedNumber value={safetyFloor} />
                 </strong>
                 ，請提前準備。
               </>
@@ -154,11 +157,11 @@ export default async function HomePage({ searchParams }: PageProps) {
                 系統偵測到 <strong>{breach.monthLabel}</strong>{" "}
                 可用現金預估降至{" "}
                 <strong className="tabular-nums">
-                  {formatCurrency(breach.cash)}
+                  <AnimatedNumber value={breach.cash} />
                 </strong>
                 ，將跌破安全門檻{" "}
                 <strong className="tabular-nums">
-                  {formatCurrency(safetyFloor)}
+                  <AnimatedNumber value={safetyFloor} />
                 </strong>
                 ，請提前準備。
               </>
@@ -255,5 +258,6 @@ export default async function HomePage({ searchParams }: PageProps) {
         </Card>
       </section>
     </main>
+    </PageTransition>
   );
 }

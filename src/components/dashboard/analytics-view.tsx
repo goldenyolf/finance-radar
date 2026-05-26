@@ -13,9 +13,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { buildSankeyData } from "@/lib/sankey-data";
 import type { BudgetCategory } from "@/lib/system-settings";
+
+/** 月份切換時短暫顯示 skeleton 的視覺延遲（ms）。 */
+const MONTH_SWITCH_DELAY_MS = 280;
 
 interface Props {
   accounts: AccountRow[];
@@ -29,12 +33,29 @@ interface Props {
  */
 export function AnalyticsView({ accounts, transactions, budgets }: Props) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [isMonthSwitching, setIsMonthSwitching] = useState(false);
 
   // selectedDate 變動時自動重建 sankey；transactions 上百筆時也只是 ms 等級
   const sankeyData = useMemo(
     () => buildSankeyData(transactions, accounts, selectedDate),
     [transactions, accounts, selectedDate]
   );
+
+  /**
+   * 月份切換的「視覺延遲」：因為 useMemo 是同步的，沒有真正的 fetch
+   * loading 狀態 — 為了符合 spec 的「切月份顯示 skeleton」polish，
+   * 刻意加 ~280ms 視覺延遲，讓 skeleton 有時間 flash。
+   *
+   * 若未來改成 per-month Supabase fetch，這層 setTimeout 拿掉就好，
+   * 整個 skeleton 邏輯不用動。
+   */
+  function handleMonthChange(next: Date) {
+    setIsMonthSwitching(true);
+    window.setTimeout(() => {
+      setSelectedDate(next);
+      setIsMonthSwitching(false);
+    }, MONTH_SWITCH_DELAY_MS);
+  }
 
   return (
     <>
@@ -45,7 +66,8 @@ export function AnalyticsView({ accounts, transactions, budgets }: Props) {
         </div>
         <MonthNavigator
           selectedDate={selectedDate}
-          onChange={setSelectedDate}
+          onChange={handleMonthChange}
+          disabled={isMonthSwitching}
         />
       </div>
 
@@ -61,16 +83,39 @@ export function AnalyticsView({ accounts, transactions, budgets }: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <CashflowSankeyChart data={sankeyData} />
+          {isMonthSwitching ? (
+            <Skeleton className="h-[460px] w-full" />
+          ) : (
+            <CashflowSankeyChart data={sankeyData} />
+          )}
         </CardContent>
       </Card>
 
-      <MonthCategoryCard
-        transactions={transactions}
-        accounts={accounts}
-        now={selectedDate}
-        budgets={budgets}
-      />
+      {isMonthSwitching ? (
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="mt-2 h-3 w-72" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
+              <Skeleton className="h-72 w-full" />
+              <div className="flex flex-col gap-3">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <MonthCategoryCard
+          transactions={transactions}
+          accounts={accounts}
+          now={selectedDate}
+          budgets={budgets}
+        />
+      )}
     </>
   );
 }

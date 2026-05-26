@@ -1,5 +1,6 @@
 import { Settings } from "lucide-react";
 
+import { PageTransition } from "@/components/dashboard/page-transition";
 import { SystemSettingsForm } from "@/components/dashboard/system-settings-form";
 import { loadSystemSettings } from "@/lib/system-settings";
 
@@ -9,6 +10,7 @@ export default async function SettingsPage() {
   const settings = await loadSystemSettings();
 
   return (
+    <PageTransition>
     <main className="mx-auto w-full max-w-4xl px-5 pt-10 pb-10 sm:px-6 lg:py-14">
       <header className="mb-8">
         <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
@@ -26,5 +28,6 @@ export default async function SettingsPage() {
 
       <SystemSettingsForm initial={settings} />
     </main>
+    </PageTransition>
   );
 }

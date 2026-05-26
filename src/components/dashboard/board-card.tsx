@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
+import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import {
   formatCurrency,
   type AccountRow,
@@ -151,7 +152,7 @@ export function BoardCard({ data, allAccounts }: Props) {
         <div className="grid grid-cols-1 gap-4">
           <MetricRow
             label="本月可支配預算"
-            value={formatCurrency(metrics.budget)}
+            value={metrics.budget}
             hint={
               hasRecurringIncome
                 ? "= 固定收入 − 固定支出"
@@ -161,13 +162,13 @@ export function BoardCard({ data, allAccounts }: Props) {
           />
           <MetricRow
             label="本月已支出"
-            value={formatCurrency(metrics.spent)}
+            value={metrics.spent}
             hint="當月已完成的浮動支出"
             tone="warning"
           />
           <MetricRow
             label="本月剩餘額度"
-            value={formatCurrency(metrics.remaining)}
+            value={metrics.remaining}
             hint={remainingPositive ? "預算內運作中" : "已超出本月預算"}
             tone={remainingPositive ? "positive" : "danger"}
             big
@@ -280,7 +281,7 @@ export function BoardCard({ data, allAccounts }: Props) {
 
 interface MetricRowProps {
   label: string;
-  value: string;
+  value: number;
   hint: string;
   tone: "neutral" | "warning" | "positive" | "danger";
   big?: boolean;
@@ -316,7 +317,7 @@ function MetricRow({ label, value, hint, tone, big }: MetricRowProps) {
             big ? "text-2xl font-bold" : "text-xl font-semibold"
           }`}
         >
-          {value}
+          <AnimatedNumber value={value} />
         </span>
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground/70">{hint}</p>

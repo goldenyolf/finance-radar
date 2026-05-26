@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Loader2Icon, Search } from "lucide-react";
 
+import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { Input } from "@/components/ui/input";
 import { getAccountLabel } from "@/lib/account-display";
 import {
@@ -145,7 +146,7 @@ export function TransactionsView({ accounts, initial }: Props) {
             )}
             ，總共花費{" "}
             <strong className="tabular-nums text-rose-600 dark:text-rose-400">
-              {formatCurrency(expenseTotal)}
+              <AnimatedNumber value={expenseTotal} />
             </strong>
           </p>
         </div>

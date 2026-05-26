@@ -1,5 +1,6 @@
 import { ScrollText } from "lucide-react";
 
+import { PageTransition } from "@/components/dashboard/page-transition";
 import { TransactionsView } from "@/components/dashboard/transactions-view";
 import { loadDashboard } from "@/lib/load-dashboard";
 
@@ -14,6 +15,7 @@ export default async function TransactionsPage() {
     .slice(0, 200);
 
   return (
+    <PageTransition>
     <main className="mx-auto w-full max-w-4xl px-5 pt-10 pb-10 sm:px-6 lg:py-14">
       <header className="mb-8">
         <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
@@ -30,5 +32,6 @@ export default async function TransactionsPage() {
 
       <TransactionsView accounts={accounts} initial={sorted} />
     </main>
+    </PageTransition>
   );
 }
