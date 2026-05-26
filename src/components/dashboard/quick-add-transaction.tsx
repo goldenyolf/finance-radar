@@ -205,12 +205,14 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
         快速記帳
       </DialogTrigger>
 
-      {/* Mobile：右下角 Extended FAB（md 以下顯示） */}
+      {/* Mobile：右下角 Extended FAB（md 以下顯示）
+          z-50 / bottom-20 是為了浮在底部 tab bar（h-16, z-30）之上。
+          calc 加 env(safe-area-inset-bottom) 處理瀏海手機的圓角安全區。 */}
       <DialogTrigger
         render={
           <Button
             aria-label="快速記帳"
-            className="fixed right-5 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-40 h-14 gap-2 rounded-full bg-foreground pr-6 pl-5 text-base font-semibold text-background shadow-lg shadow-foreground/25 ring-1 ring-foreground/10 hover:bg-foreground/90 md:hidden [&_svg:not([class*='size-'])]:size-5"
+            className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 h-14 gap-2 rounded-full bg-foreground pr-6 pl-5 text-base font-semibold text-background shadow-lg shadow-foreground/25 ring-1 ring-foreground/10 hover:bg-foreground/90 md:hidden [&_svg:not([class*='size-'])]:size-5"
             disabled={triggerDisabled}
           />
         }
