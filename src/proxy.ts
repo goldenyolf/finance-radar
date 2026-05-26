@@ -1,9 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { verifyAuthToken } from "@/lib/auth-token";
+
 const COOKIE_NAME = "money_radar_auth";
 
 /**
- * 全域 PIN 鎖：沒有 money_radar_auth=true cookie 一律踢去 /login。
+ * 全域 PIN 鎖：cookie 帶來的 token 必須通過 HMAC-SHA256 簽章驗證才放行，
+ * 否則一律踢去 /login 重新登入。
+ *
+ * 舊版（< 2026-05-26）cookie 值是字面 "true"，可被 devtools 偽造；現在
+ * 是 v1.<issuedAt>.<HMAC> 三段格式，沒 SITE_AUTH_SECRET 簽不出來。舊
+ * cookie 升級後自動失效，使用者一次性 re-login 即可拿到新 token。
  *
  * 注意 matcher 排除清單（見下方 config）：
  *   - /login                ：登入頁本身（含 server action POST 回此路徑）
@@ -12,17 +19,22 @@ const COOKIE_NAME = "money_radar_auth";
  *   - /api/line/webhook     ★：LINE 機器人從外部 POST 進來，沒 cookie，
  *                              絕不能擋，否則自動記帳會 fail
  *
- * Next 16 把 middleware 慣例改名為 proxy（檔名 + 函數名）。舊 middleware.ts
- * 還能跑但會發 deprecation warning，故直接用新名。
+ * Next 16 把 middleware 慣例改名為 proxy（檔名 + 函數名）。
  */
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
+  const secret = process.env.SITE_AUTH_SECRET;
+  if (!secret) {
+    // fail-safe：沒設 secret 就誰都不放行
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   const auth = request.cookies.get(COOKIE_NAME);
-  if (auth?.value === "true") {
+  const ok = await verifyAuthToken(auth?.value, secret);
+  if (ok) {
     return NextResponse.next();
   }
 
-  const loginUrl = new URL("/login", request.url);
-  return NextResponse.redirect(loginUrl);
+  return NextResponse.redirect(new URL("/login", request.url));
 }
 
 export const config = {
