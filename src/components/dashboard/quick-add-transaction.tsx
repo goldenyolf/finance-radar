@@ -38,7 +38,7 @@ import {
   createTransfer,
   type CreateTransactionInput,
   type CreateTransferInput,
-  type TransactionCategory,
+  type TransactionPriority,
   type TransactionStatus,
   type TransactionType,
 } from "@/lib/actions/transactions";
@@ -62,7 +62,7 @@ function todayIsoDate() {
 }
 
 const INITIAL_TYPE: TransactionType = "expense";
-const INITIAL_CATEGORY: TransactionCategory = "essential";
+const INITIAL_PRIORITY: TransactionPriority = "essential";
 const INITIAL_STATUS: TransactionStatus = "completed";
 
 export function QuickAddTransaction({ userId, accounts }: Props) {
@@ -73,7 +73,7 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
   const [type, setType] = useState<TransactionType>(INITIAL_TYPE);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState<TransactionCategory>(INITIAL_CATEGORY);
+  const [priority, setPriority] = useState<TransactionPriority>(INITIAL_PRIORITY);
   const [status, setStatus] = useState<TransactionStatus>(INITIAL_STATUS);
   const [date, setDate] = useState(todayIsoDate);
   const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? "");
@@ -86,7 +86,7 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
   const accountFieldId = useId();
   const fromFieldId = useId();
   const toFieldId = useId();
-  const categoryGroupId = useId();
+  const priorityGroupId = useId();
   const statusGroupId = useId();
 
   const isTransfer = type === "transfer";
@@ -100,7 +100,7 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
     setType(INITIAL_TYPE);
     setDescription("");
     setAmount("");
-    setCategory(INITIAL_CATEGORY);
+    setPriority(INITIAL_PRIORITY);
     setStatus(INITIAL_STATUS);
     setDate(todayIsoDate());
     setAccountId(accounts[0]?.id ?? "");
@@ -160,7 +160,7 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
       description,
       amount: parsedAmount,
       type,
-      category,
+      priority,
       status,
       date,
     };
@@ -287,26 +287,26 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
 
           {!isTransfer && (
             <div className="grid gap-1.5">
-              <Label id={categoryGroupId}>支出屬性</Label>
+              <Label id={priorityGroupId}>支出屬性</Label>
               <RadioGroup
-                value={category}
-                onValueChange={(v) => setCategory(v as TransactionCategory)}
-                aria-labelledby={categoryGroupId}
+                value={priority}
+                onValueChange={(v) => setPriority(v as TransactionPriority)}
+                aria-labelledby={priorityGroupId}
                 className="grid grid-cols-2 gap-2"
               >
                 <ChoiceCard
                   value="essential"
                   label="必要"
                   hint="必須支出"
-                  current={category}
-                  onSelect={setCategory}
+                  current={priority}
+                  onSelect={setPriority}
                 />
                 <ChoiceCard
                   value="non_essential"
                   label="非必要"
                   hint="可調整或省略"
-                  current={category}
-                  onSelect={setCategory}
+                  current={priority}
+                  onSelect={setPriority}
                 />
               </RadioGroup>
             </div>

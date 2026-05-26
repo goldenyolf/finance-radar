@@ -6,8 +6,10 @@ import { revalidatePath } from "next/cache";
 
 import { supabase } from "@/lib/supabase";
 
+import type { ExpenseCategory } from "@/lib/dashboard";
+
 export type TransactionType = "income" | "expense" | "transfer";
-export type TransactionCategory = "essential" | "non_essential";
+export type TransactionPriority = "essential" | "non_essential";
 export type TransactionStatus = "completed" | "upcoming";
 export type TransferDirection = "out" | "in";
 
@@ -17,7 +19,9 @@ export interface CreateTransactionInput {
   description: string;
   amount: number;
   type: Exclude<TransactionType, "transfer">;
-  category: TransactionCategory;
+  priority: TransactionPriority;
+  /** 花費大類；未提供時 server 端套用 'other' 預設值，由 DB 預設或這裡顯式填入。 */
+  category?: ExpenseCategory;
   status: TransactionStatus;
   date: string;
 }
@@ -128,7 +132,8 @@ export async function createTransaction(
     description: input.description.trim(),
     amount: input.amount,
     type: input.type,
-    category: input.category,
+    priority: input.priority,
+    category: input.category ?? "other",
     status: input.status,
     date: input.date,
   });
@@ -165,7 +170,8 @@ export async function createTransfer(
       description,
       amount: input.amount,
       type: "transfer",
-      category: "non_essential",
+      priority: "non_essential",
+      category: "other",
       status: input.status,
       date: input.date,
       transfer_group_id: groupId,
@@ -177,7 +183,8 @@ export async function createTransfer(
       description,
       amount: input.amount,
       type: "transfer",
-      category: "non_essential",
+      priority: "non_essential",
+      category: "other",
       status: input.status,
       date: input.date,
       transfer_group_id: groupId,

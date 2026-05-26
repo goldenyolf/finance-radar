@@ -21,8 +21,19 @@ export type AccountType = "bank" | "credit_card";
 
 export type TransactionTypeAll = "income" | "expense" | "transfer";
 export type TransactionStatus = "completed" | "upcoming";
-export type TransactionCategory = "essential" | "non_essential";
+/** 重要度標籤（前身為 TransactionCategory）。沿用 essential/non_essential 兩值。 */
+export type TransactionPriority = "essential" | "non_essential";
 export type TransferDirection = "out" | "in";
+
+/** 花費大類（snake_case，對應 DB CHECK constraint，前端顯示走 label map）。 */
+export type ExpenseCategory =
+  | "food_dining"
+  | "childcare_education"
+  | "eldercare"
+  | "home_living"
+  | "finance_insurance"
+  | "transport"
+  | "other";
 
 export type RecurringType = "income" | "expense";
 export type RecurringFrequency =
@@ -73,7 +84,8 @@ export interface TransactionRow {
   description: string | null;
   amount: number | string;
   type: TransactionTypeAll;
-  category: TransactionCategory | null;
+  priority: TransactionPriority | null;
+  category: ExpenseCategory | null;
   status: TransactionStatus;
   date: string;
   transfer_group_id?: string | null;

@@ -6,6 +6,12 @@ import {
 } from "@line/bot-sdk";
 
 import { supabase } from "@/lib/supabase";
+import {
+  classifyByKeyword,
+  EXPENSE_CATEGORY_LABEL,
+  type ExpenseCategory,
+} from "@/lib/expense-categories";
+import { classifyByLlm } from "@/lib/llm-classify";
 
 export const runtime = "nodejs";
 
@@ -118,6 +124,9 @@ async function handleEvent(
     return;
   }
 
+  const category = await classifyExpense(parsed.title);
+  const categoryLabel = EXPENSE_CATEGORY_LABEL[category];
+
   try {
     const { error } = await supabase.from("transactions").insert({
       user_id: DEFAULT_USER_ID,
@@ -125,7 +134,8 @@ async function handleEvent(
       description: parsed.title,
       amount: parsed.amount,
       type: "expense",
-      category: "non_essential",
+      priority: "non_essential",
+      category,
       status: "completed",
       date: todayInTaipei(),
     });
@@ -139,12 +149,23 @@ async function handleEvent(
     await replyText(
       client,
       replyToken,
-      `✅ 已記帳：${parsed.title} $${parsed.amount}（${parsed.accountLabel}）`
+      `✅ 已成功記帳：[${categoryLabel}] ${parsed.title} $${parsed.amount}（${parsed.accountLabel}）`
     );
   } catch (err) {
     console.error("[LINE webhook] Unexpected error:", err);
     await replyText(client, replyToken, "❌ 記帳失敗，請稍後再試或檢查系統日誌。");
   }
+}
+
+/**
+ * 兩段式分類：先用關鍵字（快、免費、deterministic），
+ * 命中 'other' 時若有 GEMINI_API_KEY 才打 LLM 補上。
+ */
+async function classifyExpense(title: string): Promise<ExpenseCategory> {
+  const keyword = classifyByKeyword(title);
+  if (keyword !== "other") return keyword;
+  const llm = await classifyByLlm(title);
+  return llm ?? "other";
 }
 
 async function replyText(
