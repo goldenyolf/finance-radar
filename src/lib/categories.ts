@@ -25,6 +25,14 @@ export interface CategoryRow {
   keywords: string;
   /** 每月預算上限；0 = 未設預算（pie chart 不畫進度條、LINE bot 不警告）。 */
   budget_monthly: number;
+  /**
+   * 固定支出 flag（房貸 / 保險 / 長照 / 居家水電 等綁死的錢）。
+   * 給「財務硬性負擔率」分析用：burdenRate = fixed / totalIncome。
+   * Seed 4 個 code 預設 true：childcare_education / eldercare /
+   * finance_insurance / home_living。其餘 false。DB 端有 INSERT trigger
+   * 自動依 code backfill。
+   */
+  is_fixed: boolean;
   created_at?: string;
 }
 

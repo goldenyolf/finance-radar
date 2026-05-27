@@ -6,6 +6,7 @@ import { BarChart3, Clock, GitMerge, TrendingUp } from "lucide-react";
 import { CashflowSankeyChart } from "@/components/dashboard/cashflow-sankey-chart";
 import { CrossMonthTrendChart } from "@/components/dashboard/cross-month-trend-chart";
 import { DailySpendChart } from "@/components/dashboard/daily-spend-chart";
+import { FinancialElasticity } from "@/components/dashboard/financial-elasticity";
 import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
 import { MonthNavigator } from "@/components/dashboard/month-navigator";
 import { TopMerchantsList } from "@/components/dashboard/top-merchants-list";
@@ -21,6 +22,7 @@ import type { CategoryRow } from "@/lib/categories";
 import { getCrossMonthTrendData } from "@/lib/cross-month-trend";
 import { buildDailySpendData } from "@/lib/daily-spend";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
+import { buildFinancialElasticity } from "@/lib/financial-elasticity";
 import { buildSankeyData } from "@/lib/sankey-data";
 import { getTopMerchantsData } from "@/lib/top-merchants";
 
@@ -76,6 +78,11 @@ export function AnalyticsMonthlyTab({
   const topMerchants = useMemo(
     () => getTopMerchantsData(transactions, monthDate),
     [transactions, monthDate]
+  );
+
+  const elasticity = useMemo(
+    () => buildFinancialElasticity(transactions, categories, monthDate),
+    [transactions, categories, monthDate]
   );
 
   function handleMonthChange(next: Date) {
@@ -210,7 +217,35 @@ export function AnalyticsMonthlyTab({
         </div>
       )}
 
-      {/* 4) 本月現金流向圖 — Sankey 視覺重，擺最下面當 deep-dive */}
+      {/* 4) ⚖️ 財務彈性分析 — 固定 vs 浮動 + tier 智囊；高階健康度指標 */}
+      {isMonthSwitching ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="mt-2 h-3 w-72" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-6 sm:grid-cols-[200px_minmax(0,1fr)] sm:items-center">
+              <Skeleton className="mx-auto h-48 w-48 rounded-full sm:mx-0" />
+              <div className="flex flex-col gap-4">
+                <Skeleton className="h-16 w-32" />
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                </div>
+              </div>
+            </div>
+            <Skeleton className="mt-6 h-20 w-full" />
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mb-6">
+          <FinancialElasticity data={elasticity} />
+        </div>
+      )}
+
+      {/* 5) 本月現金流向圖 — Sankey 視覺重，擺最下面當 deep-dive */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
