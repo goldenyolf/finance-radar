@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Clock, GitMerge } from "lucide-react";
+import { BarChart3, Clock, GitMerge } from "lucide-react";
 
 import { CashflowSankeyChart } from "@/components/dashboard/cashflow-sankey-chart";
+import { DailySpendChart } from "@/components/dashboard/daily-spend-chart";
 import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
 import { MonthNavigator } from "@/components/dashboard/month-navigator";
 import {
@@ -15,28 +16,38 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CategoryRow } from "@/lib/categories";
+import { buildDailySpendData } from "@/lib/daily-spend";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { buildSankeyData } from "@/lib/sankey-data";
 
-/** 月份切換時短暫顯示 skeleton 的視覺延遲（ms）— 跟原本同款 */
 const MONTH_SWITCH_DELAY_MS = 280;
 
 interface Props {
   transactions: TransactionRow[];
   accounts: AccountRow[];
-  categories?: CategoryRow[];
+  categories: CategoryRow[];
+  /** AnalyticsView 共用的選中日；用來在柱狀圖標出「使用者剛剛看過的那天」 */
+  selectedDate: string;
+  /** chart 點某日 → 跳到 daily tab 看該日明細 */
+  onDrillDownToDay: (iso: string) => void;
 }
 
 /**
- * 月度總覽 tab：MonthNavigator + 桑基圖 + 月度分類卡。
+ * 月度總覽 tab：MonthNavigator + 桑基圖 + 當月每日花費透視 + 月度分類卡。
  *
- * 自包含 monthDate state — 跟 DailyTab 完全獨立，使用者切 tab 各自的選擇
- * 都不會被洗掉（典型 SaaS dashboard 行為）。
+ * monthDate state 自包含 — 跟 selectedDate 解耦：
+ *   - monthDate 控制 Sankey / Pie 看哪個月
+ *   - selectedDate 是「使用者最後 drill 的那天」，跨 tab 用
+ *
+ * 柱狀圖點擊：只觸發 onDrillDownToDay → 父層 setSelectedDate + setTab("daily")。
+ * Monthly 自己這層不維護「當前選哪天」的概念（沒明細區，不需要）。
  */
 export function AnalyticsMonthlyTab({
   transactions,
   accounts,
   categories,
+  selectedDate,
+  onDrillDownToDay,
 }: Props) {
   const [monthDate, setMonthDate] = useState<Date>(() => new Date());
   const [isMonthSwitching, setIsMonthSwitching] = useState(false);
@@ -44,6 +55,11 @@ export function AnalyticsMonthlyTab({
   const sankeyData = useMemo(
     () => buildSankeyData(transactions, accounts, monthDate, categories),
     [transactions, accounts, monthDate, categories]
+  );
+
+  const dailyData = useMemo(
+    () => buildDailySpendData(transactions, categories, monthDate),
+    [transactions, categories, monthDate]
   );
 
   function handleMonthChange(next: Date) {
@@ -68,7 +84,67 @@ export function AnalyticsMonthlyTab({
         />
       </div>
 
-      <Card className="mb-8">
+      {/* 1) 當月每日花費透視 — 最常看的「哪天花最多」daily breakdown */}
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">當月每日花費透視</CardTitle>
+          </div>
+          <CardDescription className="mt-1">
+            按日堆疊看花最多的那天；點任一柱 → 自動跳到「單日透視」看當天細項。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isMonthSwitching ? (
+            <Skeleton className="h-72 w-full" />
+          ) : (
+            <DailySpendChart
+              data={dailyData}
+              /* 只有當 selectedDate 落在當前月份才高亮，避免「使用者切到 4 月但
+                 selectedDate 是 5/15」這種錯亂的視覺 */
+              selectedDate={
+                selectedDate.startsWith(monthKeyFromDate(monthDate))
+                  ? selectedDate
+                  : null
+              }
+              onDateSelect={onDrillDownToDay}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 2) 本月花費分類 — 圓餅圖 + 分類預算消耗 */}
+      {isMonthSwitching ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="mt-2 h-3 w-72" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
+              <Skeleton className="h-72 w-full" />
+              <div className="flex flex-col gap-3">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mb-6">
+          <MonthCategoryCard
+            transactions={transactions}
+            accounts={accounts}
+            now={monthDate}
+            categories={categories}
+          />
+        </div>
+      )}
+
+      {/* 3) 本月現金流向圖 — Sankey 視覺重，擺最下面當 deep-dive */}
+      <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
             <GitMerge className="h-4 w-4 text-muted-foreground" />
@@ -86,32 +162,12 @@ export function AnalyticsMonthlyTab({
           )}
         </CardContent>
       </Card>
-
-      {isMonthSwitching ? (
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="mt-2 h-3 w-72" />
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
-              <Skeleton className="h-72 w-full" />
-              <div className="flex flex-col gap-3">
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <MonthCategoryCard
-          transactions={transactions}
-          accounts={accounts}
-          now={monthDate}
-          categories={categories}
-        />
-      )}
     </>
   );
+}
+
+/** "2026-05" prefix — 拿來比對 selectedDate 是否落在當前 monthDate 的月份內 */
+function monthKeyFromDate(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
 }

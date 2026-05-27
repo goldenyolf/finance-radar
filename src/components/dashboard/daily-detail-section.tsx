@@ -1,15 +1,23 @@
 "use client";
 
 import { useMemo } from "react";
-import { CalendarDays, Receipt, Wallet } from "lucide-react";
+import { motion } from "framer-motion";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  Wallet,
+} from "lucide-react";
 
-import { Money } from "@/components/ui/money";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Money } from "@/components/ui/money";
 import type { CategoryRow } from "@/lib/categories";
 import {
   buildDailyDetail,
@@ -18,85 +26,149 @@ import {
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 
 interface Props {
-  /** "2026-05-26" — null 表示沒任何選中，UI 走「請點上方圖表」hint */
-  date: string | null;
+  /** "YYYY-MM-DD" 必填 — 父層永遠提供值，無 null 狀態 */
+  date: string;
+  /** "YYYY-MM-DD" 今天（Taipei）— 由父層產生，避免 SSR / client 時區漂移 */
+  today: string;
+  /** 使用者按 < / > / 「今天」時觸發 */
+  onDateChange: (next: string) => void;
   transactions: TransactionRow[];
   accounts: AccountRow[];
   categories: CategoryRow[];
 }
 
 /**
- * 鑽取清單：根據 selectedDate 把當天 expense 按 category 分組成卡片。
+ * 每日分類帳本 — 含日期 navigator (< / >) + 當日花費分組卡片。
  *
- * 三種狀態：
- *   1) date = null            → 提示「點上方任一柱查看細項」
- *   2) date 存在但 groups 空 → 「太棒了！這天沒有任何花費」
- *   3) 正常                    → render 多張 category 卡
+ * 兩種顯示狀態：
+ *   1) 當天 0 花費 → 🎉 empty state
+ *   2) 正常       → 多張 category card
  *
- * 過濾邏輯 (type=expense, status=completed) 跟 buildDailySpendData 一致 —
- * 圖表跟細項清單看到的「當日總額」永遠對得起來。
+ * 兩種狀態都共用同一條 navigator 列（< 2026/05/26 (二) > 今天）— 使用者
+ * 隨時可以用 chevron 切日，不會因為今天沒花費而被困住。
  */
 export function DailyDetailSection({
   date,
+  today,
+  onDateChange,
   transactions,
   accounts,
   categories,
 }: Props) {
-  const detail = useMemo(() => {
-    if (!date) return null;
-    return buildDailyDetail(transactions, accounts, categories, date);
-  }, [date, transactions, accounts, categories]);
+  const detail = useMemo(
+    () => buildDailyDetail(transactions, accounts, categories, date),
+    [date, transactions, accounts, categories]
+  );
 
-  // 狀態 1：沒選日期
-  if (!detail) {
-    return (
-      <Card className="mt-6">
-        <CardContent className="px-6 py-10 text-center text-sm text-muted-foreground">
-          <Receipt className="mx-auto mb-3 size-6 opacity-50" />
-          點上方任一柱子查看當天細項花費
-        </CardContent>
-      </Card>
-    );
+  const isToday = date === today;
+  const isFutureLocked = date >= today; // 不允許看未來（仍可手動跳，但 > 鈕擋）
+
+  function goPrev() {
+    onDateChange(shiftIsoDay(date, -1));
+  }
+  function goNext() {
+    if (isFutureLocked) return;
+    onDateChange(shiftIsoDay(date, 1));
+  }
+  function goToday() {
+    onDateChange(today);
   }
 
-  // 狀態 2：選了日期但當天沒花費
-  if (detail.groups.length === 0) {
-    return (
-      <Card className="mt-6 border-emerald-500/20 bg-emerald-500/[0.03]">
-        <CardContent className="px-6 py-10 text-center">
-          <p className="text-2xl">🎉</p>
-          <p className="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-            太棒了！這天沒有任何花費支出。
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {formatDateLabel(detail.isoDate)}
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
+  const totalLabel = detail.groups.reduce((n, g) => n + g.items.length, 0);
+  const hasSpend = detail.groups.length > 0;
 
-  // 狀態 3：正常 — 顯示總覽 chip + N 張分類卡
   return (
-    <section aria-label="當日細項花費" className="mt-6 flex flex-col gap-4">
-      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <div className="flex items-center gap-1.5 text-sm font-medium">
-          <CalendarDays className="size-4 text-muted-foreground" />
-          {formatDateLabel(detail.isoDate)}
+    <section aria-label="當日細項花費" className="flex flex-col gap-4">
+      {/* Navigator: < 日期 > [今天] | 右側合計 chip */}
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex items-center gap-1.5">
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 400, damping: 22 }}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="前一天"
+              onClick={goPrev}
+              className="size-8 rounded-full"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+          </motion.div>
+
+          <span className="flex items-center gap-1.5 min-w-[10rem] justify-center text-sm font-semibold tabular-nums">
+            <CalendarDays className="size-3.5 text-muted-foreground" />
+            {formatDateLabel(date)}
+          </span>
+
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 400, damping: 22 }}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="後一天"
+              onClick={goNext}
+              disabled={isFutureLocked}
+              className="size-8 rounded-full disabled:opacity-30"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </motion.div>
+
+          {!isToday && (
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 400, damping: 22 }}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={goToday}
+                className="ml-1 h-8 gap-1.5 rounded-full text-xs"
+              >
+                <RotateCcw className="size-3.5" />
+                今天
+              </Button>
+            </motion.div>
+          )}
         </div>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          ・共 {detail.groups.reduce((n, g) => n + g.items.length, 0)} 筆
-        </span>
-        <span className="ml-auto text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">
-          當日合計 <Money value={detail.total} />
-        </span>
+
+        {hasSpend && (
+          <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted-foreground tabular-nums">
+            共 {totalLabel} 筆 · 合計
+            <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
+              <Money value={detail.total} />
+            </span>
+          </span>
+        )}
       </header>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {detail.groups.map((g) => (
-          <CategoryGroupCard key={g.categoryName} group={g} />
-        ))}
-      </div>
+      {/* Body — empty state 或 N 張分類卡 */}
+      {hasSpend ? (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {detail.groups.map((g) => (
+            <CategoryGroupCard key={g.categoryName} group={g} />
+          ))}
+        </div>
+      ) : (
+        <Card className="border-emerald-500/20 bg-emerald-500/[0.03]">
+          <CardContent className="px-6 py-10 text-center">
+            <p className="text-2xl">🎉</p>
+            <p className="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+              太棒了！這天沒有任何花費支出。
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </section>
   );
 }
@@ -162,4 +234,15 @@ function formatDateLabel(iso: string): string {
     ? ""
     : ` (${WEEKDAY_ZH[date.getDay()]})`;
   return `${y}/${m}/${d}${weekday}`;
+}
+
+/** "2026-05-26" + delta 天 → "2026-05-27"。用 setDate 自動處理跨月跨年 */
+function shiftIsoDay(iso: string, delta: number): string {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + delta);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
