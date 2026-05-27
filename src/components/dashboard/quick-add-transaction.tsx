@@ -237,10 +237,17 @@ export function QuickAddTransaction({ accounts }: Props) {
             onValueChange={(v) => setType(v as TransactionType)}
           >
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="expense" className="gap-1.5">
+              {/* active 時依 type 切換配色：expense rose / income emerald / transfer 中性 — 一眼看出當前模式 */}
+              <TabsTrigger
+                value="expense"
+                className="gap-1.5 data-[state=active]:text-rose-600 dark:data-[state=active]:text-rose-400"
+              >
                 <TrendingDown className="size-3.5" /> 支出
               </TabsTrigger>
-              <TabsTrigger value="income" className="gap-1.5">
+              <TabsTrigger
+                value="income"
+                className="gap-1.5 data-[state=active]:text-emerald-600 dark:data-[state=active]:text-emerald-400"
+              >
                 <TrendingUp className="size-3.5" /> 收入
               </TabsTrigger>
               <TabsTrigger value="transfer" className="gap-1.5">
@@ -296,7 +303,8 @@ export function QuickAddTransaction({ accounts }: Props) {
             </div>
           </div>
 
-          {!isTransfer && (
+          {/* 支出屬性只對 expense 有意義 — income 是「進來的錢」沒有必要 / 非必要之分 */}
+          {type === "expense" && (
             <div className="grid gap-1.5">
               <Label id={priorityGroupId}>支出屬性</Label>
               <RadioGroup
@@ -464,7 +472,16 @@ export function QuickAddTransaction({ accounts }: Props) {
             >
               取消
             </Button>
-            <Button type="submit" disabled={pending || disabled}>
+            {/* income 模式 → 主按鈕綠色 SaaS 感；expense / transfer 維持預設 primary */}
+            <Button
+              type="submit"
+              disabled={pending || disabled}
+              className={
+                type === "income"
+                  ? "bg-emerald-600 text-white hover:bg-emerald-600/90 dark:bg-emerald-500 dark:hover:bg-emerald-500/90"
+                  : undefined
+              }
+            >
               {pending ? (
                 <>
                   <Loader2Icon className="size-3.5 animate-spin" />
@@ -472,6 +489,8 @@ export function QuickAddTransaction({ accounts }: Props) {
                 </>
               ) : isTransfer ? (
                 "建立轉帳"
+              ) : type === "income" ? (
+                "新增收入"
               ) : (
                 "新增交易"
               )}

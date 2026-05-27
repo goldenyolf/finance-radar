@@ -79,27 +79,47 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
     return () => clearTimeout(timer);
   }, [query]);
 
-  // 查詢觸發：有 query 走 ilike，沒 query 走「最新 200 筆」
+  /*
+    分兩條路：
+    (a) 沒搜尋 → 直接 mirror RSC 的 initial。這樣 router.refresh() 後（例如
+        edit dialog 把 expense 改成 income）initial 重撈，這裡也跟上，金額
+        正負號 / 顏色就會即時翻轉。原本只 listen [debounced] 不 listen
+        initial，導致 UI state 變僵屍。
+    (b) 有搜尋 → 走 supabase ilike 即時查詢，跟原本一樣。
+
+    用 [debounced, initial] 雙 deps：RSC re-render 會給新的 initial 物件
+    reference → (a) 路徑會重跑同步；搜尋字串變動 → (b) 路徑重查。
+  */
   useEffect(() => {
+    if (!debounced) {
+      setLoading(false);
+      setError(null);
+      setResults(
+        initial.map((t) => ({
+          id: t.id,
+          description: t.description,
+          amount: t.amount,
+          date: t.date,
+          account_id: t.account_id,
+          category: t.category,
+          type: t.type,
+        }))
+      );
+      return;
+    }
+
     const token = ++reqTokenRef.current;
     setLoading(true);
     setError(null);
 
     (async () => {
       const supabase = createClient();
-      let queryBuilder = supabase
+      const { data, error: err } = await supabase
         .from("transactions")
-        .select(
-          "id, description, amount, date, account_id, category, type"
-        )
+        .select("id, description, amount, date, account_id, category, type")
+        .ilike("description", `%${debounced}%`)
         .order("date", { ascending: false })
         .limit(200);
-
-      if (debounced) {
-        queryBuilder = queryBuilder.ilike("description", `%${debounced}%`);
-      }
-
-      const { data, error: err } = await queryBuilder;
       if (token !== reqTokenRef.current) return;
 
       if (err) {
@@ -110,7 +130,7 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
       }
       setLoading(false);
     })();
-  }, [debounced]);
+  }, [debounced, initial]);
 
   const expenseTotal = useMemo(
     () =>
@@ -276,6 +296,7 @@ function TransactionRow({ row, accounts, lookup, categories }: RowProps) {
           accountId={row.account_id}
           expenseCategory={row.category as ExpenseCategory | null}
           isTransfer={row.type === "transfer"}
+          transactionType={row.type as "income" | "expense" | "transfer"}
           accounts={accounts}
           categories={categories}
         />

@@ -276,6 +276,13 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
                           accountId={item.accountId ?? null}
                           expenseCategory={item.expenseCategory ?? null}
                           isTransfer={item.isTransfer ?? false}
+                          transactionType={
+                            item.isTransfer
+                              ? "transfer"
+                              : item.signedAmount > 0
+                                ? "income"
+                                : "expense"
+                          }
                           accounts={allAccounts}
                           categories={categories}
                         />

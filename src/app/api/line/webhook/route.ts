@@ -71,6 +71,38 @@ type ParsedEntry = {
  *      並排除緊鄰字母 / 中文 / 星號的數字（避免 1TB*2 的 1 / 2 被誤判金額）
  *   3) 標題：剩下的文字 trim
  */
+/* ─────────────── Income vs Expense intent detection ─────────────── */
+
+/**
+ * 從訊息語意判斷這筆是「收入」還是「支出」。
+ *
+ * 策略：關鍵字優先（fast + deterministic + 零成本），LLM 是 overkill 因為這些
+ * 詞彙在中文記帳場景非常 unambiguous：「領到 3000」「補助 5000」「薪水 50k」
+ * 一律是錢進來；不命中 → expense（保留原本 default 行為）。
+ *
+ * 例：
+ *   "領到補助 3000"  → income
+ *   "薪水 50000"     → income
+ *   "花了 300"       → expense (default)
+ *   "午餐 120"       → expense
+ */
+const INCOME_KEYWORDS = [
+  // 動詞 — 主動拿到
+  "領到", "領了", "收到", "收了", "拿到", "拿了", "得到",
+  "入帳", "存入", "進帳", "匯入",
+  // 名詞 — 錢的來源
+  "薪水", "薪資", "工資", "年終", "獎金", "紅包",
+  "補助", "補貼", "津貼", "退稅", "退款",
+  "利息", "股息", "配息", "回饋",
+];
+
+function detectTransactionType(text: string): "income" | "expense" {
+  for (const kw of INCOME_KEYWORDS) {
+    if (text.includes(kw)) return "income";
+  }
+  return "expense";
+}
+
 function parseExpenseMessage(text: string): ParsedEntry | null {
   let working = text.trim();
   if (!working) return null;
@@ -436,17 +468,61 @@ async function handleTextMessage(
   const goalHandled = await tryGoalDeposit(text, userId, client, replyToken, replyPrefix);
   if (goalHandled) return;
 
-  // 2. 走原本的支出記帳
+  // 2. 走記帳 flow — 先判斷 income vs expense（純關鍵字、零成本）
+  const txType = detectTransactionType(text);
   const parsed = parseExpenseMessage(text);
   if (!parsed) {
     await replyText(
       client,
       replyToken,
-      `${replyPrefix}💡 記帳格式錯誤囉！\n• 個人帳戶：午餐 120\n• 家庭共同戶：共同 牛奶 80`
+      `${replyPrefix}💡 記帳格式錯誤囉！\n• 支出：午餐 120 / 共同 牛奶 80\n• 收入：薪水 50000 / 領到補助 3000`
     );
     return;
   }
 
+  // Income：跳過 category 分類（income 沒分類概念），category 寫 null；
+  // Expense：走原本的 LLM/keyword 分類 + 預算警報
+  if (txType === "income") {
+    try {
+      const { error } = await db().from("transactions").insert({
+        user_id: userId,
+        account_id: parsed.accountId,
+        description: parsed.title,
+        amount: parsed.amount,
+        type: "income",
+        priority: "non_essential", // income 此欄無意義，給預設值避免 NOT NULL
+        category: null,
+        status: "completed",
+        date: todayInTaipei(),
+      });
+
+      if (error) {
+        console.error("[LINE webhook] income insert error:", error);
+        await replyText(
+          client,
+          replyToken,
+          `${replyPrefix}❌ 記錄收入失敗，請稍後再試。`
+        );
+        return;
+      }
+
+      await replyText(
+        client,
+        replyToken,
+        `${replyPrefix}💰 已記錄收入：${parsed.title} +$${parsed.amount}（${parsed.accountLabel}）`
+      );
+    } catch (err) {
+      console.error("[LINE webhook] income unexpected error:", err);
+      await replyText(
+        client,
+        replyToken,
+        `${replyPrefix}❌ 記錄收入失敗，請稍後再試。`
+      );
+    }
+    return;
+  }
+
+  // ── Expense flow（原本邏輯） ──
   const lookup = buildCategoryLookup(userCategories);
   const category = await classifyExpense(parsed.title, userCategories);
   const categoryLabel = resolveCategoryLabel(category, lookup);

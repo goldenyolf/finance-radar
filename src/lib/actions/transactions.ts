@@ -48,6 +48,8 @@ export interface UpdateTransactionInput {
   accountId?: string;
   /** 可選；變更才傳。Transfer 沒有花費分類概念，這欄位對 transfer 不生效。 */
   category?: ExpenseCategory;
+  /** 可選；只允許 income ↔ expense 互改。Transfer row 不接受 type 變更（會破壞配對）。 */
+  type?: Exclude<TransactionType, "transfer">;
 }
 
 export async function updateTransaction(
@@ -72,6 +74,14 @@ export async function updateTransaction(
   const isTransfer =
     existing.type === "transfer" && Boolean(existing.transfer_group_id);
 
+  // Transfer 不接受 type 變更：要把 transfer 轉成 income/expense 應該走「刪除重建」流程
+  if (isTransfer && input.type !== undefined) {
+    return {
+      ok: false,
+      error: "轉帳項目不能直接改成收入/支出，請刪除後重新建立",
+    };
+  }
+
   // 1) description / amount：transfer 的話兩腿一起更新；否則只動本筆
   const sharedPatch = {
     description: input.description.trim(),
@@ -91,12 +101,28 @@ export async function updateTransaction(
     if (error) return { ok: false, error: error.message };
   }
 
-  // 2) accountId / category：只對非 transfer row 生效，且只更新這一筆
+  // 2) accountId / category / type：只對非 transfer row 生效，且只更新這一筆
   //    避免改 transfer 帳戶導致兩腿錯位；分類對 transfer 也無意義。
+  //
+  //    type 變更要連動 category：切到 income → category 強制 null（income 沒分類概念）；
+  //    切到 expense 但 caller 沒傳 category → 給 'other' 預設，避免 NOT NULL constraint。
   if (!isTransfer) {
-    const rowPatch: Record<string, string> = {};
+    const rowPatch: Record<string, string | null> = {};
     if (input.accountId !== undefined) rowPatch.account_id = input.accountId;
-    if (input.category !== undefined) rowPatch.category = input.category;
+
+    if (input.type !== undefined) {
+      rowPatch.type = input.type;
+      if (input.type === "income") {
+        rowPatch.category = null; // 強制清掉舊的 expense category
+      } else if (input.category === undefined) {
+        rowPatch.category = "other"; // expense 但沒傳 → 防止 NOT NULL
+      }
+    }
+    // 顯式傳了 category 就以 caller 為準（除非上面已被 income 蓋成 null）
+    if (input.category !== undefined && rowPatch.category === undefined) {
+      rowPatch.category = input.category;
+    }
+
     if (Object.keys(rowPatch).length > 0) {
       const { error } = await supabase
         .from("transactions")
@@ -153,13 +179,15 @@ export async function createTransaction(
 
   const supabase = await createClient();
   // user_id 走 DB DEFAULT auth.uid()
+  // income 沒有「花費分類」概念 → 寫 null；expense 預設 'other'
+  const category = input.type === "income" ? null : (input.category ?? "other");
   const { error } = await supabase.from("transactions").insert({
     account_id: input.accountId,
     description: input.description.trim(),
     amount: input.amount,
     type: input.type,
     priority: input.priority,
-    category: input.category ?? "other",
+    category,
     status: input.status,
     date: input.date,
   });

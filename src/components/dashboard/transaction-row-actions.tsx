@@ -2,7 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
-import { Loader2Icon, Pencil, Trash2 } from "lucide-react";
+import {
+  Loader2Icon,
+  Pencil,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   deleteTransaction,
   updateTransaction,
@@ -36,6 +43,9 @@ import {
   type ExpenseCategory,
 } from "@/lib/expense-categories";
 
+/** Edit dialog 允許在 income ↔ expense 之間切；transfer 鎖定（要改請刪除重建） */
+type EditableType = "income" | "expense";
+
 interface Props {
   transactionId: string;
   title: string;
@@ -43,6 +53,8 @@ interface Props {
   accountId: string | null;
   expenseCategory: ExpenseCategory | null;
   isTransfer: boolean;
+  /** 該筆原本的 type — 預填 dialog 的 income/expense tab；transfer 走鎖定狀態 */
+  transactionType?: "income" | "expense" | "transfer";
   accounts: AccountRow[];
   /** 動態 categories — 編輯 dialog 的分類下拉用使用者自訂清單；省略時走靜態 7 大類。 */
   categories?: CategoryRow[];
@@ -59,9 +71,14 @@ export function TransactionRowActions({
   accountId,
   expenseCategory,
   isTransfer,
+  transactionType,
   accounts,
   categories,
 }: Props) {
+  // 推導初始 editable type：transfer 不會被使用者改（dialog 鎖定 income/expense tab）
+  // 沒傳 transactionType 時 fallback：有 expenseCategory → expense；否則看 transfer
+  const initialEditableType: EditableType =
+    transactionType === "income" ? "income" : "expense";
   // 動態下拉：只列出 type='expense' 且有穩定 code 的分類；自訂分類（code=null）
   // 暫不放這裡，因為 transactions.category 還是 ExpenseCategory enum。Phase 5
   // 把欄位改成 category_id UUID 之後，整段就可以平鋪所有 categories。
@@ -90,6 +107,7 @@ export function TransactionRowActions({
   const [draftCategory, setDraftCategory] = useState<ExpenseCategory>(
     expenseCategory ?? "other"
   );
+  const [draftType, setDraftType] = useState<EditableType>(initialEditableType);
 
   const titleId = useId();
   const amountId = useId();
@@ -119,6 +137,7 @@ export function TransactionRowActions({
       setDraftAmount(String(amount));
       setDraftAccountId(accountId ?? "");
       setDraftCategory(expenseCategory ?? "other");
+      setDraftType(initialEditableType);
     }
   }
 
@@ -133,10 +152,15 @@ export function TransactionRowActions({
       toast.error("請輸入項目名稱");
       return;
     }
-    // Transfer row 不送 accountId / category（server action 也會擋，這裡先擋一層）
+    // Transfer row 不送 accountId / category / type（server action 也會擋，這裡先擋一層）
     const accountChanged = !isTransfer && draftAccountId !== (accountId ?? "");
+    const typeChanged = !isTransfer && draftType !== initialEditableType;
+    // income → 強制清 category，不傳 category（server 會自動 null）
+    // expense → 只在 category 真的變動才傳
     const categoryChanged =
-      !isTransfer && draftCategory !== (expenseCategory ?? "other");
+      !isTransfer &&
+      draftType === "expense" &&
+      draftCategory !== (expenseCategory ?? "other");
 
     startSaveTransition(async () => {
       const result = await updateTransaction({
@@ -145,6 +169,7 @@ export function TransactionRowActions({
         amount: parsed,
         accountId: accountChanged ? draftAccountId : undefined,
         category: categoryChanged ? draftCategory : undefined,
+        type: typeChanged ? draftType : undefined,
       });
       if (!result.ok) {
         toast.error("更新失敗", { description: result.error });
@@ -201,6 +226,29 @@ export function TransactionRowActions({
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {/* type 切換：transfer 鎖定，income/expense 自由互改；切到 income 會自動隱藏「花費類型」欄位（語意上 income 沒分類） */}
+            {!isTransfer && (
+              <Tabs
+                value={draftType}
+                onValueChange={(v) => setDraftType(v as EditableType)}
+              >
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger
+                    value="expense"
+                    className="gap-1.5 data-[state=active]:text-rose-600 dark:data-[state=active]:text-rose-400"
+                  >
+                    <TrendingDown className="size-3.5" /> 支出
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="income"
+                    className="gap-1.5 data-[state=active]:text-emerald-600 dark:data-[state=active]:text-emerald-400"
+                  >
+                    <TrendingUp className="size-3.5" /> 收入
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+
             <div className="grid gap-1.5">
               <Label htmlFor={titleId}>項目名稱</Label>
               <Input
@@ -264,6 +312,8 @@ export function TransactionRowActions({
                   )}
                 </div>
 
+                {/* income 沒有「花費類型」概念 → 整段隱藏；切回 expense 時自動回來 */}
+                {draftType === "expense" && (
                 <div className="grid gap-1.5">
                   <Label htmlFor={categoryFieldId}>花費類型</Label>
                   <Select
@@ -284,6 +334,7 @@ export function TransactionRowActions({
                     </SelectContent>
                   </Select>
                 </div>
+                )}
               </>
             )}
 
