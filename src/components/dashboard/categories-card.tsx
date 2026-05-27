@@ -236,16 +236,35 @@ function CategoryRowItem({ category, onEdit, onDelete, deleting }: RowProps) {
       : null;
 
   return (
-    <li className="group grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md px-2 py-2.5 hover:bg-muted/40">
+    <li
+      /*
+        改 grid 為 [color | 主體內容 | actions]，actions 永遠保留 56px 版位（行動版
+        永遠顯示，桌面 hover-reveal）。主體內容用 flex-col 直向堆疊「名稱列 / 預算 /
+        關鍵字」三段；之前單行擠 name + 預設 badge + type + 預算 → 窄螢幕完全崩潰。
+      */
+      className="group grid grid-cols-[auto_1fr_auto] items-start gap-x-3 gap-y-1 rounded-lg border border-foreground/5 bg-card px-3 py-2.5 hover:bg-muted/40 sm:border-transparent sm:bg-transparent sm:p-2"
+    >
       <span
         aria-hidden
-        className="inline-block size-4 shrink-0 rounded-md ring-1 ring-foreground/10"
+        className="mt-1 inline-block size-4 shrink-0 rounded-md ring-1 ring-foreground/10"
         style={{ backgroundColor: category.color }}
       />
 
-      <div className="min-w-0">
-        <p className="flex items-baseline gap-2 text-sm">
-          <span className="truncate font-semibold">{category.name}</span>
+      <div className="min-w-0 space-y-1">
+        {/* 名稱列：flex-wrap 讓 badge / type chip 在窄螢幕自動換行不擠壓 */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-sm font-semibold break-words">
+            {category.name}
+          </span>
+          <span
+            className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${
+              category.type === "expense"
+                ? "bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300"
+                : "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300"
+            }`}
+          >
+            {category.type === "expense" ? "支出" : "收入"}
+          </span>
           {isBuiltIn && (
             <span
               title="預設分類，code 不可改、不可刪"
@@ -255,25 +274,25 @@ function CategoryRowItem({ category, onEdit, onDelete, deleting }: RowProps) {
               預設
             </span>
           )}
-          <span className="text-xs text-muted-foreground">
-            · {category.type === "expense" ? "支出" : "收入"}
-          </span>
-          {budgetLabel && (
-            <span className="text-[11px] tabular-nums text-emerald-700 dark:text-emerald-400">
-              · {budgetLabel}
-            </span>
-          )}
-        </p>
-        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+        </div>
+
+        {budgetLabel && (
+          <p className="text-[11px] tabular-nums text-emerald-700 dark:text-emerald-400">
+            {budgetLabel}
+          </p>
+        )}
+
+        <p className="truncate text-[11px] text-muted-foreground">
           {keywordPreview}
         </p>
       </div>
 
-      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      {/* Actions：行動版永遠顯示（沒有 hover），sm+ 才走 hover-reveal */}
+      <div className="flex items-center gap-0.5 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         <Button
           type="button"
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           onClick={onEdit}
           aria-label={`編輯 ${category.name}`}
           className="text-muted-foreground hover:text-foreground"
@@ -283,7 +302,7 @@ function CategoryRowItem({ category, onEdit, onDelete, deleting }: RowProps) {
         <Button
           type="button"
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           onClick={onDelete}
           disabled={deleting || isBuiltIn}
           aria-label={`刪除 ${category.name}`}

@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Loader2Icon, Search } from "lucide-react";
 
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
+import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import { Input } from "@/components/ui/input";
 import { getAccountLabel } from "@/lib/account-display";
 import {
@@ -133,8 +134,10 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
           id={searchId}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="輸入關鍵字，例如：尿布、托育、午餐（留空顯示最新 200 筆）"
-          className="h-11 pl-9 text-base"
+          /* 行動版簡短版；sm+ 才補完整 hint。pr-10 保留右側 loading spinner 空間 */
+          placeholder="搜尋帳目"
+          aria-label="搜尋帳目（留空顯示最近 200 筆）"
+          className="h-11 truncate pr-10 pl-9 text-base"
           autoComplete="off"
           spellCheck={false}
         />
@@ -142,6 +145,9 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
           <Loader2Icon className="absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
         )}
       </div>
+      <p className="-mt-2 hidden text-[11px] text-muted-foreground sm:block">
+        例：尿布、托育、午餐；留空顯示最近 200 筆。
+      </p>
 
       {hasQuery && !loading && !error && results.length > 0 && (
         <div className="rounded-lg bg-foreground/[0.04] px-4 py-3 ring-1 ring-foreground/10">
@@ -186,6 +192,7 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
               row={r}
               accounts={accounts}
               lookup={lookup}
+              categories={categories}
             />
           ))}
         </ul>
@@ -198,9 +205,10 @@ interface RowProps {
   row: SearchRow;
   accounts: AccountRow[];
   lookup: CategoryLookup | null;
+  categories?: CategoryRow[];
 }
 
-function TransactionRow({ row, accounts, lookup }: RowProps) {
+function TransactionRow({ row, accounts, lookup, categories }: RowProps) {
   const accName = getAccountLabel(
     row.account_id,
     accounts.find((a) => a.id === row.account_id)?.name
@@ -215,8 +223,15 @@ function TransactionRow({ row, accounts, lookup }: RowProps) {
   const sign = isExpense ? "−" : row.type === "income" ? "+" : "";
 
   return (
-    <li className="grid grid-cols-[auto_1fr_auto] items-start gap-3 rounded-md px-2 py-2 hover:bg-muted/40">
-      <span className="mt-0.5 inline-block w-20 shrink-0 text-xs tabular-nums text-muted-foreground">
+    <li
+      /*
+        4-column grid 跟 BoardCard 同款：date | title+meta | amount | actions(3rem)
+        actions slot 永遠保留版位，行動版直接顯示按鈕；md+ 走 hover-reveal
+        （由 TransactionRowActions 內部控制）。
+      */
+      className="group grid grid-cols-[auto_1fr_auto_3rem] items-start gap-x-2 gap-y-1 rounded-md px-2 py-2 hover:bg-muted/40 sm:gap-x-3"
+    >
+      <span className="mt-0.5 inline-block w-16 shrink-0 text-xs tabular-nums text-muted-foreground sm:w-20">
         {formatDateShort(row.date)}
       </span>
 
@@ -252,6 +267,19 @@ function TransactionRow({ row, accounts, lookup }: RowProps) {
         {sign}
         {formatCurrency(num(row.amount))}
       </span>
+
+      <div className="flex min-h-7 items-center justify-end">
+        <TransactionRowActions
+          transactionId={row.id}
+          title={row.description ?? "（無說明）"}
+          amount={num(row.amount)}
+          accountId={row.account_id}
+          expenseCategory={row.category as ExpenseCategory | null}
+          isTransfer={row.type === "transfer"}
+          accounts={accounts}
+          categories={categories}
+        />
+      </div>
     </li>
   );
 }

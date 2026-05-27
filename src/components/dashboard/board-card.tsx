@@ -224,7 +224,14 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
                 return (
                   <li
                     key={item.id}
-                    className="group grid grid-cols-[auto_1fr_auto] items-start gap-3 rounded-md px-1.5 py-1.5 hover:bg-muted/50"
+                    /*
+                      4-column grid：chip | title | amount | actions(reserved)
+                      把 actions 從 amount slot 拆出來、固定寬，這樣 recurring（無 actions）
+                      跟 transaction（有 actions）兩種列的金額右邊界對齊在同一條線上。
+                      之前 actions 跟金額擠在第三欄 auto 寬，導致同條清單裡有/無 actions
+                      的列金額位置會跳掉。
+                    */
+                    className="group grid grid-cols-[auto_1fr_auto_3rem] items-start gap-x-2 gap-y-1 rounded-md px-1.5 py-1.5 hover:bg-muted/50 sm:gap-x-3"
                   >
                     <span
                       className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none ring-1 ${CATEGORY_STYLE[item.category]}`}
@@ -245,20 +252,21 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
                         )}
                       </p>
                     </div>
-                    <div className="flex items-start gap-1">
-                      <div className="flex flex-col items-end gap-0.5">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span
+                        className={`text-sm font-semibold tabular-nums ${amountToneClass(item)}`}
+                      >
+                        {signedFormat(item.signedAmount)}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                         <span
-                          className={`text-sm font-semibold tabular-nums ${amountToneClass(item)}`}
-                        >
-                          {signedFormat(item.signedAmount)}
-                        </span>
-                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <span
-                            className={`inline-block size-1.5 rounded-full ${STATUS_DOT[item.status]}`}
-                          />
-                          {item.status}
-                        </span>
-                      </div>
+                          className={`inline-block size-1.5 rounded-full ${STATUS_DOT[item.status]}`}
+                        />
+                        {item.status}
+                      </span>
+                    </div>
+                    {/* Actions slot 永遠存在（48px 寬），recurring 列空著但保留版位 */}
+                    <div className="flex min-h-7 items-center justify-end">
                       {rawId && (
                         <TransactionRowActions
                           transactionId={rawId}

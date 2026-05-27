@@ -163,7 +163,8 @@ export function TransactionRowActions({
 
   return (
     <>
-      <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+      {/* 行動版：永久顯示（沒有 hover 概念）；md+：走 hover-reveal 保持桌面乾淨 */}
+      <div className="flex items-center gap-0.5 transition-opacity duration-150 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
         <Button
           type="button"
           variant="ghost"

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeftRight } from "lucide-react";
 import { useTheme } from "next-themes";
 import { ResponsiveContainer, Sankey, Tooltip } from "recharts";
 
@@ -72,8 +73,8 @@ export function CashflowSankeyChart({ data }: Props) {
   }
 
   return (
-    <div className="-mx-2 overflow-x-auto px-2 md:mx-0 md:overflow-x-visible md:px-0">
-      <div className="min-w-[720px] md:min-w-0">
+    <ScrollableSankey>
+      <div className="min-w-[640px] md:min-w-0">
         <div className="h-[460px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <Sankey
@@ -124,6 +125,66 @@ export function CashflowSankeyChart({ data }: Props) {
           </ResponsiveContainer>
         </div>
       </div>
+    </ScrollableSankey>
+  );
+}
+
+/* ─────────────────── Mobile scroll wrapper ─────────────────── */
+
+/**
+ * 行動版桑基圖橫向 scroll 容器 — recharts Sankey 沒有垂直流向支援，最低成本
+ * 體驗：
+ *   1. 上方 hint badge「← 左右滑動 →」只在 mobile 顯示且還沒滑過時才出現
+ *   2. 右側漸層 fade，scrollLeft >= maxScroll - 4 時才隱藏（暗示「還有內容」）
+ *   3. md+ 直接全寬 render，沒有任何 scroll 裝飾
+ */
+function ScrollableSankey({ children }: { children: React.ReactNode }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [hasScrolled, setHasScrolled] = useState(false);
+  const [atEnd, setAtEnd] = useState(false);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const update = () => {
+      if (el.scrollLeft > 4) setHasScrolled(true);
+      setAtEnd(el.scrollLeft >= el.scrollWidth - el.clientWidth - 4);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  return (
+    <div className="relative">
+      {/* 滑動提示：只在 mobile + 還沒滑過時顯示 */}
+      {!hasScrolled && (
+        <div className="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 md:hidden">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-foreground/85 px-3 py-1 text-[11px] font-medium text-background shadow-sm backdrop-blur-sm">
+            <ArrowLeftRight className="size-3" />
+            左右滑動瀏覽完整金流
+          </span>
+        </div>
+      )}
+
+      <div
+        ref={scrollerRef}
+        className="-mx-2 overflow-x-auto overscroll-x-contain px-2 [scrollbar-width:thin] md:mx-0 md:overflow-x-visible md:px-0"
+      >
+        {children}
+      </div>
+
+      {/* 右側漸層：到底了就淡出 */}
+      <div
+        aria-hidden
+        className={`pointer-events-none absolute top-0 right-0 bottom-0 w-12 bg-gradient-to-l from-background to-transparent transition-opacity duration-200 md:hidden ${
+          atEnd ? "opacity-0" : "opacity-100"
+        }`}
+      />
     </div>
   );
 }
