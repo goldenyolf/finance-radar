@@ -8,6 +8,7 @@ import {
   ScrollText,
   Settings,
   Target,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,9 +22,12 @@ interface NavItem {
   icon: LucideIcon;
 }
 
+// 順序語意：state（首頁/夢想/資產）→ flow（分析/明細）→ system（設定）
+// 「資產」=低頻月度淨值快照，跟夢想都是「存量」概念，所以擺在夢想旁。
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "首頁", icon: Home },
   { href: "/goals", label: "夢想", icon: Target },
+  { href: "/net-worth", label: "資產", icon: Wallet },
   { href: "/analytics", label: "分析", icon: PieChart },
   { href: "/transactions", label: "明細", icon: ScrollText },
   { href: "/settings", label: "設定", icon: Settings },
