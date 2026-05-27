@@ -1,5 +1,6 @@
 import { CalendarClock, Wallet } from "lucide-react";
 
+import { AssetAllocationCard } from "@/components/dashboard/asset-allocation-card";
 import { NetWorthCards } from "@/components/dashboard/net-worth-cards";
 import { NetWorthTrendChart } from "@/components/dashboard/net-worth-trend-chart";
 import { PageTransition } from "@/components/dashboard/page-transition";
@@ -34,6 +35,8 @@ export const dynamic = "force-dynamic";
 export default async function NetWorthPage() {
   const { accounts, snapshots } = await loadWealth();
   const latest = latestSnapshot(snapshots);
+  // snapshots 是 DESC（最新在前），所以 [1] 就是「前一筆」給 MoM 用
+  const previous = snapshots[1] ?? null;
   const trendPoints = snapshotsToTrendPoints(snapshots);
   const displayAccounts = buildDisplayAccounts(accounts, latest);
 
@@ -69,23 +72,31 @@ export default async function NetWorthPage() {
           </div>
         </header>
 
-        {/* 三大數據卡 */}
+        {/* 三大數據卡（含 MoM 增長率 badge） */}
         <div className="mb-6">
-          <NetWorthCards latest={latest} />
+          <NetWorthCards latest={latest} previous={previous} />
         </div>
 
-        {/* 淨資產趨勢圖 */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-base">📈 淨資產趨勢</CardTitle>
-            <CardDescription>
-              每月一筆，連起來看財富累積曲線。前期空白屬正常 — 從第一張快照開始才有資料。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <NetWorthTrendChart data={trendPoints} />
-          </CardContent>
-        </Card>
+        {/*
+          趨勢圖 + 資產配置：桌面 lg+ 並排（兩張卡平分寬度），mobile/tablet
+          直向堆疊。並排時兩張卡都會稍微變窄，但 trend 6 點 / pie 圓餅都還
+          看得清楚；換來「一掃就同時看見走勢 + 配置」的 dashboard 感。
+        */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">📈 淨資產趨勢</CardTitle>
+              <CardDescription>
+                每月一筆，連起來看財富累積曲線。前期空白屬正常 — 從第一張快照開始才有資料。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <NetWorthTrendChart data={trendPoints} />
+            </CardContent>
+          </Card>
+
+          <AssetAllocationCard latest={latest} />
+        </div>
 
         {/* 資產 / 負債清單 */}
         <WealthAccountsList accounts={displayAccounts} />
