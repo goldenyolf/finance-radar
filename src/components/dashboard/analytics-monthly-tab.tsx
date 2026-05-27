@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, Clock, GitMerge } from "lucide-react";
+import { BarChart3, Clock, GitMerge, TrendingUp } from "lucide-react";
 
 import { CashflowSankeyChart } from "@/components/dashboard/cashflow-sankey-chart";
+import { CrossMonthTrendChart } from "@/components/dashboard/cross-month-trend-chart";
 import { DailySpendChart } from "@/components/dashboard/daily-spend-chart";
 import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
 import { MonthNavigator } from "@/components/dashboard/month-navigator";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CategoryRow } from "@/lib/categories";
+import { getCrossMonthTrendData } from "@/lib/cross-month-trend";
 import { buildDailySpendData } from "@/lib/daily-spend";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { buildSankeyData } from "@/lib/sankey-data";
@@ -62,6 +64,13 @@ export function AnalyticsMonthlyTab({
     [transactions, categories, monthDate]
   );
 
+  // 近 6 個月趨勢：以 monthDate 為基準往回 6 個月（含當前 monthDate 月）
+  // → 使用者切到歷史月份時，趨勢圖也跟著移動視窗，做時光機式 retro 分析
+  const trendData = useMemo(
+    () => getCrossMonthTrendData(transactions, monthDate),
+    [transactions, monthDate]
+  );
+
   function handleMonthChange(next: Date) {
     setIsMonthSwitching(true);
     window.setTimeout(() => {
@@ -83,6 +92,30 @@ export function AnalyticsMonthlyTab({
           disabled={isMonthSwitching}
         />
       </div>
+
+      {/* 0) 近 6 個月財務趨勢 — 跨月儀表板，最 high-level 的健康度檢查擺第一 */}
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">📈 近 6 個月財務趨勢</CardTitle>
+          </div>
+          <CardDescription className="mt-1">
+            綠 / 紅長條 = 月度收入 / 支出；藍色折線 = 儲蓄率。
+            <span className="text-emerald-700 dark:text-emerald-400">
+              {" "}持續維持 20% 以上的儲蓄率
+            </span>
+            是穩健理財的關鍵。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isMonthSwitching ? (
+            <Skeleton className="h-72 w-full" />
+          ) : (
+            <CrossMonthTrendChart data={trendData} />
+          )}
+        </CardContent>
+      </Card>
 
       {/* 1) 當月每日花費透視 — 最常看的「哪天花最多」daily breakdown */}
       <Card className="mb-6">
