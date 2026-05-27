@@ -13,7 +13,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +39,6 @@ interface RecurringAccount {
 }
 
 interface Props {
-  userId: string | null;
   accounts: RecurringAccount[];
 }
 
@@ -63,7 +61,7 @@ const FREQUENCY_OPTIONS: RecurringFrequency[] = [
   "daily",
 ];
 
-export function AddRecurringDialog({ userId, accounts }: Props) {
+export function AddRecurringDialog({ accounts }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -98,13 +96,8 @@ export function AddRecurringDialog({ userId, accounts }: Props) {
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!userId) {
-      toast.error("找不到使用者，無法新增週期");
-      return;
-    }
     const parsedAmount = Number.parseFloat(amount);
     const payload: CreateRecurringInput = {
-      userId,
       accountId: accountId === NO_ACCOUNT ? null : accountId,
       title,
       amount: parsedAmount,
@@ -129,21 +122,24 @@ export function AddRecurringDialog({ userId, accounts }: Props) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger
-        render={
-          <Button
-            size="lg"
-            className="gap-1.5 rounded-full bg-foreground px-4 text-background shadow-sm shadow-foreground/10 hover:bg-foreground/90"
-            disabled={!userId}
-          />
-        }
+    <>
+      {/*
+        本來用 <DialogTrigger render={<Button />}>，但 base-ui 1.5 兩層
+        useButton() 會搶 onClick → 完全點不開。改用 EditRecurringDialog
+        同款：純 <Button onClick> + controlled Dialog open。
+      */}
+      <Button
+        type="button"
+        size="lg"
+        className="gap-1.5 rounded-full bg-foreground px-4 text-background shadow-sm shadow-foreground/10 hover:bg-foreground/90"
+        onClick={() => handleOpenChange(true)}
       >
         <Plus className="size-4" />
         新增週期
-      </DialogTrigger>
+      </Button>
 
-      <DialogContent className="sm:max-w-md">
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>新增週期性收支</DialogTitle>
           <DialogDescription>
@@ -276,7 +272,7 @@ export function AddRecurringDialog({ userId, accounts }: Props) {
             >
               取消
             </Button>
-            <Button type="submit" disabled={pending || !userId}>
+            <Button type="submit" disabled={pending}>
               {pending ? (
                 <>
                   <Loader2Icon className="size-3.5 animate-spin" />
@@ -289,6 +285,7 @@ export function AddRecurringDialog({ userId, accounts }: Props) {
           </DialogFooter>
         </form>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }

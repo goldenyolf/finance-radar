@@ -121,19 +121,21 @@ export default async function HomePage({ searchParams }: PageProps) {
           <TodayBadge />
           <div className="flex flex-wrap items-center gap-2 sm:flex-row-reverse">
             <QuickAddTransaction
-              userId={user?.id ?? null}
               accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
             />
+            {/* 週期性收支入口：行動版只露 icon（min 44x44 觸控標準），sm+ 才顯示文字 pill */}
             <Link
               href="/recurring"
+              aria-label="週期性收支"
               className={buttonVariants({
                 variant: "outline",
                 size: "lg",
-                className: "gap-1.5 rounded-full",
+                className:
+                  "h-11 min-w-11 gap-1.5 rounded-full px-0 sm:px-4",
               })}
             >
-              <CalendarClock className="size-4" />
-              週期性收支
+              <CalendarClock className="size-5 sm:size-4" />
+              <span className="sr-only sm:not-sr-only">週期性收支</span>
             </Link>
           </div>
         </div>
@@ -143,7 +145,7 @@ export default async function HomePage({ searchParams }: PageProps) {
       {breach && (
         <Alert
           variant="destructive"
-          className="mb-6 gap-x-3 gap-y-1.5 border-rose-500/30 bg-rose-500/[0.04] px-6 py-4 ring-1 ring-rose-500/20"
+          className="mb-6 gap-x-3 gap-y-1.5 border-rose-500/30 bg-rose-500/[0.04] px-4 py-4 ring-1 ring-rose-500/20 md:px-6"
         >
           <AlertTriangle />
           <AlertTitle className="font-semibold">
@@ -154,7 +156,13 @@ export default async function HomePage({ searchParams }: PageProps) {
               </span>
             )}
           </AlertTitle>
-          <AlertDescription className="leading-relaxed">
+          {/*
+            text-pretty 覆蓋 AlertDescription 預設的 text-balance — 後者在窄螢幕
+            會把長中文句子強制切成「2026年6月 可用現金 / 預估降至 $99,604，將跌破
+            安全 / 門檻 $100,000」這種奇怪等寬斷行。text-pretty 只避免孤字而不
+            強行對齊，break-words 防超長數字/英文撐爆容器。
+          */}
+          <AlertDescription className="text-pretty break-words leading-relaxed">
             {breach.netCashflow < 0 ? (
               <>
                 系統偵測到 <strong>{breach.monthLabel}</strong>{" "}

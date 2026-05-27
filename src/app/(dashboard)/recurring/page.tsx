@@ -191,7 +191,6 @@ export default async function RecurringPage() {
             </p>
           </div>
           <AddRecurringDialog
-            userId={user?.id ?? null}
             accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
           />
         </div>

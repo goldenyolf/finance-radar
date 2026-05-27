@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowRight,
   Loader2Icon,
@@ -20,7 +21,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +50,6 @@ export interface QuickAddAccount {
 }
 
 interface Props {
-  userId: string | null;
   accounts: QuickAddAccount[];
 }
 
@@ -66,7 +65,7 @@ const INITIAL_TYPE: TransactionType = "expense";
 const INITIAL_PRIORITY: TransactionPriority = "essential";
 const INITIAL_STATUS: TransactionStatus = "completed";
 
-export function QuickAddTransaction({ userId, accounts }: Props) {
+export function QuickAddTransaction({ accounts }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -92,10 +91,10 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
 
   const isTransfer = type === "transfer";
   const needsTwoAccounts = isTransfer;
+  // userId 已不再 gate — server action 走 DB DEFAULT auth.uid()，
+  // proxy 也已保證未登入無法到這裡。只擋「沒帳戶 / 轉帳缺第二帳戶」這種真實業務阻塞。
   const disabled =
-    !userId ||
-    accounts.length === 0 ||
-    (needsTwoAccounts && accounts.length < 2);
+    accounts.length === 0 || (needsTwoAccounts && accounts.length < 2);
 
   function resetForm() {
     setType(INITIAL_TYPE);
@@ -117,10 +116,6 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!userId) {
-      toast.error("找不到使用者，無法新增交易");
-      return;
-    }
     const parsedAmount = Number.parseFloat(amount);
 
     if (isTransfer) {
@@ -129,7 +124,6 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
         return;
       }
       const payload: CreateTransferInput = {
-        userId,
         fromAccountId,
         toAccountId,
         description,
@@ -162,7 +156,6 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
     }
 
     const payload: CreateTransactionInput = {
-      userId,
       accountId,
       description,
       amount: parsedAmount,
@@ -187,41 +180,50 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
     });
   }
 
-  const triggerDisabled = !userId || accounts.length === 0;
+  // 同上：不再以 userId 擋 trigger；沒帳戶才真的擋（不然開了 dialog 也選不了）
+  const triggerDisabled = accounts.length === 0;
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <>
+      {/*
+        本來用 <DialogTrigger render={<Button />}> 但 base-ui 1.5 把它跟內層 Button
+        合併時，兩邊都跑 useButton() 會搶 onClick → 完全不觸發 open。
+        改成跟 EditRecurringDialog 同款：純 <Button onClick> 直接 setOpen，
+        Dialog 用 controlled open 顯隱，最穩。
+      */}
       {/* Desktop：頁首 pill 按鈕（md+ 顯示） */}
-      <DialogTrigger
-        render={
-          <Button
-            size="lg"
-            className="hidden gap-1.5 rounded-full bg-foreground px-4 text-background shadow-sm shadow-foreground/10 hover:bg-foreground/90 md:inline-flex"
-            disabled={triggerDisabled}
-          />
-        }
+      <Button
+        type="button"
+        size="lg"
+        className="hidden gap-1.5 rounded-full bg-foreground px-4 text-background shadow-sm shadow-foreground/10 hover:bg-foreground/90 md:inline-flex"
+        disabled={triggerDisabled}
+        onClick={() => handleOpenChange(true)}
       >
         <Plus className="size-4" />
         快速記帳
-      </DialogTrigger>
+      </Button>
 
       {/* Mobile：右下角 Extended FAB（md 以下顯示）
-          z-50 / bottom-20 是為了浮在底部 tab bar（h-16, z-30）之上。
-          calc 加 env(safe-area-inset-bottom) 處理瀏海手機的圓角安全區。 */}
-      <DialogTrigger
-        render={
-          <Button
-            aria-label="快速記帳"
-            className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 h-14 gap-2 rounded-full bg-foreground pr-6 pl-5 text-base font-semibold text-background shadow-lg shadow-foreground/25 ring-1 ring-foreground/10 hover:bg-foreground/90 md:hidden [&_svg:not([class*='size-'])]:size-5"
-            disabled={triggerDisabled}
-          />
-        }
-      >
-        <Plus strokeWidth={2.5} />
-        記帳
-      </DialogTrigger>
+          透過 createPortal 渲染到 document.body，跳脫父層 <PageTransition>
+          (framer-motion motion.div 會留下 inline transform) 造成的 stacking
+          context — 否則 fixed + z-50 會被困在區域 context 內，反被 z-30 的
+          底部 tab bar 蓋住 → 看得到但點不到。
+          bottom 用 calc(5rem + safe-area-inset-bottom) 保證浮在 h-16 tab bar 之上。 */}
+      <BodyPortal>
+        <Button
+          type="button"
+          aria-label="快速記帳"
+          className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 h-14 gap-2 rounded-full bg-foreground pr-6 pl-5 text-base font-semibold text-background shadow-lg shadow-foreground/25 ring-1 ring-foreground/10 hover:bg-foreground/90 md:hidden [&_svg:not([class*='size-'])]:size-5"
+          disabled={triggerDisabled}
+          onClick={() => handleOpenChange(true)}
+        >
+          <Plus strokeWidth={2.5} />
+          記帳
+        </Button>
+      </BodyPortal>
 
-      <DialogContent className="sm:max-w-md">
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>快速記帳</DialogTitle>
           <DialogDescription>
@@ -477,8 +479,23 @@ export function QuickAddTransaction({ userId, accounts }: Props) {
           </DialogFooter>
         </form>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
+}
+
+/**
+ * 把 children portal 到 document.body — 跳出任何祖先建立的 stacking context
+ * 或 transform 容器（例如 framer-motion 的 motion.div）。SSR-safe：先 render
+ * null，mount 後再 portal，避免 hydration mismatch。
+ */
+function BodyPortal({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted) return null;
+  return createPortal(children, document.body);
 }
 
 interface ChoiceProps<T extends string> {
