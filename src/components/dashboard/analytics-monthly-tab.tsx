@@ -8,6 +8,7 @@ import { CrossMonthTrendChart } from "@/components/dashboard/cross-month-trend-c
 import { DailySpendChart } from "@/components/dashboard/daily-spend-chart";
 import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
 import { MonthNavigator } from "@/components/dashboard/month-navigator";
+import { TopMerchantsList } from "@/components/dashboard/top-merchants-list";
 import {
   Card,
   CardContent,
@@ -21,6 +22,7 @@ import { getCrossMonthTrendData } from "@/lib/cross-month-trend";
 import { buildDailySpendData } from "@/lib/daily-spend";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { buildSankeyData } from "@/lib/sankey-data";
+import { getTopMerchantsData } from "@/lib/top-merchants";
 
 const MONTH_SWITCH_DELAY_MS = 280;
 
@@ -68,6 +70,11 @@ export function AnalyticsMonthlyTab({
   // → 使用者切到歷史月份時，趨勢圖也跟著移動視窗，做時光機式 retro 分析
   const trendData = useMemo(
     () => getCrossMonthTrendData(transactions, monthDate),
+    [transactions, monthDate]
+  );
+
+  const topMerchants = useMemo(
+    () => getTopMerchantsData(transactions, monthDate),
     [transactions, monthDate]
   );
 
@@ -176,7 +183,34 @@ export function AnalyticsMonthlyTab({
         </div>
       )}
 
-      {/* 3) 本月現金流向圖 — Sankey 視覺重，擺最下面當 deep-dive */}
+      {/* 3) 🧛 吸血鬼排行榜 — 按 merchant 維度看「誰吸最多」，跟上面分類維度互補 */}
+      {isMonthSwitching ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="mt-2 h-3 w-72" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-4">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                  <Skeleton className="h-1 w-full" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mb-6">
+          <TopMerchantsList data={topMerchants} />
+        </div>
+      )}
+
+      {/* 4) 本月現金流向圖 — Sankey 視覺重，擺最下面當 deep-dive */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
