@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { PrivacyToggle } from "@/components/dashboard/privacy-toggle";
 import { SignOutButton } from "@/components/dashboard/sign-out-button";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -49,11 +50,14 @@ export function Navigation() {
     <>
       <DesktopSidebar pathname={pathname} />
       <MobileTabBar pathname={pathname} />
-      {/* Mobile 主題切換：右上角浮動鈕，只在 <md 顯示（desktop 走 sidebar 底部） */}
-      <ThemeToggle
-        variant="floating"
-        className="fixed top-3 right-3 z-30 md:hidden"
-      />
+      {/*
+        Mobile 右上浮動工具列：防窺 + 主題切換。只在 <md 顯示（desktop 走 sidebar 底部）。
+        順序：防窺在左、主題在右 — 防窺是 demo 時最常用的「擋一下」動作，放手指最容易碰的位置。
+      */}
+      <div className="fixed top-3 right-3 z-30 flex items-center gap-2 md:hidden">
+        <PrivacyToggle variant="floating" />
+        <ThemeToggle variant="floating" />
+      </div>
     </>
   );
 }
@@ -104,8 +108,9 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
         })}
       </nav>
 
-      {/* Sidebar 底部：主題切換 + 登出 */}
+      {/* Sidebar 底部：防窺 + 主題切換 + 登出 */}
       <div className="border-t border-foreground/10 p-3 flex flex-col gap-1">
+        <PrivacyToggle variant="sidebar" />
         <ThemeToggle variant="sidebar" />
         <SignOutButton />
       </div>

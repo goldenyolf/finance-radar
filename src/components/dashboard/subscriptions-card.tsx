@@ -43,7 +43,8 @@ import {
   type CreateSubscriptionInput,
 } from "@/lib/actions/subscriptions";
 import { getAccountLabel } from "@/lib/account-display";
-import { formatCurrency, type AccountRow } from "@/lib/dashboard";
+import { type AccountRow } from "@/lib/dashboard";
+import { Money } from "@/components/ui/money";
 import {
   daysUntilBilling,
   type BillingCycle,
@@ -286,7 +287,7 @@ function SubscriptionRowItem({
 
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold tabular-nums text-foreground">
-          {formatCurrency(Number(row.amount))}
+          <Money value={Number(row.amount)} />
         </span>
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           <Button

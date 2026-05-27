@@ -17,9 +17,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Money } from "@/components/ui/money";
 import {
   expandToMonthly,
-  formatCurrency,
   FREQUENCY_LABEL,
   netMonthlyRecurring,
   num,
@@ -130,10 +130,10 @@ function RecurringRowCard({
             }`}
           >
             {isIncome ? "+" : "−"}
-            {formatCurrency(num(row.amount))}
+            <Money value={num(row.amount)} />
           </p>
           <p className="text-xs text-muted-foreground tabular-nums">
-            月均 {formatCurrency(monthly)}
+            月均 <Money value={monthly} />
           </p>
         </div>
         <div className="flex items-center">
@@ -205,7 +205,7 @@ export default async function RecurringPage() {
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl font-semibold tabular-nums">
-              {formatCurrency(income)}
+              <Money value={income} />
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               共 {incomeRows.length} 筆
@@ -220,7 +220,7 @@ export default async function RecurringPage() {
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl font-semibold tabular-nums">
-              {formatCurrency(expense)}
+              <Money value={expense} />
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               共 {expenseRows.length} 筆
@@ -242,7 +242,7 @@ export default async function RecurringPage() {
               }`}
             >
               {net >= 0 ? "+" : ""}
-              {formatCurrency(net)}
+              <Money value={net} />
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               {net >= 0 ? "每月自動累積" : "每月需從現金補貼"}

@@ -9,6 +9,7 @@ import {
   Tooltip,
 } from "recharts";
 
+import { Money } from "@/components/ui/money";
 import type { CategorySlice } from "@/lib/expense-categories";
 
 type Props = {
@@ -158,13 +159,13 @@ export function ExpensePieChart({ data }: Props) {
                 <div className="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
                   <span>
                     <span className="font-medium text-foreground">
-                      {formatTwd(slice.amount)}
+                      <Money value={slice.amount} format={formatTwd} />
                     </span>{" "}
-                    / {formatTwd(budget)}
+                    / <Money value={budget} format={formatTwd} />
                   </span>
                   {overshoot && (
                     <span className={`font-medium ${tone.text}`}>
-                      超支 {formatTwd(slice.amount - budget)}
+                      超支 <Money value={slice.amount - budget} format={formatTwd} />
                     </span>
                   )}
                 </div>
@@ -188,7 +189,7 @@ export function ExpensePieChart({ data }: Props) {
               </span>
               <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                 <span className="font-medium text-foreground">
-                  {formatTwd(slice.amount)}
+                  <Money value={slice.amount} format={formatTwd} />
                 </span>
                 <span className="ml-1">· {totalPct.toFixed(0)}%</span>
               </span>
@@ -200,7 +201,7 @@ export function ExpensePieChart({ data }: Props) {
             合計
           </span>
           <span className="text-sm font-semibold tabular-nums">
-            {formatTwd(total)}
+            <Money value={total} format={formatTwd} />
           </span>
         </li>
       </ul>

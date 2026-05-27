@@ -30,7 +30,6 @@ import {
   availableCash,
   buildBoardData,
   computeForecast,
-  formatCurrency,
   num,
   scopeForAccount,
   BOARDS,

@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Money } from "@/components/ui/money";
 import { formatTwd, type DisplayAccount } from "@/lib/wealth";
 
 interface Props {
@@ -117,7 +118,11 @@ function AccountColumn({
                       : TONE_VALUE[tone]
                   }`}
                 >
-                  {acc.value === null ? "—" : formatTwd(acc.value)}
+                  {acc.value === null ? (
+                    "—"
+                  ) : (
+                    <Money value={acc.value} format={formatTwd} />
+                  )}
                 </span>
               </li>
             ))}

@@ -18,6 +18,10 @@ interface Props {
  * 數字滾動元件 — 包 react-countup 並套用 formatCurrency 預設。
  * preserveValue=true：value prop 改變時從「上一次數字」滾動到新值，
  * 而不是每次都從 0 起跳，避免月份切換時刺眼歸零。
+ *
+ * data-money：給防窺模式用。globals.css 的
+ *   body[data-privacy="on"] [data-money] { filter: blur(...) }
+ * rule 會自動 blur 這個 span，不需要每個 caller 改任何 code。
  */
 export function AnimatedNumber({
   value,
@@ -26,12 +30,13 @@ export function AnimatedNumber({
   className,
 }: Props) {
   return (
-    <CountUp
-      end={value}
-      duration={duration}
-      preserveValue
-      formattingFn={format ?? formatCurrency}
-      className={className}
-    />
+    <span data-money className={className}>
+      <CountUp
+        end={value}
+        duration={duration}
+        preserveValue
+        formattingFn={format ?? formatCurrency}
+      />
+    </span>
   );
 }

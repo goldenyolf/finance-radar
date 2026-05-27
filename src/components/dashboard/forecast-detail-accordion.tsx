@@ -4,6 +4,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Money } from "@/components/ui/money";
 import { formatCurrency, type ForecastItem, type ForecastPoint } from "@/lib/dashboard";
 
 interface Props {
@@ -45,12 +46,14 @@ export function ForecastDetailAccordion({ points }: Props) {
                 <span
                   className={`text-sm font-semibold tabular-nums ${balanceClass(p.projectedBalance)}`}
                 >
-                  預估餘額 {formatCurrency(p.projectedBalance)}
+                  預估餘額 <Money value={p.projectedBalance} />
                 </span>
                 <span className="text-[11px] tabular-nums text-muted-foreground">
                   （當月淨流{" "}
                   <span className={netToneClass(p.netCashflow)}>
-                    {formatSignedAmount(p.netCashflow)}
+                    <Money value={p.netCashflow}>
+                      {formatSignedAmount(p.netCashflow)}
+                    </Money>
                   </span>
                   ）
                 </span>
@@ -118,7 +121,7 @@ function ItemColumn({ accent, label, items }: ItemColumnProps) {
                 className={`shrink-0 text-sm font-medium tabular-nums ${amountClass}`}
               >
                 {sign}
-                {formatCurrency(item.amount)}
+                <Money value={item.amount} />
               </span>
             </li>
           ))}

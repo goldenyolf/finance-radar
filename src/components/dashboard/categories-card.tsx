@@ -277,7 +277,10 @@ function CategoryRowItem({ category, onEdit, onDelete, deleting }: RowProps) {
         </div>
 
         {budgetLabel && (
-          <p className="text-[11px] tabular-nums text-emerald-700 dark:text-emerald-400">
+          <p
+            data-money
+            className="text-[11px] tabular-nums text-emerald-700 dark:text-emerald-400"
+          >
             {budgetLabel}
           </p>
         )}

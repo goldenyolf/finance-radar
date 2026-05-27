@@ -6,6 +6,7 @@ import { Loader2Icon, Search } from "lucide-react";
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import { Input } from "@/components/ui/input";
+import { Money } from "@/components/ui/money";
 import { getAccountLabel } from "@/lib/account-display";
 import {
   buildCategoryLookup,
@@ -13,7 +14,6 @@ import {
   type CategoryRow,
 } from "@/lib/categories";
 import {
-  formatCurrency,
   num,
   type AccountRow,
   type TransactionRow,
@@ -265,7 +265,7 @@ function TransactionRow({ row, accounts, lookup, categories }: RowProps) {
         }`}
       >
         {sign}
-        {formatCurrency(num(row.amount))}
+        <Money value={num(row.amount)} />
       </span>
 
       <div className="flex min-h-7 items-center justify-end">

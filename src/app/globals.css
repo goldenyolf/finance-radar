@@ -134,3 +134,48 @@
     @apply font-sans;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────
+ * 防窺模式（Privacy / Incognito Mode）
+ *
+ * PrivacyProvider 把 body[data-privacy="on"]/"off" 同步上來，
+ * 這裡用 CSS 統一 blur 所有金額顯示，不需要任何元件 re-render。
+ *
+ * 覆蓋面：
+ *   1. [data-money]   — <AnimatedNumber> 跟 <Money> wrapper 都帶這個屬性
+ *   2. Recharts tooltip — 整個彈出框模糊（含金額）
+ *   3. Recharts 軸 + 圖內所有 <text> — Y 軸金額、Sankey 自訂 node label、
+ *                                     Pie chart label 全部一網打盡
+ *
+ * 安全強化：user-select:none + -webkit + ::selection 透明 → 即使 OCR
+ * 也只看到模糊像素，無法選取複製。pointer-events:none 防止 hover 時
+ * 工具列 / context-menu 偷渡明文。
+ * ──────────────────────────────────────────────────────────────
+ */
+
+body[data-privacy="on"] [data-money],
+body[data-privacy="on"] .recharts-tooltip-wrapper,
+body[data-privacy="on"] .recharts-surface text {
+  filter: blur(6px);
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  pointer-events: none;
+  cursor: default;
+  transition: filter 0.25s ease;
+}
+
+body[data-privacy="on"] [data-money]::selection,
+body[data-privacy="on"] .recharts-tooltip-wrapper ::selection,
+body[data-privacy="on"] .recharts-surface text::selection {
+  background: transparent;
+  color: transparent;
+}
+
+/* 平滑解除：取消時也走過渡 */
+body [data-money],
+body .recharts-tooltip-wrapper,
+body .recharts-surface text {
+  transition: filter 0.25s ease;
+}

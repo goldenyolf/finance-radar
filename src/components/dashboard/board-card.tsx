@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Money } from "@/components/ui/money";
 import { Progress } from "@/components/ui/progress";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
@@ -256,7 +257,7 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
                       <span
                         className={`text-sm font-semibold tabular-nums ${amountToneClass(item)}`}
                       >
-                        {signedFormat(item.signedAmount)}
+                        <Money value={item.signedAmount} format={signedFormat} />
                       </span>
                       <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                         <span

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 
+import { Money } from "@/components/ui/money";
 import { getAccountLabel } from "@/lib/account-display";
-import { formatCurrency, type AccountRow } from "@/lib/dashboard";
+import { type AccountRow } from "@/lib/dashboard";
 import {
   daysUntilBilling,
   type SubscriptionRow,
@@ -90,7 +91,7 @@ export function SubscriptionAlertWidget({ subscriptions, accounts }: Props) {
                   </strong>{" "}
                   扣款{" "}
                   <strong className="tabular-nums">
-                    {formatCurrency(Number(sub.amount))}
+                    <Money value={Number(sub.amount)} />
                   </strong>{" "}
                   （{accName}）
                 </li>
