@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Sparkles, Target } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import {
@@ -26,35 +26,12 @@ interface Props {
  *
  * Featured 挑選邏輯：「最近 deadline 但還沒達標」最有故事性；
  * 全達標或無 deadline 時 fallback 第一筆。
+ *
+ * 沒設任何 goal → 整塊不出現（return null），首頁保持精簡；建立入口
+ * 留在 /goals 頁，不在首頁占空間。
  */
 export function GoalSummaryLink({ goals }: Props) {
-  // Empty state — 引導建立第一個夢想
-  if (goals.length === 0) {
-    return (
-      <Card className="mt-8">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Target className="h-4 w-4 text-emerald-500" />
-            <CardTitle className="text-base">🌟 夢想基金</CardTitle>
-          </div>
-          <CardDescription className="mt-1">
-            把抽象的「想要」變成可量化目標，達標時系統會給你來場彩帶派對。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Link
-            href="/goals"
-            className="flex items-center justify-between rounded-lg border border-dashed border-foreground/15 bg-muted/30 px-4 py-3 text-sm transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/5"
-          >
-            <span className="text-muted-foreground">
-              還沒設定任何夢想，點此建立第一個
-            </span>
-            <ArrowRight className="size-4 text-muted-foreground" />
-          </Link>
-        </CardContent>
-      </Card>
-    );
-  }
+  if (goals.length === 0) return null;
 
   // 挑 featured：先選未達標 + 最近 deadline；全達標 fallback 第一筆
   const featured = pickFeaturedGoal(goals);
