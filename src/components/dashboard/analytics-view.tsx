@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Clock, GitMerge } from "lucide-react";
 
 import { CashflowSankeyChart } from "@/components/dashboard/cashflow-sankey-chart";
+import { DailySpendSection } from "@/components/dashboard/daily-spend-section";
 import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
 import { MonthNavigator } from "@/components/dashboard/month-navigator";
 import {
@@ -95,6 +96,25 @@ export function AnalyticsView({
           )}
         </CardContent>
       </Card>
+
+      {isMonthSwitching ? (
+        <Card className="mb-8">
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="mt-2 h-3 w-72" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-72 w-full" />
+          </CardContent>
+        </Card>
+      ) : (
+        <DailySpendSection
+          transactions={transactions}
+          accounts={accounts}
+          categories={categories ?? []}
+          monthDate={selectedDate}
+        />
+      )}
 
       {isMonthSwitching ? (
         <Card>
