@@ -11,6 +11,9 @@ import { updateSession } from "@/lib/supabase/middleware";
  *
  * matcher 排除清單（見下方 config）：
  *   - /login                ：登入/註冊頁本身
+ *   - /forgot-password ★    ：發送重設密碼信頁（未登入專用）
+ *   - /update-password ★    ：重設密碼頁（拿 Supabase recovery token 進來，
+ *                              還沒有正式 session，必須允許未登入訪問）
  *   - /_next/static, image  ：Next.js 內部資源
  *   - /favicon.ico          ：tab icon
  *   - /api/line/webhook ★   ：LINE bot 從外部 POST 進來，沒有 user cookie
@@ -32,6 +35,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!login|_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|api/line/webhook|api/cron|auth/callback).*)",
+    "/((?!login|forgot-password|update-password|_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|api/line/webhook|api/cron|auth/callback).*)",
   ],
 };

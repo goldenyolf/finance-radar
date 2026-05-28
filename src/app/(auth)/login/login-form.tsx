@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useId, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2Icon, LogIn, UserPlus } from "lucide-react";
@@ -55,6 +56,7 @@ function SignInForm() {
       error={state.error}
       submitLabel="登入"
       submitIcon={<LogIn className="size-4" />}
+      forgotPasswordHref="/forgot-password"
     />
   );
 }
@@ -78,6 +80,8 @@ interface BodyProps {
   error: string | null;
   submitLabel: string;
   submitIcon: React.ReactNode;
+  /** 只在登入模式顯示「忘記密碼？」連結；註冊時不出現 */
+  forgotPasswordHref?: string;
 }
 
 function AuthFormBody({
@@ -86,6 +90,7 @@ function AuthFormBody({
   error,
   submitLabel,
   submitIcon,
+  forgotPasswordHref,
 }: BodyProps) {
   const emailId = useId();
   const passwordId = useId();
@@ -114,9 +119,19 @@ function AuthFormBody({
       </div>
 
       <div className="grid gap-1.5">
-        <Label htmlFor={passwordId} className="text-sm font-medium text-slate-200">
-          密碼
-        </Label>
+        <div className="flex items-baseline justify-between gap-2">
+          <Label htmlFor={passwordId} className="text-sm font-medium text-slate-200">
+            密碼
+          </Label>
+          {forgotPasswordHref && (
+            <Link
+              href={forgotPasswordHref}
+              className="text-[11px] text-slate-400 transition-colors hover:text-emerald-300"
+            >
+              忘記密碼？
+            </Link>
+          )}
+        </div>
         <Input
           id={passwordId}
           name="password"
