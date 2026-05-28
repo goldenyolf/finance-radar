@@ -92,18 +92,42 @@ $fn$;
 
 -- (5) 新會員 sign-up trigger
 --     另開一個獨立 trigger（不去改使用者既有的 categories seed trigger），
---     additive 不破壞既有邏輯。SECURITY DEFINER 因為 auth.users 上的 trigger
---     需要繞過 RLS 寫入 dashboard_plates。
+--     additive 不破壞既有邏輯。
+--
+--     關鍵：直接 inline INSERT 在這支 SECURITY DEFINER 函式內，不轉手
+--     呼叫 helper — 否則 helper 是 SECURITY INVOKER（default），進去後
+--     RLS 重新 enforce，這時 auth.uid() 是 NULL（JWT 還沒發）導致
+--     auth.uid() = user_id 被擋，整個註冊 transaction rollback，Supabase
+--     回「Database error saving new user」。踩過一次了。
+--
+--     再加 EXCEPTION WHEN OTHERS 防御 — 任何錯都不擋註冊，事後使用者
+--     可以到 /settings 自己補建板塊。
 CREATE OR REPLACE FUNCTION on_auth_user_seed_dashboard_plates()
   RETURNS TRIGGER
   LANGUAGE plpgsql
   SECURITY DEFINER
+  SET search_path = public
 AS $fn$
 BEGIN
-  PERFORM seed_default_dashboard_plates(NEW.id);
+  INSERT INTO dashboard_plates (user_id, name, description, sort_order)
+  SELECT NEW.id, v.name, v.description, v.sort_order
+  FROM (VALUES
+    ('家庭財務', '共同帳戶：房貸、托育、學費、子女花費',         0),
+    ('補助金流', '幼兒補助與被動收入專戶',                       1),
+    ('個人財務', '個人薪資、生活開銷與向共同戶的固定轉出',         2)
+  ) AS v(name, description, sort_order)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM dashboard_plates WHERE user_id = NEW.id
+  );
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'seed dashboard_plates failed for user %: %', NEW.id, SQLERRM;
   RETURN NEW;
 END;
 $fn$;
+
+-- 強制 owner = postgres（BYPASSRLS）— SQL Editor 預設就是，保險起見明寫
+ALTER FUNCTION on_auth_user_seed_dashboard_plates() OWNER TO postgres;
 
 DROP TRIGGER IF EXISTS on_auth_user_seed_dashboard_plates_trg ON auth.users;
 
