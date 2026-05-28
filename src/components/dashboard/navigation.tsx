@@ -21,11 +21,6 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  /**
-   * true = 只在桌面 sidebar 顯示；手機底部 tab bar 隱藏。
-   * 用在低頻、版位有限時需要犧牲的功能（避免 6 個 tab 擠壓觸控目標）。
-   */
-  desktopOnly?: boolean;
 }
 
 /*
@@ -33,23 +28,49 @@ interface NavItem {
     高頻 daily  : 首頁 → 明細 → 分析
     中頻 monthly: 資產（月度淨值快照）
     低頻 rare  : 夢想（儲蓄目標管理）
-    系統     : 設定（永遠最下面）
+    系統     : 設定
 
-  手機底部 tab bar：5 格（首頁 / 明細 / 分析 / 資產 / 設定）。
-  夢想標 desktopOnly — 行動版手指要按 6 格寬度太擠，犧牲低頻功能換觸控品質。
+  桌面 sidebar 走完整 6 項目。
 */
-const NAV_ITEMS: NavItem[] = [
+const DESKTOP_NAV_ITEMS: NavItem[] = [
   { href: "/", label: "首頁", icon: Home },
   { href: "/transactions", label: "明細", icon: ScrollText },
   { href: "/analytics", label: "分析", icon: PieChart },
   { href: "/net-worth", label: "資產", icon: Wallet },
-  { href: "/goals", label: "夢想", icon: Target, desktopOnly: true },
+  { href: "/goals", label: "夢想", icon: Target },
   { href: "/settings", label: "設定", icon: Settings },
 ];
+
+/*
+  手機底部 tab bar 走 5 項目。前 4 是核心高頻功能，第 5 個「更多」是
+  通往 /more 大廳的入口 — 那裡可以再進去夢想 / 設定 兩個低頻功能。
+
+  這套「More Hub 模式」是 iOS 經典做法（Twitter / Slack / Spotify 等
+  都用過），避開「6 個 tab 擠成糊狀」的觸控災難又不犧牲功能對等。
+*/
+const MOBILE_NAV_ITEMS: NavItem[] = [
+  { href: "/", label: "首頁", icon: Home },
+  { href: "/transactions", label: "明細", icon: ScrollText },
+  { href: "/analytics", label: "分析", icon: PieChart },
+  { href: "/net-worth", label: "資產", icon: Wallet },
+  { href: "/more", label: "更多", icon: Settings },
+];
+
+/** 「更多」tab 視為「section」: 在 /more 大廳 OR 大廳裡的兩個目的地都算 active */
+const MOBILE_MORE_SECTION_PREFIXES = ["/more", "/settings", "/goals"];
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function isActiveMobile(pathname: string, href: string): boolean {
+  if (href === "/more") {
+    return MOBILE_MORE_SECTION_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`)
+    );
+  }
+  return isActive(pathname, href);
 }
 
 /**
@@ -99,7 +120,7 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 p-3">
-        {NAV_ITEMS.map((item) => {
+        {DESKTOP_NAV_ITEMS.map((item) => {
           const active = isActive(pathname, item.href);
           const Icon = item.icon;
           return (
@@ -134,16 +155,13 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
 /* ─────────────────────────── Mobile Tab Bar ─────────────────────────── */
 
 function MobileTabBar({ pathname }: { pathname: string }) {
-  // 過濾 desktopOnly — 行動版只留高頻 4 個 + 設定 = 5 格，每格 ~75px 觸控舒適
-  const mobileItems = NAV_ITEMS.filter((item) => !item.desktopOnly);
-
   return (
     <nav
       aria-label="主要導航"
       className="fixed right-0 bottom-0 left-0 z-30 flex h-16 items-stretch border-t border-foreground/10 bg-background/85 backdrop-blur-lg pb-[env(safe-area-inset-bottom)] md:hidden"
     >
-      {mobileItems.map((item) => {
-        const active = isActive(pathname, item.href);
+      {MOBILE_NAV_ITEMS.map((item) => {
+        const active = isActiveMobile(pathname, item.href);
         const Icon = item.icon;
         return (
           <Link
