@@ -1,6 +1,7 @@
 import { Settings } from "lucide-react";
 
 import { CategoriesCard } from "@/components/dashboard/categories-card";
+import { DashboardPlatesCard } from "@/components/dashboard/dashboard-plates-card";
 import { LineBindingCard } from "@/components/dashboard/line-binding-card";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { SignOutButton } from "@/components/dashboard/sign-out-button";
@@ -8,6 +9,7 @@ import { SubscriptionsCard } from "@/components/dashboard/subscriptions-card";
 import { SystemSettingsForm } from "@/components/dashboard/system-settings-form";
 import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
+import { loadDashboardPlates } from "@/lib/load-dashboard-plates";
 import { loadSubscriptions } from "@/lib/load-subscriptions";
 import { createClient } from "@/lib/supabase/server";
 import { loadSystemSettings } from "@/lib/load-system-settings";
@@ -25,13 +27,14 @@ async function loadLineBinding(): Promise<string | null> {
 }
 
 export default async function SettingsPage() {
-  const [settings, subscriptions, { accounts }, lineUserId, categories] =
+  const [settings, subscriptions, { accounts }, lineUserId, categories, plates] =
     await Promise.all([
       loadSystemSettings(),
       loadSubscriptions(),
       loadDashboard(),
       loadLineBinding(),
       loadCategories(),
+      loadDashboardPlates(),
     ]);
 
   return (
@@ -52,6 +55,9 @@ export default async function SettingsPage() {
         </header>
 
         <SystemSettingsForm initial={settings} />
+
+        {/* 🧱 戰情室板塊配置 — 取代寫死的 BoardKey enum；首頁未來會吃這份 */}
+        <DashboardPlatesCard plates={plates} accounts={accounts} />
 
         {/* 🎨 分類管理 — 動態取代靜態 EXPENSE_CATEGORY_*；改顏色 / 名稱會即時連動圖表 */}
         <CategoriesCard categories={categories} />
