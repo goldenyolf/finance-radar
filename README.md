@@ -346,6 +346,7 @@ CRON_SECRET=<random-long-string>
 | `0005` | transactions.category nullable（income 沒分類）|
 | `0006` | categories.is_fixed + 4 個固定 code backfill |
 | `0007` | dashboard_plates + RLS + seed trigger |
+| `0008` | 補回 accounts.id DEFAULT（修新會員註冊 "Database error" bug）|
 
 ### 4. 啟動
 
