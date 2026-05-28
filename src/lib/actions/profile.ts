@@ -68,3 +68,67 @@ export async function unbindLineUserId(): Promise<MutationResult> {
   revalidatePath("/settings");
   return { ok: true };
 }
+
+/* ─────────────────── 個人設定（display_name + 儲蓄率目標） ─────────────────── */
+
+export interface UpdateProfileInput {
+  /** 暱稱；空字串 → 寫 null 表示「未設定」 */
+  display_name: string;
+  /** 0-100 之間的數字（百分比） */
+  target_savings_rate: number;
+}
+
+/**
+ * 更新個人設定。
+ *
+ * 用 UPSERT 而非 UPDATE：理論上 profile row 由 handle_new_user trigger 在
+ * 註冊瞬間建好，但萬一漏掉（老用戶在 trigger 之前註冊）也能補上去。
+ *
+ * 三層驗證：
+ *   1) Client（card 元件）：HTML5 type=number + min/max 擋住明顯爛值
+ *   2) Server（這支）：再驗一次防 client tamper / 直接打 server action
+ *   3) DB：profiles_target_savings_rate_check 0-100 CHECK constraint 兜底
+ *
+ * revalidatePath 同時刷 3 條：
+ *   /          → 首頁歡迎詞會吃 display_name
+ *   /settings  → 自己這頁 refresh 顯示新值
+ *   /analytics → 跨月趨勢圖會吃 target_savings_rate 畫目標虛線
+ */
+export async function updateProfile(
+  input: UpdateProfileInput
+): Promise<MutationResult> {
+  if (!Number.isFinite(input.target_savings_rate)) {
+    return { ok: false, error: "儲蓄率目標必須是數字" };
+  }
+  if (input.target_savings_rate < 0 || input.target_savings_rate > 100) {
+    return { ok: false, error: "儲蓄率目標必須在 0–100% 之間" };
+  }
+
+  const trimmedName = input.display_name.trim();
+  if (trimmedName.length > 50) {
+    return { ok: false, error: "暱稱請控制在 50 字以內" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "尚未登入" };
+
+  const { error } = await supabase.from("profiles").upsert(
+    {
+      user_id: user.id,
+      display_name: trimmedName || null,
+      target_savings_rate: input.target_savings_rate,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/");
+  revalidatePath("/settings");
+  revalidatePath("/analytics");
+  return { ok: true };
+}

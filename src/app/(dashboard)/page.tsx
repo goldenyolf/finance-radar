@@ -41,6 +41,7 @@ import { loadDashboardPlates } from "@/lib/load-dashboard-plates";
 import { loadGoals } from "@/lib/load-goals";
 import { loadOnboardingCompleted } from "@/lib/load-onboarding";
 import { loadOnboardingProgress } from "@/lib/load-onboarding-progress";
+import { loadProfileSettings } from "@/lib/load-profile";
 import { loadSubscriptions } from "@/lib/load-subscriptions";
 import { loadSystemSettings } from "@/lib/load-system-settings";
 
@@ -63,6 +64,7 @@ export default async function HomePage({ searchParams }: PageProps) {
     plates,
     onboardingCompleted,
     onboardingProgress,
+    profile,
   ] = await Promise.all([
     loadDashboard(),
     loadSystemSettings(),
@@ -72,6 +74,7 @@ export default async function HomePage({ searchParams }: PageProps) {
     loadDashboardPlates(),
     loadOnboardingCompleted(),
     loadOnboardingProgress(),
+    loadProfileSettings(),
   ]);
 
   // 板塊：使用者自訂（dashboard_plates）；用真實當下；歷史月份切換在 /analytics
@@ -130,10 +133,11 @@ export default async function HomePage({ searchParams }: PageProps) {
             Money Radar
           </p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
-            個人財務戰情室
+            {profile.display_name
+              ? `👋 歡迎回來，${profile.display_name}！`
+              : "👋 歡迎回來！"}
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground md:max-w-none md:whitespace-nowrap">
-            {user?.name ? `${user.name}，` : ""}
             採用「分離帳戶理財法」追蹤
             <span className="mx-1 font-medium text-foreground">個人 / 家庭 / 補助</span>
             三個獨立板塊的本月預算與實際開銷。

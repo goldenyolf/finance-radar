@@ -4,13 +4,15 @@ import { AnalyticsView } from "@/components/dashboard/analytics-view";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
+import { loadProfileSettings } from "@/lib/load-profile";
 
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
-  const [{ accounts, transactions }, categories] = await Promise.all([
+  const [{ accounts, transactions }, categories, profile] = await Promise.all([
     loadDashboard(),
     loadCategories(),
+    loadProfileSettings(),
   ]);
 
   return (
@@ -33,6 +35,7 @@ export default async function AnalyticsPage() {
         accounts={accounts}
         transactions={transactions}
         categories={categories}
+        targetSavingsRate={profile.target_savings_rate}
       />
     </main>
     </PageTransition>

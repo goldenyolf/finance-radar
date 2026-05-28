@@ -8,6 +8,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -19,6 +20,12 @@ import type { CrossMonthTrendPoint } from "@/lib/cross-month-trend";
 
 interface Props {
   data: CrossMonthTrendPoint[];
+  /**
+   * 使用者設定的每月儲蓄率目標（profiles.target_savings_rate）。
+   * 畫成右軸 % 的灰色虛線，提供「我這個月達標了嗎」一眼比對。
+   * 可選 — 若沒傳就不畫，相容老 caller。
+   */
+  targetSavingsRate?: number;
 }
 
 function formatCompact(n: number): string {
@@ -46,7 +53,7 @@ function formatSigned(n: number): string {
  * 防窺模式：tooltip wrapper + 軸 text 由 globals.css rule 統一 blur，
  * 這支元件零額外工。
  */
-export function CrossMonthTrendChart({ data }: Props) {
+export function CrossMonthTrendChart({ data, targetSavingsRate }: Props) {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -131,6 +138,25 @@ export function CrossMonthTrendChart({ data }: Props) {
             activeDot={{ r: 5, strokeWidth: 0 }}
             isAnimationActive={false}
           />
+          {/*
+            儲蓄率目標虛線 — 從 profiles.target_savings_rate 來。畫在右軸 (%) 上，
+            灰色虛線 strokeDasharray=3 3。使用者一掃就知道「這個月儲蓄率有沒有達標」。
+            放在 <Line> 之後確保虛線繪製在 line 上方不被蓋住。
+          */}
+          {typeof targetSavingsRate === "number" && targetSavingsRate > 0 && (
+            <ReferenceLine
+              yAxisId="right"
+              y={targetSavingsRate}
+              stroke="#94a3b8"
+              strokeDasharray="3 3"
+              label={{
+                value: `儲蓄目標 ${targetSavingsRate}%`,
+                position: "insideTopLeft",
+                fill: "#94a3b8",
+                fontSize: 10,
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

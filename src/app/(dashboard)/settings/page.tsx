@@ -4,12 +4,14 @@ import { CategoriesCard } from "@/components/dashboard/categories-card";
 import { DashboardPlatesCard } from "@/components/dashboard/dashboard-plates-card";
 import { LineBindingCard } from "@/components/dashboard/line-binding-card";
 import { PageTransition } from "@/components/dashboard/page-transition";
+import { ProfileSettingsCard } from "@/components/dashboard/profile-settings-card";
 import { SignOutButton } from "@/components/dashboard/sign-out-button";
 import { SubscriptionsCard } from "@/components/dashboard/subscriptions-card";
 import { SystemSettingsForm } from "@/components/dashboard/system-settings-form";
 import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
 import { loadDashboardPlates } from "@/lib/load-dashboard-plates";
+import { loadProfileSettings } from "@/lib/load-profile";
 import { loadSubscriptions } from "@/lib/load-subscriptions";
 import { createClient } from "@/lib/supabase/server";
 import { loadSystemSettings } from "@/lib/load-system-settings";
@@ -27,15 +29,23 @@ async function loadLineBinding(): Promise<string | null> {
 }
 
 export default async function SettingsPage() {
-  const [settings, subscriptions, { accounts }, lineUserId, categories, plates] =
-    await Promise.all([
-      loadSystemSettings(),
-      loadSubscriptions(),
-      loadDashboard(),
-      loadLineBinding(),
-      loadCategories(),
-      loadDashboardPlates(),
-    ]);
+  const [
+    settings,
+    subscriptions,
+    { accounts },
+    lineUserId,
+    categories,
+    plates,
+    profile,
+  ] = await Promise.all([
+    loadSystemSettings(),
+    loadSubscriptions(),
+    loadDashboard(),
+    loadLineBinding(),
+    loadCategories(),
+    loadDashboardPlates(),
+    loadProfileSettings(),
+  ]);
 
   return (
     <PageTransition>
@@ -53,6 +63,9 @@ export default async function SettingsPage() {
             記帳警報全部連動。
           </p>
         </header>
+
+        {/* 👤 個人設定 — 暱稱會回流首頁歡迎詞、儲蓄率目標會畫進分析趨勢圖 */}
+        <ProfileSettingsCard initial={profile} />
 
         <SystemSettingsForm initial={settings} />
 

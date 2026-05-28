@@ -36,6 +36,8 @@ interface Props {
   selectedDate: string;
   /** chart 點某日 → 跳到 daily tab 看該日明細 */
   onDrillDownToDay: (iso: string) => void;
+  /** profiles.target_savings_rate；跨月趨勢圖會畫成灰色目標虛線 */
+  targetSavingsRate: number;
 }
 
 /**
@@ -54,6 +56,7 @@ export function AnalyticsMonthlyTab({
   categories,
   selectedDate,
   onDrillDownToDay,
+  targetSavingsRate,
 }: Props) {
   const [monthDate, setMonthDate] = useState<Date>(() => new Date());
   const [isMonthSwitching, setIsMonthSwitching] = useState(false);
@@ -126,7 +129,10 @@ export function AnalyticsMonthlyTab({
           {isMonthSwitching ? (
             <Skeleton className="h-72 w-full" />
           ) : (
-            <CrossMonthTrendChart data={trendData} />
+            <CrossMonthTrendChart
+              data={trendData}
+              targetSavingsRate={targetSavingsRate}
+            />
           )}
         </CardContent>
       </Card>

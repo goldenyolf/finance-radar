@@ -17,6 +17,8 @@ interface Props {
   accounts: AccountRow[];
   transactions: TransactionRow[];
   categories?: CategoryRow[];
+  /** 使用者設定的每月儲蓄率目標（%）— 跨月趨勢圖會畫成灰色虛線 */
+  targetSavingsRate: number;
 }
 
 function todayIsoTaipei(): string {
@@ -44,6 +46,7 @@ export function AnalyticsView({
   accounts,
   transactions,
   categories,
+  targetSavingsRate,
 }: Props) {
   const today = useMemo(() => todayIsoTaipei(), []);
   const [tab, setTab] = useState<string>("monthly");
@@ -74,6 +77,7 @@ export function AnalyticsView({
           categories={categories ?? []}
           selectedDate={selectedDate}
           onDrillDownToDay={handleDrillDownToDay}
+          targetSavingsRate={targetSavingsRate}
         />
       </TabsContent>
 
