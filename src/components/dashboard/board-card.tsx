@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { Settings } from "lucide-react";
+
 import {
   Card,
   CardContent,
@@ -76,7 +79,7 @@ function amountToneClass(item: BoardDetailItem) {
 }
 
 export function BoardCard({ data, allAccounts, categories }: Props) {
-  const { def, accounts, metrics, items, hasAccounts, hasRecurringIncome } = data;
+  const { meta, accounts, metrics, items, hasAccounts, hasRecurringIncome, isUnlinked } = data;
   const remainingPositive = metrics.remaining >= 0;
 
   // 預算消耗進度
@@ -125,15 +128,17 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
             aria-hidden
             className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-2xl leading-none"
           >
-            {def.emoji}
+            {meta.emoji}
           </span>
           <div className="min-w-0 flex-1">
             <CardTitle className="text-base font-semibold">
-              {def.title}
+              {meta.name}
             </CardTitle>
-            <CardDescription className="mt-0.5 text-xs leading-relaxed">
-              {def.subtitle}
-            </CardDescription>
+            {meta.description && (
+              <CardDescription className="mt-0.5 text-xs leading-relaxed">
+                {meta.description}
+              </CardDescription>
+            )}
           </div>
         </div>
         <p className="mb-5 line-clamp-2 text-xs text-muted-foreground">
@@ -143,9 +148,17 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
               <span className="mx-1.5 text-muted-foreground/50">·</span>
               {accounts.map((a) => a.name).join("、")}
             </>
+          ) : isUnlinked ? (
+            <Link
+              href="/settings"
+              className="inline-flex items-center gap-1 text-amber-600 hover:underline dark:text-amber-400"
+            >
+              <Settings className="size-3" />
+              尚未綁定帳戶，點此到設定頁配置
+            </Link>
           ) : (
             <span className="text-amber-600 dark:text-amber-400">
-              尚未綁定帳戶，請至 Supabase 新增此板塊對應帳戶
+              關聯帳戶已被刪除
             </span>
           )}
         </p>

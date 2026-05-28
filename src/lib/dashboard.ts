@@ -417,55 +417,40 @@ export const FREQUENCY_LABEL: Record<RecurringFrequency, string> = {
   yearly: "每年",
 };
 
-// ─── Three-board model ───────────────────────────────
-// 個人 / 家庭 / 補助。透過帳戶名稱關鍵字 heuristic 分類，
-// 未來若 accounts 表加上 category 欄位可改成讀欄位。
-
-export type BoardKey = "personal" | "family" | "subsidy";
-
-export interface BoardDef {
-  key: BoardKey;
-  emoji: string;
-  title: string;
-  subtitle: string;
-}
-
-export const BOARDS: BoardDef[] = [
-  {
-    key: "family",
-    emoji: "🏠",
-    title: "家庭財務",
-    subtitle: "共同帳戶：房貸、托育、學費、子女花費",
-  },
-  {
-    key: "subsidy",
-    emoji: "👶",
-    title: "補助金流",
-    subtitle: "幼兒補助與被動收入專戶",
-  },
-  {
-    key: "personal",
-    emoji: "👨‍💼",
-    title: "個人財務",
-    subtitle: "個人薪資、生活開銷與向共同戶的固定轉出",
-  },
-];
-
-export const BOARD_DEF: Record<BoardKey, BoardDef> = Object.fromEntries(
-  BOARDS.map((b) => [b.key, b])
-) as Record<BoardKey, BoardDef>;
+// ─── Plate-based board model ───────────────────────────────
+// 取代原本寫死的 BoardKey enum + classifyAccount regex hack。
+// 每個 plate (dashboard_plates 一筆) 對應一張 BoardCard，
+// plate.linked_account_id 明確綁定一個 cash flow account（1:1）。
 
 /**
- * 依帳戶名稱關鍵字分類到三個板塊，預設落到 personal。
+ * 把 plate.name 對應到 emoji。預設 seed plates（家庭/補助/個人）對到原本
+ * 那 3 個視覺；其他使用者自訂 plate 走 🏷️ 通用 fallback。
  *
- * 關鍵字以「角色概念」為主（共同 / 家庭 / 補助 / 投資），方便 fork 後不需
- * 改動就能適配任何銀行命名。若你的帳戶名稱不含這些關鍵字，預設都會落到
- * personal — 可在這裡擴充 regex 加入自己的關鍵字（例如特定銀行名）。
+ * 未來如果 dashboard_plates 加 emoji 欄位，這支就退役改讀 plate.emoji。
  */
-export function classifyAccount(name: string): BoardKey {
-  if (/共同|家庭/.test(name)) return "family";
-  if (/補助|投資/.test(name)) return "subsidy";
-  return "personal";
+export function derivePlateEmoji(name: string): string {
+  if (/家庭|共同/.test(name)) return "🏠";
+  if (/補助|被動/.test(name)) return "👶";
+  if (/個人|本人/.test(name)) return "👨‍💼";
+  if (/投資/.test(name)) return "📈";
+  if (/儲蓄|存款/.test(name)) return "🐷";
+  return "🏷️";
+}
+
+/**
+ * Mobile tab label — 截前 2 字，避免長 plate 名稱把 tab bar 撐爆。
+ * "家庭財務" → "家庭"、"補助金流" → "補助"，跟原本手動 mapping 行為一致。
+ */
+export function derivePlateShortLabel(name: string): string {
+  return name.slice(0, 2);
+}
+
+export interface BoardMeta {
+  plateId: string;
+  name: string;
+  description: string;
+  emoji: string;
+  shortLabel: string;
 }
 
 export type DetailCategory =
@@ -510,13 +495,15 @@ export interface BoardMetrics {
 }
 
 export interface BoardData {
-  def: BoardDef;
+  meta: BoardMeta;
+  /** 1:1 model — 最多 1 個 account（plate.linked_account_id 對應），空 = 未綁定 */
   accounts: AccountRow[];
   metrics: BoardMetrics;
   items: BoardDetailItem[];
-  /** 為了讓 UI 顯示空狀態提示 */
   hasAccounts: boolean;
   hasRecurringIncome: boolean;
+  /** plate.linked_account_id 為 null → UI 顯示「請到設定頁綁定帳戶」CTA */
+  isUnlinked: boolean;
 }
 
 function isInMonthOf(dateStr: string, now: Date) {
@@ -565,37 +552,59 @@ function transactionStatusLabel(
 }
 
 /**
- * 把 accounts / recurring / transactions 拆成三個板塊的資料切片，
+ * 把 accounts / recurring / transactions 切成 N 個 plate 對應的 board 資料，
  * 每片含 metrics（預算 / 已支出 / 剩餘）與整合過的明細清單。
  *
- * 時間感知：
- *   1. 「本月」嚴格以 `now` 的年月為基準，跨月自動歸零重新計算。
- *   2. `upcoming` 但日期已到 / 已過期的交易，自動視為 completed
- *      （計入「已支出」、明細狀態改為「已扣款 / 已入帳」）。
- *   3. 每次呼叫都吃一個新 `now`，所以每次 render 就是當下這一秒。
+ * 1:1 model：每個 plate 透過 linked_account_id 綁一個 account。未綁定 →
+ * accounts 空陣列、isUnlinked=true，UI 走 CTA empty state。
+ *
+ * 排序：依 plate.sort_order ASC 回傳陣列，UI 直接 .map render 就好，
+ * 不再需要靠 BoardKey 當 dict key。
+ *
+ * 時間感知：跟舊版相同 — completed 嚴格本月、upcoming 過期視為 completed。
  */
 export function buildBoardData(opts: {
+  plates: { id: string; name: string; description: string; linked_account_id: string | null; sort_order: number }[];
   accounts: AccountRow[];
   recurring: RecurringRow[];
   transactions: TransactionRow[];
   now?: Date;
-}): Record<BoardKey, BoardData> {
-  const { accounts, recurring, transactions } = opts;
+}): BoardData[] {
+  const { plates, accounts, recurring, transactions } = opts;
   const now = opts.now ?? new Date();
 
   const accountById = new Map(accounts.map((a) => [a.id, a]));
-  const boardByAccountId = new Map<string, BoardKey>();
-  for (const acc of accounts) {
-    boardByAccountId.set(acc.id, classifyAccount(acc.name));
-  }
 
-  const result: Record<BoardKey, BoardData> = {} as Record<BoardKey, BoardData>;
+  // plate 依 sort_order ASC 處理（caller 已排好的話照原順序；防御性再排一次）
+  const orderedPlates = [...plates].sort((a, b) => a.sort_order - b.sort_order);
 
-  for (const def of BOARDS) {
-    const boardAccounts = accounts.filter(
-      (a) => classifyAccount(a.name) === def.key
-    );
+  return orderedPlates.map((plate) => {
+    const linkedAccount = plate.linked_account_id
+      ? accountById.get(plate.linked_account_id)
+      : null;
+    const boardAccounts: AccountRow[] = linkedAccount ? [linkedAccount] : [];
     const accountIdSet = new Set(boardAccounts.map((a) => a.id));
+
+    const meta: BoardMeta = {
+      plateId: plate.id,
+      name: plate.name,
+      description: plate.description,
+      emoji: derivePlateEmoji(plate.name),
+      shortLabel: derivePlateShortLabel(plate.name),
+    };
+
+    // 未綁定帳戶 → 直接回 zero metrics + empty items，省下後面遍歷
+    if (!linkedAccount) {
+      return {
+        meta,
+        accounts: [],
+        metrics: { budget: 0, spent: 0, remaining: 0 },
+        items: [],
+        hasAccounts: false,
+        hasRecurringIncome: false,
+        isUnlinked: true,
+      };
+    }
 
     const boardRecurring = recurring.filter(
       (r) => r.account_id && accountIdSet.has(r.account_id)
@@ -695,7 +704,6 @@ export function buildBoardData(opts: {
       });
     }
 
-    // 排序：日期 desc，再按 source（recurring 排後面顯示為固定排程）
     items.sort((a, b) => {
       if (a.date === b.date) {
         if (a.source === b.source) return 0;
@@ -704,18 +712,14 @@ export function buildBoardData(opts: {
       return a.date < b.date ? 1 : -1;
     });
 
-    result[def.key] = {
-      def,
+    return {
+      meta,
       accounts: boardAccounts,
       metrics: { budget, spent, remaining },
       items,
-      hasAccounts: boardAccounts.length > 0,
+      hasAccounts: true,
       hasRecurringIncome: recurringIncome > 0,
+      isUnlinked: false,
     };
-  }
-
-  // boardByAccountId 留作未來擴充用（目前未對外暴露）
-  void boardByAccountId;
-
-  return result;
+  });
 }

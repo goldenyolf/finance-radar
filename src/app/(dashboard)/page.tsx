@@ -32,10 +32,10 @@ import {
   computeForecast,
   num,
   scopeForAccount,
-  BOARDS,
 } from "@/lib/dashboard";
 import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
+import { loadDashboardPlates } from "@/lib/load-dashboard-plates";
 import { loadGoals } from "@/lib/load-goals";
 import { loadSubscriptions } from "@/lib/load-subscriptions";
 import { loadSystemSettings } from "@/lib/load-system-settings";
@@ -56,16 +56,24 @@ export default async function HomePage({ searchParams }: PageProps) {
     subscriptions,
     goals,
     categories,
+    plates,
   ] = await Promise.all([
     loadDashboard(),
     loadSystemSettings(),
     loadSubscriptions(),
     loadGoals(),
     loadCategories(),
+    loadDashboardPlates(),
   ]);
 
-  // 三大板塊：用真實當下；歷史月份切換已搬到 /analytics
-  const boardData = buildBoardData({ accounts, recurring, transactions, now });
+  // 板塊：使用者自訂（dashboard_plates）；用真實當下；歷史月份切換在 /analytics
+  const boardData = buildBoardData({
+    plates,
+    accounts,
+    recurring,
+    transactions,
+    now,
+  });
   const threshold =
     settings.safetyThreshold ??
     (user ? num(user.emergency_fund_threshold) : 0);
@@ -199,49 +207,86 @@ export default async function HomePage({ searchParams }: PageProps) {
         accounts={accounts}
       />
 
-      {/* 三大板塊 — Desktop */}
-      <section
-        aria-label="三大財務板塊"
-        className="hidden grid-cols-1 gap-4 md:grid lg:grid-cols-3"
-      >
-        {BOARDS.map((b) => (
-          <BoardCard
-            key={b.key}
-            data={boardData[b.key]}
-            allAccounts={accounts}
-            categories={categories}
-          />
-        ))}
-      </section>
-
-      {/* 三大板塊 — Mobile */}
-      <section aria-label="三大財務板塊（手機版）" className="md:hidden">
-        <Tabs defaultValue="family" className="gap-6">
-          <TabsList className="mb-2 grid w-full grid-cols-3">
-            {BOARDS.map((b) => (
-              <TabsTrigger key={b.key} value={b.key} className="gap-1.5">
-                <span aria-hidden>{b.emoji}</span>
-                <span>
-                  {b.key === "family"
-                    ? "家庭"
-                    : b.key === "subsidy"
-                      ? "補助"
-                      : "個人"}
-                </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          {BOARDS.map((b) => (
-            <TabsContent key={b.key} value={b.key}>
+      {/* 板塊區（自訂 N 個，最多 4 個 — 沒任何 plate → 引導去 settings 建第一個） */}
+      {boardData.length === 0 ? (
+        <section
+          aria-label="財務板塊"
+          className="rounded-xl border border-dashed border-foreground/15 bg-muted/30 px-5 py-10 text-center text-sm"
+        >
+          <p className="text-muted-foreground">
+            還沒設定任何戰情室板塊。
+          </p>
+          <Link
+            href="/settings"
+            className="mt-2 inline-flex items-center gap-1 font-medium text-foreground hover:underline"
+          >
+            到設定頁建立第一個 →
+          </Link>
+        </section>
+      ) : (
+        <>
+          {/*
+            Desktop grid：1 個一欄、2 個兩欄、3+ 個三欄（4 個就 3+1 wrap）。
+            動態 className 但只用有限集合（1/2/3），Tailwind 編譯期會保留全部。
+          */}
+          <section
+            aria-label="財務板塊"
+            className={`hidden gap-4 md:grid ${
+              boardData.length === 1
+                ? "grid-cols-1"
+                : boardData.length === 2
+                  ? "grid-cols-2"
+                  : "grid-cols-1 lg:grid-cols-3"
+            }`}
+          >
+            {boardData.map((b) => (
               <BoardCard
-                data={boardData[b.key]}
+                key={b.meta.plateId}
+                data={b}
                 allAccounts={accounts}
                 categories={categories}
               />
-            </TabsContent>
-          ))}
-        </Tabs>
-      </section>
+            ))}
+          </section>
+
+          {/* Mobile Tabs：每塊一個 tab；TabsList 動態 grid-cols 1-4 */}
+          <section aria-label="財務板塊（手機版）" className="md:hidden">
+            <Tabs defaultValue={boardData[0].meta.plateId} className="gap-6">
+              <TabsList
+                className={`mb-2 grid w-full ${
+                  boardData.length === 1
+                    ? "grid-cols-1"
+                    : boardData.length === 2
+                      ? "grid-cols-2"
+                      : boardData.length === 3
+                        ? "grid-cols-3"
+                        : "grid-cols-4"
+                }`}
+              >
+                {boardData.map((b) => (
+                  <TabsTrigger
+                    key={b.meta.plateId}
+                    value={b.meta.plateId}
+                    className="gap-1.5"
+                  >
+                    <span aria-hidden>{b.meta.emoji}</span>
+                    <span>{b.meta.shortLabel}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {boardData.map((b) => (
+                <TabsContent key={b.meta.plateId} value={b.meta.plateId}>
+                  <BoardCard
+                    data={b}
+                    allAccounts={accounts}
+                    categories={categories}
+                  />
+                </TabsContent>
+              ))}
+            </Tabs>
+          </section>
+        </>
+      )}
 
       {/* 夢想基金：首頁只放微型版，完整管理在 /goals */}
       <GoalSummaryLink goals={goals} />
