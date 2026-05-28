@@ -7,6 +7,8 @@ import { BoardCard } from "@/components/dashboard/board-card";
 import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
 import { GoalSummaryLink } from "@/components/dashboard/goal-summary-link";
+import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
+import { OnboardingDialog } from "@/components/dashboard/onboarding-dialog";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
 import { SubscriptionAlertWidget } from "@/components/dashboard/subscription-alert-widget";
@@ -37,6 +39,8 @@ import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
 import { loadDashboardPlates } from "@/lib/load-dashboard-plates";
 import { loadGoals } from "@/lib/load-goals";
+import { loadOnboardingCompleted } from "@/lib/load-onboarding";
+import { loadOnboardingProgress } from "@/lib/load-onboarding-progress";
 import { loadSubscriptions } from "@/lib/load-subscriptions";
 import { loadSystemSettings } from "@/lib/load-system-settings";
 
@@ -57,6 +61,8 @@ export default async function HomePage({ searchParams }: PageProps) {
     goals,
     categories,
     plates,
+    onboardingCompleted,
+    onboardingProgress,
   ] = await Promise.all([
     loadDashboard(),
     loadSystemSettings(),
@@ -64,6 +70,8 @@ export default async function HomePage({ searchParams }: PageProps) {
     loadGoals(),
     loadCategories(),
     loadDashboardPlates(),
+    loadOnboardingCompleted(),
+    loadOnboardingProgress(),
   ]);
 
   // 板塊：使用者自訂（dashboard_plates）；用真實當下；歷史月份切換在 /analytics
@@ -108,6 +116,13 @@ export default async function HomePage({ searchParams }: PageProps) {
   return (
     <PageTransition>
     <main className="mx-auto w-full max-w-6xl px-5 pt-10 pb-10 sm:px-6 lg:py-14">
+      {/*
+        🪜 新手任務清單 — 擺在 header 之上的最頂部，3 任務全達標時元件
+        return null 自動消失。已綁 LINE / 配過板塊 / 拍過快照的老用戶
+        永遠看不到，零干擾。
+      */}
+      <OnboardingChecklist progress={onboardingProgress} />
+
       {/* Header */}
       <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -340,6 +355,13 @@ export default async function HomePage({ searchParams }: PageProps) {
         </Card>
       </section>
     </main>
+
+    {/*
+      新手引導：has_completed_onboarding=false 才掛進來，所以 OnboardingDialog
+      不用自己判斷狀態。掛在 PageTransition 內，但 Dialog 自己 portal 到
+      document.body，不會被 PageTransition 的 transform stacking context 困住。
+    */}
+    {!onboardingCompleted && <OnboardingDialog />}
     </PageTransition>
   );
 }
