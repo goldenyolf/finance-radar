@@ -21,16 +21,29 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  /**
+   * true = 只在桌面 sidebar 顯示；手機底部 tab bar 隱藏。
+   * 用在低頻、版位有限時需要犧牲的功能（避免 6 個 tab 擠壓觸控目標）。
+   */
+  desktopOnly?: boolean;
 }
 
-// 順序語意：state（首頁/夢想/資產）→ flow（分析/明細）→ system（設定）
-// 「資產」=低頻月度淨值快照，跟夢想都是「存量」概念，所以擺在夢想旁。
+/*
+  順序語意（依使用頻率由高到低重排）：
+    高頻 daily  : 首頁 → 明細 → 分析
+    中頻 monthly: 資產（月度淨值快照）
+    低頻 rare  : 夢想（儲蓄目標管理）
+    系統     : 設定（永遠最下面）
+
+  手機底部 tab bar：5 格（首頁 / 明細 / 分析 / 資產 / 設定）。
+  夢想標 desktopOnly — 行動版手指要按 6 格寬度太擠，犧牲低頻功能換觸控品質。
+*/
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "首頁", icon: Home },
-  { href: "/goals", label: "夢想", icon: Target },
-  { href: "/net-worth", label: "資產", icon: Wallet },
-  { href: "/analytics", label: "分析", icon: PieChart },
   { href: "/transactions", label: "明細", icon: ScrollText },
+  { href: "/analytics", label: "分析", icon: PieChart },
+  { href: "/net-worth", label: "資產", icon: Wallet },
+  { href: "/goals", label: "夢想", icon: Target, desktopOnly: true },
   { href: "/settings", label: "設定", icon: Settings },
 ];
 
@@ -121,12 +134,15 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
 /* ─────────────────────────── Mobile Tab Bar ─────────────────────────── */
 
 function MobileTabBar({ pathname }: { pathname: string }) {
+  // 過濾 desktopOnly — 行動版只留高頻 4 個 + 設定 = 5 格，每格 ~75px 觸控舒適
+  const mobileItems = NAV_ITEMS.filter((item) => !item.desktopOnly);
+
   return (
     <nav
       aria-label="主要導航"
       className="fixed right-0 bottom-0 left-0 z-30 flex h-16 items-stretch border-t border-foreground/10 bg-background/85 backdrop-blur-lg pb-[env(safe-area-inset-bottom)] md:hidden"
     >
-      {NAV_ITEMS.map((item) => {
+      {mobileItems.map((item) => {
         const active = isActive(pathname, item.href);
         const Icon = item.icon;
         return (
