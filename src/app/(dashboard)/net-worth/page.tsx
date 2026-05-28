@@ -6,6 +6,7 @@ import { NetWorthTrendChart } from "@/components/dashboard/net-worth-trend-chart
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { UpdateSnapshotDialog } from "@/components/dashboard/update-snapshot-dialog";
 import { WealthAccountsList } from "@/components/dashboard/wealth-accounts-list";
+import { HelpTip } from "@/components/ui/help-tip";
 import {
   Card,
   CardContent,
@@ -68,7 +69,12 @@ export default async function NetWorthPage() {
                 最近快照：{lastUpdated}
               </span>
             )}
-            <UpdateSnapshotDialog accounts={accounts} latest={latest} />
+            <div className="flex items-center gap-2">
+              <UpdateSnapshotDialog accounts={accounts} latest={latest} />
+              <HelpTip ariaLabel="資產快照說明" side="bottom">
+                📸 財富覆盤小常識：這是一個低頻高價值的空間。建議在每個月的最後一天（發薪後、繳完主要帳單時），手動填入當下各帳戶/負債的真實殘值。持續半年，即可解鎖精準的資產爬升面積圖。
+              </HelpTip>
+            </div>
           </div>
         </header>
 

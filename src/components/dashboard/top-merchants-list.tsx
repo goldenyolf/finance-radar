@@ -1,5 +1,6 @@
 import { Skull } from "lucide-react";
 
+import { HelpTip } from "@/components/ui/help-tip";
 import { Money } from "@/components/ui/money";
 import {
   Card,
@@ -34,11 +35,14 @@ export function TopMerchantsList({ data }: Props) {
       <CardHeader>
         <div className="flex items-center gap-2">
           <Skull className="size-4 text-rose-600 dark:text-rose-400" />
-          <CardTitle className="text-base">
+          <CardTitle className="flex items-center gap-1.5 text-base">
             🧛 本月吸血鬼排行榜
-            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+            <span className="text-xs font-normal text-muted-foreground">
               Top Merchants
             </span>
+            <HelpTip ariaLabel="吸血鬼排行榜說明">
+              🔍 錢包黑手偵探：系統會自動清洗掉記帳明細中的（括號備註），提取核心消費對象並加總金額，幫您一眼抓出本月默默吸走最多現金流的店家或項目。
+            </HelpTip>
           </CardTitle>
         </div>
         <CardDescription className="mt-1">

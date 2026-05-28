@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Money } from "@/components/ui/money";
 import {
   Card,
@@ -124,8 +125,11 @@ export function FinancialElasticity({ data }: Props) {
             {/* 右：負擔率大字 + breakdown */}
             <div className="flex flex-col gap-4">
               <div>
-                <p className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+                <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
                   財務硬性負擔率
+                  <HelpTip ariaLabel="財務硬性負擔率說明">
+                    💡 計算公式：(固定支出 ÷ 總收入) × 100%。固定支出包含房貸、托育、保險等避不掉的「死錢」。理財學上建議此比率維持在 30% 以下，若超過 60% 代表財務空間被嚴重壓迫，一發薪水即被綁死。
+                  </HelpTip>
                 </p>
                 <p
                   className={`mt-1 text-5xl font-bold tabular-nums tracking-tight ${tierClass}`}
