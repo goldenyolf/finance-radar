@@ -271,15 +271,17 @@ async function loadUserCategories(userId: string): Promise<CategoryRow[]> {
 }
 
 /**
- * 撈 user 的所有帳戶（多租戶必經之路）。按 created_at asc 排序，讓 fallback
- * chain 最末段「first account」行為穩定可預期。撈失敗回空陣列。
+ * 撈 user 的所有帳戶（多租戶必經之路）。按 id 字典序排序，讓 fallback
+ * chain 最末段「first account」行為穩定可預期 — accounts 表沒有
+ * created_at 欄位（schema 沿用早期 seed），所以不用時間排序。
+ * 撈失敗回空陣列。
  */
 async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
   const { data, error } = await db()
     .from("accounts")
-    .select("id, name, created_at")
+    .select("id, name")
     .eq("user_id", userId)
-    .order("created_at", { ascending: true });
+    .order("id", { ascending: true });
   if (error) {
     console.error("[LINE webhook] accounts fetch failed:", error);
     return [];
@@ -297,7 +299,7 @@ async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
  *   (A) override：LLM 已 fuzzy match 完
  *   (B) category.default_account_id：分類層偏好（如「水電」永遠走台新）
  *   (C) profile.default_account_id：帳號層主要帳戶 singleton
- *   (D) accounts 最早一筆：保底（避免 new user 還沒設 default 時崩潰）
+ *   (D) accounts id 字典序第一筆：保底（避免 new user 還沒設 default 時崩潰）
  */
 function resolveTargetAccount(args: {
   overrideAccountId: string | null;

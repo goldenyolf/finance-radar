@@ -65,7 +65,7 @@ export default async function SettingsPage() {
         </header>
 
         {/* 👤 個人設定 — 暱稱會回流首頁歡迎詞、儲蓄率目標會畫進分析趨勢圖 */}
-        <ProfileSettingsCard initial={profile} />
+        <ProfileSettingsCard initial={profile} accounts={accounts} />
 
         <SystemSettingsForm initial={settings} />
 
@@ -73,7 +73,7 @@ export default async function SettingsPage() {
         <DashboardPlatesCard plates={plates} accounts={accounts} />
 
         {/* 🎨 分類管理 — 動態取代靜態 EXPENSE_CATEGORY_*；改顏色 / 名稱會即時連動圖表 */}
-        <CategoriesCard categories={categories} />
+        <CategoriesCard categories={categories} accounts={accounts} />
 
         {/* LINE 綁定區塊 — 多租戶版才有，把 LINE userId 寫進 profiles */}
         <LineBindingCard currentLineUserId={lineUserId} />

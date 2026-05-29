@@ -15,11 +15,23 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { updateProfile } from "@/lib/actions/profile";
+import type { AccountRow } from "@/lib/dashboard";
 import type { ProfileSettings } from "@/lib/load-profile";
+
+/** Select 不收 null — 用哨兵字串代表「不指定」，submit 時轉回 null。 */
+const ACCOUNT_NONE = "__none__";
 
 interface Props {
   initial: ProfileSettings;
+  accounts: AccountRow[];
 }
 
 /**
@@ -32,11 +44,14 @@ interface Props {
  * 表單刻意用「dirty 狀態 disable 按鈕」UX —  沒改東西按鈕亮著但點下去
  * 是 no-op 浪費 round trip。看到 dirty 才 enable。
  */
-export function ProfileSettingsCard({ initial }: Props) {
+export function ProfileSettingsCard({ initial, accounts }: Props) {
   const router = useRouter();
   const [displayName, setDisplayName] = useState(initial.display_name ?? "");
   const [targetSavingsRate, setTargetSavingsRate] = useState(
     String(initial.target_savings_rate)
+  );
+  const [defaultAccountId, setDefaultAccountId] = useState<string>(
+    initial.default_account_id ?? ACCOUNT_NONE
   );
   const [pending, startTransition] = useTransition();
 
@@ -44,7 +59,8 @@ export function ProfileSettingsCard({ initial }: Props) {
   // 「Austin → Austin 」一個空白的差，按鈕沒亮使用者會覺得壞掉）。直接 raw 字串比對。
   const dirty =
     displayName !== (initial.display_name ?? "") ||
-    targetSavingsRate !== String(initial.target_savings_rate);
+    targetSavingsRate !== String(initial.target_savings_rate) ||
+    defaultAccountId !== (initial.default_account_id ?? ACCOUNT_NONE);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -62,6 +78,8 @@ export function ProfileSettingsCard({ initial }: Props) {
       const result = await updateProfile({
         display_name: displayName,
         target_savings_rate: rate,
+        default_account_id:
+          defaultAccountId === ACCOUNT_NONE ? null : defaultAccountId,
       });
       if (!result.ok) {
         toast.error("儲存失敗", { description: result.error });
@@ -133,6 +151,49 @@ export function ProfileSettingsCard({ initial }: Props) {
             </div>
             <p className="text-[11px] text-muted-foreground">
               建議 20% 以上是穩健理財的基準；跨月趨勢圖會用這值畫一條灰色目標虛線。
+            </p>
+          </div>
+
+          {/*
+            LINE bot 主要帳戶 — fallback chain (C)。當使用者打「午餐 120」沒
+            指定帳戶、分類也沒綁定帳戶時，預設記到這裡。沒設 → 退到
+            最早建立的帳戶（避免 new user 還沒選就崩潰）。
+          */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="profile-default-account">
+              LINE 記帳的主要帳戶
+            </Label>
+            <Select
+              value={defaultAccountId}
+              onValueChange={(v) => setDefaultAccountId(v ?? ACCOUNT_NONE)}
+            >
+              <SelectTrigger
+                id="profile-default-account"
+                className="w-full"
+              >
+                <SelectValue>
+                  {(v) => {
+                    if (v === ACCOUNT_NONE || !v) {
+                      return "不指定（自動選最早的帳戶）";
+                    }
+                    const acc = accounts.find((a) => a.id === v);
+                    return acc?.name ?? String(v);
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ACCOUNT_NONE}>
+                  不指定（自動選最早的帳戶）
+                </SelectItem>
+                {accounts.map((acc) => (
+                  <SelectItem key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              LINE 訊息沒指定帳戶、分類也沒綁定時，預設記到這裡。
             </p>
           </div>
 

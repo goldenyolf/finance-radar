@@ -76,6 +76,8 @@ export interface UpdateProfileInput {
   display_name: string;
   /** 0-100 之間的數字（百分比） */
   target_savings_rate: number;
+  /** LINE bot fallback chain (C)；null = 不指定，走 (D) first account */
+  default_account_id: string | null;
 }
 
 /**
@@ -120,6 +122,7 @@ export async function updateProfile(
       user_id: user.id,
       display_name: trimmedName || null,
       target_savings_rate: input.target_savings_rate,
+      default_account_id: input.default_account_id,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id" }

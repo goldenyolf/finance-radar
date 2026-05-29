@@ -44,9 +44,14 @@ import {
   type CreateCategoryInput,
 } from "@/lib/actions/categories";
 import type { CategoryRow, CategoryType } from "@/lib/categories";
+import type { AccountRow } from "@/lib/dashboard";
+
+/** Select 不收 null — 用哨兵字串代表「不指定」，submit 時轉回 null。 */
+const ACCOUNT_NONE = "__none__";
 
 interface Props {
   categories: CategoryRow[];
+  accounts: AccountRow[];
 }
 
 interface DraftState {
@@ -57,6 +62,8 @@ interface DraftState {
   keywords: string;
   /** 字串型態方便 UI 區分「未輸入」(空字串) vs 0；submit 時轉 number */
   budgetMonthly: string;
+  /** ACCOUNT_NONE = 不指定；其他為 accounts.id */
+  defaultAccountId: string;
 }
 
 const BLANK_DRAFT: DraftState = {
@@ -65,6 +72,7 @@ const BLANK_DRAFT: DraftState = {
   color: "#94A3B8",
   keywords: "",
   budgetMonthly: "",
+  defaultAccountId: ACCOUNT_NONE,
 };
 
 const PRESET_COLORS = [
@@ -80,7 +88,7 @@ const PRESET_COLORS = [
   "#94A3B8", // slate
 ];
 
-export function CategoriesCard({ categories }: Props) {
+export function CategoriesCard({ categories, accounts }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -114,6 +122,7 @@ export function CategoriesCard({ categories }: Props) {
       color: row.color,
       keywords: row.keywords,
       budgetMonthly: row.budget_monthly > 0 ? String(row.budget_monthly) : "",
+      defaultAccountId: row.default_account_id ?? ACCOUNT_NONE,
     });
     setDialogOpen(true);
   }
@@ -129,6 +138,10 @@ export function CategoriesCard({ categories }: Props) {
       color: draft.color,
       keywords: draft.keywords,
       budget_monthly: Number.isFinite(budget) && budget >= 0 ? budget : 0,
+      default_account_id:
+        draft.defaultAccountId === ACCOUNT_NONE
+          ? null
+          : draft.defaultAccountId,
     };
     startTransition(async () => {
       const result = draft.id
@@ -208,6 +221,7 @@ export function CategoriesCard({ categories }: Props) {
               <CategoryRowItem
                 key={cat.id}
                 category={cat}
+                accounts={accounts}
                 onEdit={() => openEdit(cat)}
                 onDelete={() => handleDelete(cat)}
                 deleting={deletingId === cat.id}
@@ -225,6 +239,7 @@ export function CategoriesCard({ categories }: Props) {
         pending={pending}
         onSubmit={handleSubmit}
         isEdit={!!draft.id}
+        accounts={accounts}
       />
     </Card>
   );
@@ -234,12 +249,19 @@ export function CategoriesCard({ categories }: Props) {
 
 interface RowProps {
   category: CategoryRow;
+  accounts: AccountRow[];
   onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
 }
 
-function CategoryRowItem({ category, onEdit, onDelete, deleting }: RowProps) {
+function CategoryRowItem({
+  category,
+  accounts,
+  onEdit,
+  onDelete,
+  deleting,
+}: RowProps) {
   const isBuiltIn = !!category.code;
   const keywordPreview = category.keywords
     ? category.keywords.split(/[,，、\s]+/).filter(Boolean).slice(0, 4).join(" · ")
@@ -248,6 +270,9 @@ function CategoryRowItem({ category, onEdit, onDelete, deleting }: RowProps) {
     category.budget_monthly > 0
       ? `預算 NT$${category.budget_monthly.toLocaleString("zh-TW")}/月`
       : null;
+  const boundAccount = category.default_account_id
+    ? accounts.find((a) => a.id === category.default_account_id)
+    : null;
 
   return (
     <li
@@ -299,6 +324,12 @@ function CategoryRowItem({ category, onEdit, onDelete, deleting }: RowProps) {
           </p>
         )}
 
+        {boundAccount && (
+          <p className="truncate text-[11px] text-sky-700 dark:text-sky-400">
+            → 預設記到「{boundAccount.name}」
+          </p>
+        )}
+
         <p className="truncate text-[11px] text-muted-foreground">
           {keywordPreview}
         </p>
@@ -342,6 +373,7 @@ interface DialogProps {
   pending: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   isEdit: boolean;
+  accounts: AccountRow[];
 }
 
 function CategoryDialog({
@@ -352,12 +384,14 @@ function CategoryDialog({
   pending,
   onSubmit,
   isEdit,
+  accounts,
 }: DialogProps) {
   const nameId = useId();
   const typeId = useId();
   const colorId = useId();
   const keywordsId = useId();
   const budgetId = useId();
+  const defaultAccountId = useId();
   const isExpense = draft.type === "expense";
 
   return (
@@ -485,6 +519,41 @@ function CategoryDialog({
               </p>
             </div>
           )}
+
+          {/*
+            LINE bot fallback chain (B) — 分類層預設帳戶。例：「水電」綁台新後，
+            user 在 LINE 打「水電 1200」沒帶帳戶名 → 系統會自動記到台新。
+          */}
+          <div className="grid gap-1.5">
+            <Label htmlFor={defaultAccountId}>預設帳戶（LINE 記帳用）</Label>
+            <Select
+              value={draft.defaultAccountId}
+              onValueChange={(v) =>
+                setDraft({ ...draft, defaultAccountId: v ?? ACCOUNT_NONE })
+              }
+            >
+              <SelectTrigger id={defaultAccountId} className="w-full">
+                <SelectValue>
+                  {(v) => {
+                    if (v === ACCOUNT_NONE || !v) return "不指定";
+                    const acc = accounts.find((a) => a.id === v);
+                    return acc?.name ?? String(v);
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ACCOUNT_NONE}>不指定</SelectItem>
+                {accounts.map((acc) => (
+                  <SelectItem key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              此分類的 LINE 訊息若沒指定帳戶，會自動記到這裡；不指定 → 退到個人主要帳戶。
+            </p>
+          </div>
 
           <DialogFooter className="mt-2">
             <Button

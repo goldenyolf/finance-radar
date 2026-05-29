@@ -12,6 +12,8 @@ export interface CreateCategoryInput {
   keywords: string;
   /** 每月預算上限；0 = 不設預算（圓餅圖不顯示進度條 / LINE bot 不警告）。 */
   budget_monthly: number;
+  /** LINE bot fallback chain (B) — 分類層預設帳戶；null = 不指定，往下層退。 */
+  default_account_id: string | null;
 }
 
 export interface UpdateCategoryInput extends CreateCategoryInput {
@@ -53,6 +55,7 @@ export async function createCategory(
     color: input.color,
     keywords: input.keywords.trim(),
     budget_monthly: input.budget_monthly,
+    default_account_id: input.default_account_id,
   });
 
   if (error) return { ok: false, error: error.message };
@@ -80,6 +83,7 @@ export async function updateCategory(
       color: input.color,
       keywords: input.keywords.trim(),
       budget_monthly: input.budget_monthly,
+      default_account_id: input.default_account_id,
     })
     .eq("id", input.id);
 
