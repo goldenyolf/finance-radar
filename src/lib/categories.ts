@@ -33,6 +33,13 @@ export interface CategoryRow {
    * 自動依 code backfill。
    */
   is_fixed: boolean;
+  /**
+   * 該分類的「預設帳戶」— LINE bot 後綴覆蓋規則的中段 fallback：
+   * 若使用者沒在訊息中明確指定帳戶（無 account_override），就照分類綁定的
+   * 帳戶寫入；仍為 null → 退到 profiles.default_account_id → 最早建立的帳戶。
+   * UI 預設未綁定（null），由使用者在 /settings 自行設定。
+   */
+  default_account_id: string | null;
   created_at?: string;
 }
 

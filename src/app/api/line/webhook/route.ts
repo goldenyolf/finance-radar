@@ -18,6 +18,10 @@ import {
   EXPENSE_CATEGORY_LABEL,
   type ExpenseCategory,
 } from "@/lib/expense-categories";
+import {
+  parseLineMessageWithLlm,
+  type LineAccountContext,
+} from "@/lib/line-llm-parse";
 import { downloadLineMedia } from "@/lib/line-media";
 import { classifyByLlm } from "@/lib/llm-classify";
 import { extractInvoiceItems, type InvoiceItem } from "@/lib/openai-vision";
@@ -34,43 +38,15 @@ function db() {
   return _supabase;
 }
 
-// TODO multi-tenant：目前帳戶 ID 寫死「acc-001 / acc-taishin」，假設只有
-// 最早期綁定 LINE 的會員。未來其他會員綁 LINE 時，需改成從各自的 accounts
-// 表撈對應的 account id；現階段保留是因為目前只有一位 LINE 綁定者。
-// Fork 提示：把這兩個常數替換成你的 accounts 表內的真實 ID 即可。
-const PERSONAL_ACCOUNT_ID = "acc-001";       // 個人主帳戶
-const SHARED_ACCOUNT_ID = "acc-taishin";     // 家庭共同帳戶
-
 /**
- * 帳戶關鍵字：掃整段字串（不限位置、可被括弧包住）。命中第一個即停。
- * 順序代表優先級：共同 / 家庭 → 共同戶；個人 / 主要 → 個人戶。
- * 用「角色概念詞」避免綁定特定銀行；fork 後可依需求補入自己銀行的名稱。
+ * 純解析結果：amount + title。帳戶歸屬由 resolveTargetAccount 走 fallback
+ * chain 決定，這裡不再像舊版那樣硬塞 PERSONAL/SHARED 寫死的 account id。
  */
-const ACCOUNT_KEYWORDS: Array<{
-  keyword: string;
-  accountId: string;
-  label: string;
-}> = [
-  { keyword: "共同", accountId: SHARED_ACCOUNT_ID, label: "家庭共同" },
-  { keyword: "家庭", accountId: SHARED_ACCOUNT_ID, label: "家庭共同" },
-  { keyword: "個人", accountId: PERSONAL_ACCOUNT_ID, label: "個人主帳戶" },
-  { keyword: "主要", accountId: PERSONAL_ACCOUNT_ID, label: "個人主帳戶" },
-];
-
 type ParsedEntry = {
   amount: number;
   title: string;
-  accountId: string;
-  accountLabel: string;
 };
 
-/**
- * 從 LINE 文字訊息抽出 {amount, title, accountId}。三段式：
- *   1) 帳戶：indexOf 掃全段（不限關鍵字位置，括弧包住的「（共同）」也能抓）
- *   2) 金額：優先「N 元/塊」「$N」「NT$N」，最後才退到「末端獨立整數」，
- *      並排除緊鄰字母 / 中文 / 星號的數字（避免 1TB*2 的 1 / 2 被誤判金額）
- *   3) 標題：剩下的文字 trim
- */
 /* ─────────────── Income vs Expense intent detection ─────────────── */
 
 /**
@@ -103,41 +79,27 @@ function detectTransactionType(text: string): "income" | "expense" {
   return "expense";
 }
 
+/**
+ * Regex fallback parser — 只抽 {amount, title}。
+ * 帳戶歸屬交給 resolveTargetAccount 走 fallback chain（語意切分難用 regex
+ * 處理穩定，硬塞共同/個人寫死帳戶在多租戶下是 bug 不是 feature）。
+ *
+ * 只在 LLM 不可用 / timeout / JSON 解析失敗時走這條路。
+ */
 function parseExpenseMessage(text: string): ParsedEntry | null {
-  let working = text.trim();
+  const working = text.trim();
   if (!working) return null;
 
-  // ── 1. 帳戶偵測（不限位置；連同緊鄰的全形/半形括弧一起吃掉，避免污染標題） ──
-  let accountId = PERSONAL_ACCOUNT_ID;
-  let accountLabel = "個人主帳戶";
-  for (const { keyword, accountId: id, label } of ACCOUNT_KEYWORDS) {
-    if (!working.includes(keyword)) continue;
-    accountId = id;
-    accountLabel = label;
-    working = working.replace(
-      new RegExp(`[（(]?\\s*${keyword}\\s*[)）]?`),
-      " "
-    );
-    break;
-  }
-
-  // ── 2. 金額擷取 ──
   const amountResult = extractAmount(working);
   if (!amountResult) return null;
 
-  // ── 3. 標題：working 移除金額匹配後 trim ──
   const title = working
     .replace(amountResult.matchText, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (!title) return null;
 
-  return {
-    amount: amountResult.amount,
-    title,
-    accountId,
-    accountLabel,
-  };
+  return { amount: amountResult.amount, title };
 }
 
 function extractAmount(
@@ -308,6 +270,70 @@ async function loadUserCategories(userId: string): Promise<CategoryRow[]> {
   return (data ?? []) as CategoryRow[];
 }
 
+/**
+ * 撈 user 的所有帳戶（多租戶必經之路）。按 created_at asc 排序，讓 fallback
+ * chain 最末段「first account」行為穩定可預期。撈失敗回空陣列。
+ */
+async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
+  const { data, error } = await db()
+    .from("accounts")
+    .select("id, name, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("[LINE webhook] accounts fetch failed:", error);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+  }));
+}
+
+/**
+ * Fallback chain — 把 LLM 抽到的 override + category 投射到實際 account_id。
+ * 純 in-memory（profileDefault 由 caller 一次撈起來傳入），避免每筆訊息打 DB。
+ *
+ *   (A) override：LLM 已 fuzzy match 完
+ *   (B) category.default_account_id：分類層偏好（如「水電」永遠走台新）
+ *   (C) profile.default_account_id：帳號層主要帳戶 singleton
+ *   (D) accounts 最早一筆：保底（避免 new user 還沒設 default 時崩潰）
+ */
+function resolveTargetAccount(args: {
+  overrideAccountId: string | null;
+  category: ExpenseCategory | null;
+  accounts: LineAccountContext[];
+  profileDefaultAccountId: string | null;
+  categoryLookup: CategoryLookup;
+}): { id: string; label: string } | null {
+  const {
+    overrideAccountId,
+    category,
+    accounts,
+    profileDefaultAccountId,
+    categoryLookup,
+  } = args;
+  const findAcc = (id: string | null | undefined) =>
+    id ? accounts.find((a) => a.id === id) : undefined;
+
+  const override = findAcc(overrideAccountId);
+  if (override) return { id: override.id, label: override.name };
+
+  if (category) {
+    const cat = categoryLookup.byCode.get(category);
+    const hit = findAcc(cat?.default_account_id);
+    if (hit) return { id: hit.id, label: hit.name };
+  }
+
+  const profileHit = findAcc(profileDefaultAccountId);
+  if (profileHit) return { id: profileHit.id, label: profileHit.name };
+
+  if (accounts.length > 0) {
+    return { id: accounts[0].id, label: accounts[0].name };
+  }
+  return null;
+}
+
 function todayInTaipei(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
@@ -374,7 +400,7 @@ async function handleEvent(
 
     const { data: profile, error: profileErr } = await db()
       .from("profiles")
-      .select("user_id")
+      .select("user_id, default_account_id")
       .eq("line_user_id", lineUserId)
       .maybeSingle();
 
@@ -394,28 +420,34 @@ async function handleEvent(
     }
 
     const userId = profile.user_id as string;
-    // 撈一次當前使用者的 categories — 在 text / audio / image 三條 pipeline
-    // 共用，避免每條都自己撈。
-    const userCategories = await loadUserCategories(userId);
+    const profileDefaultAccountId =
+      (profile.default_account_id as string | null | undefined) ?? null;
+
+    // 撈一次 categories + accounts — text / audio / image 三條 pipeline 共用，
+    // 避免每條都自己撈。accounts 還會被 buildLineParsePrompt 注入 LLM。
+    const [userCategories, userAccounts] = await Promise.all([
+      loadUserCategories(userId),
+      loadUserAccounts(userId),
+    ]);
+
+    const ctx: HandlerContext = {
+      userId,
+      userCategories,
+      userAccounts,
+      profileDefaultAccountId,
+    };
 
     switch (messageEvent.message.type) {
       case "text": {
         const text = (messageEvent.message as webhook.TextMessageContent).text;
-        await handleTextMessage(
-          text,
-          userId,
-          userCategories,
-          client,
-          replyToken
-        );
+        await handleTextMessage(text, ctx, client, replyToken);
         return;
       }
       case "audio": {
         const messageId = messageEvent.message.id;
         await handleAudioMessage(
           messageId,
-          userId,
-          userCategories,
+          ctx,
           channelAccessToken,
           client,
           replyToken
@@ -426,8 +458,7 @@ async function handleEvent(
         const messageId = messageEvent.message.id;
         await handleImageMessage(
           messageId,
-          userId,
-          userCategories,
+          ctx,
           channelAccessToken,
           client,
           replyToken
@@ -448,54 +479,119 @@ async function handleEvent(
   }
 }
 
+/* ─────────────────────────── Handler context ─────────────────────────── */
+
+/**
+ * dispatcher 預先撈好的「per-request 不變資料」打包，避免 text/audio/image
+ * 三條 pipeline 各自重複撈 DB。
+ */
+interface HandlerContext {
+  userId: string;
+  userCategories: CategoryRow[];
+  userAccounts: LineAccountContext[];
+  profileDefaultAccountId: string | null;
+}
+
 /* ─────────────────────────── Text ─────────────────────────── */
 
 /**
  * 文字訊息核心邏輯。也被 audio handler 在 Whisper 轉錄後重用 — 因此抽成
  * 獨立函式，加 prefix 參數讓 audio 能在回覆前加「🎙️ 語音辨識成功」。
  *
- * 流程：先試 goal deposit（夢想基金提撥）→ 沒命中再走 expense 記帳。
+ * 流程：
+ *   1) goal deposit（夢想基金提撥）優先 — 命中直接 return
+ *   2) income vs expense 偵測（純關鍵字、零成本）
+ *   3) LLM 主路徑：parseLineMessageWithLlm 一次抽 {item, amount, account_override, category}
+ *   4) Fallback：LLM 不可用 → regex 抽 {amount, title}（不抽帳戶）
+ *   5) Fallback chain 決定 account_id：override → category default → profile default → first
  */
 async function handleTextMessage(
   text: string,
-  userId: string,
-  userCategories: CategoryRow[],
+  ctx: HandlerContext,
   client: messagingApi.MessagingApiClient,
   replyToken: string,
   replyPrefix: string = ""
 ): Promise<void> {
+  const { userId, userCategories, userAccounts, profileDefaultAccountId } = ctx;
+
   // 1. 先試夢想基金提撥
   const goalHandled = await tryGoalDeposit(text, userId, client, replyToken, replyPrefix);
   if (goalHandled) return;
 
-  // 2. 走記帳 flow — 先判斷 income vs expense（純關鍵字、零成本）
+  // 2. income vs expense
   const txType = detectTransactionType(text);
-  const parsed = parseExpenseMessage(text);
-  if (!parsed) {
+  const lookup = buildCategoryLookup(userCategories);
+
+  // 3. LLM 主路徑（注入 accounts + categories 上下文）
+  const llmResult = await parseLineMessageWithLlm({
+    text,
+    accounts: userAccounts,
+    categories: userCategories,
+  });
+
+  let item: string;
+  let amount: number;
+  let overrideAccountId: string | null;
+  let llmCategory: ExpenseCategory | null;
+
+  if (llmResult) {
+    item = llmResult.item;
+    amount = llmResult.amount;
+    overrideAccountId = llmResult.accountId;
+    llmCategory = llmResult.category;
+  } else {
+    // 4. Fallback：regex 純抽 amount+title
+    const regex = parseExpenseMessage(text);
+    if (!regex) {
+      await replyText(
+        client,
+        replyToken,
+        `${replyPrefix}💡 記帳格式錯誤囉！\n• 支出：午餐 120 / 台新 晚餐 500\n• 收入：薪水 50000 / 領到補助 3000`
+      );
+      return;
+    }
+    item = regex.title;
+    amount = regex.amount;
+    overrideAccountId = null;
+    llmCategory = null;
+  }
+
+  // expense 才需要 category；income 直接 null
+  const category: ExpenseCategory | null =
+    txType === "expense"
+      ? (llmCategory ?? (await classifyExpense(item, userCategories)))
+      : null;
+
+  // 5. Fallback chain → 真正的 account_id
+  const target = resolveTargetAccount({
+    overrideAccountId,
+    category,
+    accounts: userAccounts,
+    profileDefaultAccountId,
+    categoryLookup: lookup,
+  });
+  if (!target) {
     await replyText(
       client,
       replyToken,
-      `${replyPrefix}💡 記帳格式錯誤囉！\n• 支出：午餐 120 / 共同 牛奶 80\n• 收入：薪水 50000 / 領到補助 3000`
+      `${replyPrefix}❌ 找不到可用帳戶，請先到網頁端建立一個帳戶再開始記帳。`
     );
     return;
   }
 
-  // Income：跳過 category 分類（income 沒分類概念），category 寫 null；
-  // Expense：走原本的 LLM/keyword 分類 + 預算警報
   if (txType === "income") {
     try {
       const { error } = await db().from("transactions").insert({
         user_id: userId,
-        account_id: parsed.accountId,
-        description: parsed.title,
-        amount: parsed.amount,
+        account_id: target.id,
+        description: item,
+        amount,
         type: "income",
         priority: "non_essential", // income 此欄無意義，給預設值避免 NOT NULL
         category: null,
         status: "completed",
         date: todayInTaipei(),
       });
-
       if (error) {
         console.error("[LINE webhook] income insert error:", error);
         await replyText(
@@ -505,11 +601,10 @@ async function handleTextMessage(
         );
         return;
       }
-
       await replyText(
         client,
         replyToken,
-        `${replyPrefix}💰 已記錄收入：${parsed.title} +$${parsed.amount}（${parsed.accountLabel}）`
+        `${replyPrefix}💰 已記錄收入：${item} +$${amount}（${target.label}）`
       );
     } catch (err) {
       console.error("[LINE webhook] income unexpected error:", err);
@@ -522,24 +617,22 @@ async function handleTextMessage(
     return;
   }
 
-  // ── Expense flow（原本邏輯） ──
-  const lookup = buildCategoryLookup(userCategories);
-  const category = await classifyExpense(parsed.title, userCategories);
-  const categoryLabel = resolveCategoryLabel(category, lookup);
+  // ── Expense flow ──
+  const safeCategory = category ?? "other";
+  const categoryLabel = resolveCategoryLabel(safeCategory, lookup);
 
   try {
     const { error } = await db().from("transactions").insert({
       user_id: userId,
-      account_id: parsed.accountId,
-      description: parsed.title,
-      amount: parsed.amount,
+      account_id: target.id,
+      description: item,
+      amount,
       type: "expense",
       priority: "non_essential",
-      category,
+      category: safeCategory,
       status: "completed",
       date: todayInTaipei(),
     });
-
     if (error) {
       console.error("[LINE webhook] Supabase insert error:", error);
       await replyText(
@@ -550,11 +643,11 @@ async function handleTextMessage(
       return;
     }
 
-    const warning = await buildBudgetWarning(userId, category, lookup);
+    const warning = await buildBudgetWarning(userId, safeCategory, lookup);
     await replyText(
       client,
       replyToken,
-      `${replyPrefix}✅ 已成功記帳：[${categoryLabel}] ${parsed.title} $${parsed.amount}（${parsed.accountLabel}）${warning}`
+      `${replyPrefix}✅ 已成功記帳：[${categoryLabel}] ${item} $${amount}（${target.label}）${warning}`
     );
   } catch (err) {
     console.error("[LINE webhook] Unexpected error:", err);
@@ -589,8 +682,7 @@ function resolveCategoryLabel(
  */
 async function handleAudioMessage(
   messageId: string,
-  userId: string,
-  userCategories: CategoryRow[],
+  ctx: HandlerContext,
   channelAccessToken: string,
   client: messagingApi.MessagingApiClient,
   replyToken: string
@@ -627,33 +719,27 @@ async function handleAudioMessage(
   }
 
   const prefix = `🎙️ 語音辨識成功：「${transcript}」\n\n`;
-  await handleTextMessage(
-    transcript,
-    userId,
-    userCategories,
-    client,
-    replyToken,
-    prefix
-  );
+  await handleTextMessage(transcript, ctx, client, replyToken, prefix);
 }
 
 /* ─────────────────────────── Image (Vision LLM) ─────────────────────────── */
 
 /**
- * Image → Vision LLM → 可能多筆 InvoiceItem → 批次寫入 supabase →
- * 多行條列式 LINE 回覆。
+ * Image → Vision LLM → 多筆 InvoiceItem → 批次寫入 supabase → 多行條列式回覆。
  *
- * 圖片沒有「帳戶」上下文（LINE image 不能附 caption），所以一律寫到
- * personal 帳戶。要記到共同戶請改用文字「共同 ... 金額」格式。
+ * 帳戶歸屬：圖片本身沒有「override」上下文（LINE image 不能附 caption），
+ * 但每筆 item 仍可走 fallback chain：category.default_account_id →
+ * profile.default_account_id → 最早帳戶。這讓不同分類能各自落到正確帳戶
+ * （例：水電發票走台新、加油走中信），不再像舊版那樣全部塞 acc-001。
  */
 async function handleImageMessage(
   messageId: string,
-  userId: string,
-  userCategories: CategoryRow[],
+  ctx: HandlerContext,
   channelAccessToken: string,
   client: messagingApi.MessagingApiClient,
   replyToken: string
 ): Promise<void> {
+  const { userId, userCategories, userAccounts, profileDefaultAccountId } = ctx;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     await replyText(
@@ -695,11 +781,35 @@ async function handleImageMessage(
     return;
   }
 
-  // 批次寫入 — supabase.insert 接受 array 自動 batch
+  const lookup = buildCategoryLookup(userCategories);
+
+  // 每筆 item 走一次 in-memory fallback chain（沒 override，純走 category→profile→first）
+  const resolved = items.map((item) => ({
+    item,
+    target: resolveTargetAccount({
+      overrideAccountId: null,
+      category: item.category,
+      accounts: userAccounts,
+      profileDefaultAccountId,
+      categoryLookup: lookup,
+    }),
+  }));
+
+  // 如果連保底帳戶都沒（user 完全沒建帳戶）→ 整批拒絕
+  if (resolved.some((r) => r.target === null)) {
+    await replyText(
+      client,
+      replyToken,
+      "❌ 找不到可用帳戶，請先到網頁端建立一個帳戶再開始記帳。"
+    );
+    return;
+  }
+
   const today = todayInTaipei();
-  const rows = items.map((item) => ({
+  const rows = resolved.map(({ item, target }) => ({
     user_id: userId,
-    account_id: PERSONAL_ACCOUNT_ID, // 圖片沒帳戶 context，預設記到個人
+    // resolved 內保證 target !== null（上方檢查過）；用 ! 收斂 TS narrowing。
+    account_id: target!.id,
     description: item.name,
     amount: item.amount,
     type: "expense" as const,
@@ -730,16 +840,15 @@ async function handleImageMessage(
     return;
   }
 
-  const lookup = buildCategoryLookup(userCategories);
-  // 多筆預算警報：抓有預算的分類，逐一檢查，但別發太多條（取前 3 條最緊張的）
   const warnings = await collectBudgetWarnings(userId, items, lookup);
 
-  // 組合回覆
   const total = items.reduce((sum, i) => sum + i.amount, 0);
-  const lines = items.map(
-    (i, idx) =>
-      `${idx + 1}. [${resolveCategoryLabel(i.category, lookup)}] ${i.name} $${i.amount}`
-  );
+  // 同帳戶連續多筆會視覺重複；只在「跟前一筆不同」時附帳戶後綴，UX 較乾淨。
+  const lines = resolved.map(({ item, target }, idx) => {
+    const prev = idx > 0 ? resolved[idx - 1].target?.id : null;
+    const suffix = target!.id !== prev ? `（${target!.label}）` : "";
+    return `${idx + 1}. [${resolveCategoryLabel(item.category, lookup)}] ${item.name} $${item.amount}${suffix}`;
+  });
 
   const reply = [
     `✅ 發票解析成功！共記下 ${items.length} 筆帳：`,
