@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import {
   Loader2Icon,
   Lock,
@@ -86,6 +86,20 @@ export function CategoriesCard({ categories }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<DraftState>(BLANK_DRAFT);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // 使用者只要進到 /settings 看到分類管理區塊，就算「劃分固定與浮動分類」任務通關。
+  // 補 onboarding-checklist CTA 之外的入口（側欄導覽列點進來也算）。
+  // Key 跟 onboarding-checklist.tsx 的 LS_KEY_CATEGORIES_VISITED 對齊。
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "money-radar:onboarding-categories-visited",
+        "1"
+      );
+    } catch {
+      // 隱私模式 / LS 不可用 → 沒辦法標記，跳過
+    }
+  }, []);
 
   function openCreate() {
     setDraft(BLANK_DRAFT);

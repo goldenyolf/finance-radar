@@ -40,9 +40,11 @@ export function ProfileSettingsCard({ initial }: Props) {
   );
   const [pending, startTransition] = useTransition();
 
+  // 任何 keystroke 都要立刻翻 dirty → 不能用 .trim()/parseFloat 等正規化（會吞掉
+  // 「Austin → Austin 」一個空白的差，按鈕沒亮使用者會覺得壞掉）。直接 raw 字串比對。
   const dirty =
-    displayName.trim() !== (initial.display_name ?? "").trim() ||
-    Number.parseFloat(targetSavingsRate) !== initial.target_savings_rate;
+    displayName !== (initial.display_name ?? "") ||
+    targetSavingsRate !== String(initial.target_savings_rate);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,20 +137,23 @@ export function ProfileSettingsCard({ initial }: Props) {
           </div>
 
           <div className="mt-2">
+            {/*
+              按鈕文字鎖死「💾 儲存個人設定」，不再因為 dirty 切「尚未變更」。
+              disabled 純粹靠 disabled prop（半透明 + cursor-not-allowed），
+              UI 一致；dirty 時走翡翠綠主色（bg-emerald-600）強化「可以按了」訊號。
+            */}
             <Button
               type="submit"
               disabled={pending || !dirty}
-              className="gap-1.5"
+              className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 disabled:opacity-50"
             >
               {pending ? (
                 <>
                   <Loader2Icon className="size-3.5 animate-spin" />
                   儲存中
                 </>
-              ) : dirty ? (
-                "儲存設定"
               ) : (
-                "尚未變更"
+                "💾 儲存個人設定"
               )}
             </Button>
           </div>
