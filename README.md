@@ -53,10 +53,26 @@
 
 | 通道 | 技術 | 用途 |
 |---|---|---|
-| 文字 | 自寫 regex parser + LLM (Gemini) 分類 | 9 成情況走零成本本機 keyword 匹配 |
+| 文字 | 關鍵字優先 + **Gemini JSON 抽取** | 一次拿 `{item, amount, account_override, category}` 四欄；regex 是 fallback |
 | **語音** | **OpenAI Whisper STT** | 「晚餐花了一百五」→ 自動辨識 + 記帳 |
 | **發票圖片** | **GPT-4o Vision** | 一張發票辨識多筆 item，批次寫入 |
 | 收入意圖偵測 | 26 個中文關鍵字（領到/收到/補助/獎金⋯）| 零成本判斷 type，不耗 LLM token |
+
+#### 🪜 帳戶歸屬 fallback chain（退役 `acc-001` 寫死）
+
+LLM prompt 動態注入使用者所有 `accounts` + `categories` 作上下文，抽出 `account_override` 後走四層 fallback — 任何一層中就停：
+
+```
+LLM account_override (e.g. 「晚餐 120 台新」→ acc-taishin)
+  ↓ 不命中
+categories.default_account_id  (e.g.「水電」分類綁台新)
+  ↓ 不命中
+profiles.default_account_id    (帳號層 singleton 主帳戶)
+  ↓ 不命中
+accounts created_at 最早一筆  (code-side 保底)
+```
+
+> 💡 寫死 `acc-001 / acc-taishin` 不能跨用戶。Schema 補了 `categories.default_account_id` 與 `profiles.default_account_id` 兩條 FK（ON DELETE SET NULL）+ 設定頁的「預設帳戶」下拉，讓 LINE 入帳走的是**使用者自己的偏好**。
 
 ---
 
@@ -140,6 +156,44 @@ CREATE TABLE wealth_snapshots (
 - 訂閱表 `subscriptions` + 智慧靜默 `SubscriptionAlertWidget`（≤7 天才出現）
 - **Vercel Cron 每日 09:00** 掃描 → 3 天內到期 → LINE 主動 push
 - 系統設計：`CRON_SECRET` HMAC 自驗，免登入
+
+---
+
+### 🚀 新手 Onboarding 全鏈路
+
+第一次登入不該對一張空儀表板乾瞪眼 — 雙系統把首戰體驗鋪好：
+
+| 系統 | 觸發 | 內容 |
+|---|---|---|
+| **OnboardingDialog**（3 步驟 wizard） | `profiles.has_completed_onboarding = false` 時 RSC 條件 mount | 板塊配置 → 分類管理 → 拍快照三步驟 + 跳過/完成都翻 flag |
+| **OnboardingChecklist**（任務清單） | wizard 完成後在首頁掛清單 | server-side 進度（dashboard_plates / wealth_snapshots 有 row 自動勾）+ LS 進度（點過分類頁就勾）|
+
+老用戶不打擾：`0009` migration backfill 所有現存 profile 為 `true`。三任務全完成走 CSS opacity + translate 淡出，500ms 後再 setState unmount。
+
+### 👤 個人設定 — 連動首頁 / 趨勢圖
+
+`profiles` 升級 3 欄位（`display_name` / `avatar_url` / `target_savings_rate`），不是裝飾位，是**連動的 source of truth**：
+
+- 首頁歡迎詞：「歡迎回來，**{display_name}**！」
+- 跨月趨勢圖儲蓄率虛線：直接吃 `target_savings_rate`（預設 20.0，CHECK 0-100 防爛資料）
+- 改完 `revalidatePath` 把首頁 + 分析頁同時打髒，無需 reload
+
+### 🔐 忘記密碼 / 重設密碼
+
+完整 OTP recovery flow — `/forgot-password` 寄信、`/update-password` 改密碼，**改完強制登出**回登入頁（避免 token 殘留視窗繼續操作）。Supabase recovery token 走 URL fragment，proxy whitelist 把 `/update-password` 加進 matcher 排除清單避免 redirect 剝離（memory: `proxy_public_routes_whitelist`）。
+
+### 💡 HelpTip Contextual Help
+
+3 個最硬核的功能（**🧛 吸血鬼排行榜**、**⚖️ 財務彈性**、**📈 分類趨勢**）旁邊掛 `ℹ️` icon — base-ui Tooltip 包一層 `HelpTip`，hover / tap 解釋「這數字怎麼算、tier 怎麼切」。讓使用者不用回 README 也能讀懂自己的數字。
+
+### 📱 More Hub — 行動版導覽重排
+
+手機底部 tab 只有 5 格，硬塞「夢想 + 設定」會逼觸控目標縮到 < 44pt：
+
+- 5 格底部 tab 留給高頻：首頁 / 分析 / 記帳 / 訂閱 / **更多**
+- 「更多」進中轉頁 `/(dashboard)/more` — 兩張漸層大卡（emerald 夢想 / slate 設定）
+- 桌面 viewport 自動 `router.replace("/settings")`（sidebar 已有直連）
+- viewport 從 mobile → desktop 旋轉 / resize 也跟著 redirect（`matchMedia` change listener）
 
 ---
 
@@ -233,7 +287,7 @@ body[data-privacy="on"] [data-money]::selection {
 
 ### 資料庫亮點
 
-- **8+ 張表 / 30+ RLS policy / 7 個 migration**：所有資料以 `auth.uid() = user_id` 強制多租戶隔離
+- **9+ 張表 / 30+ RLS policy / 11 個 migration**：所有資料以 `auth.uid() = user_id` 強制多租戶隔離
 - **DB 端 invariant**：`wealth_snapshots.net_worth` GENERATED STORED；`transactions.user_id` DEFAULT `auth.uid()` — 應用層連碰都碰不到，零繞過可能
 - **BEFORE INSERT trigger** 自動 backfill：`categories.is_fixed` 依 code、`dashboard_plates` 依 user 自動 seed 3 條預設
 - **`(user_id, recorded_at)` UNIQUE** + ON CONFLICT — 同日重複拍快照走 UPSERT 覆蓋，避免汙染趨勢線
@@ -335,7 +389,7 @@ CRON_SECRET=<random-long-string>
 
 ### 3. 跑 Migration
 
-把 `supabase/migrations/` 7 個 `.sql` 依序貼到 **Supabase Dashboard → SQL Editor** 執行：
+把 `supabase/migrations/` 11 個 `.sql` 依序貼到 **Supabase Dashboard → SQL Editor** 執行：
 
 | Migration | 內容 |
 |---|---|
@@ -347,6 +401,9 @@ CRON_SECRET=<random-long-string>
 | `0006` | categories.is_fixed + 4 個固定 code backfill |
 | `0007` | dashboard_plates + RLS + seed trigger |
 | `0008` | 補回 accounts.id DEFAULT（修新會員註冊 "Database error" bug）|
+| `0009` | profiles.has_completed_onboarding（Onboarding wizard flag，老用戶 backfill 為 true）|
+| `0010` | profiles 個人設定 3 欄位（display_name / avatar_url / target_savings_rate）+ update RLS |
+| `0011` | categories.default_account_id + profiles.default_account_id（LINE 帳戶 fallback chain 鋪路）|
 
 ### 4. 啟動
 
@@ -363,32 +420,39 @@ pnpm lint     # ESLint
 ```
 src/
 ├── app/
-│   ├── (auth)/               # 登入頁（不掛 Navigation）
+│   ├── (auth)/               # 登入 / 忘記密碼 / 重設密碼（不掛 Navigation）
+│   │   ├── login/
+│   │   ├── forgot-password/  # 寄 OTP recovery 信
+│   │   └── update-password/  # 改完強制登出
 │   ├── (dashboard)/          # 受保護路由群組
-│   │   ├── page.tsx          # 首頁戰情室
+│   │   ├── page.tsx          # 首頁戰情室（含 Onboarding wizard + checklist）
 │   │   ├── analytics/        # 分析頁（月度 + 單日 Tabs）
 │   │   ├── transactions/     # 歷史明細 + 搜尋
 │   │   ├── goals/            # 夢想基金
 │   │   ├── net-worth/        # 淨資產 / 快照
 │   │   ├── recurring/        # 固定收支
-│   │   └── settings/         # 系統設定 / 板塊 / 分類 / 訂閱
+│   │   ├── more/             # 行動版「更多」中轉頁（桌面自動 redirect /settings）
+│   │   └── settings/         # 系統設定 / 板塊 / 分類 / 訂閱 / 預設帳戶 / 個人設定
 │   ├── api/
-│   │   ├── line/webhook/     # LINE 多模態入帳
+│   │   ├── line/webhook/     # LINE 多模態入帳（LLM JSON + fallback chain）
 │   │   └── cron/             # Vercel Cron 訂閱警報
 │   └── proxy.ts              # Next 16 middleware → proxy 改名
 ├── components/
-│   ├── dashboard/            # 業務元件（30+ 個）
-│   ├── ui/                   # 視覺 primitives（shadcn token + base-ui）
+│   ├── dashboard/            # 業務元件（30+ 個，含 onboarding-dialog / checklist / profile-settings-card）
+│   ├── ui/                   # 視覺 primitives（shadcn token + base-ui，含 tooltip / help-tip）
 │   ├── privacy-provider.tsx  # 全域防窺 Context
 │   └── theme-provider.tsx
 └── lib/
-    ├── actions/              # Server Actions（CRUD）
+    ├── actions/              # Server Actions（CRUD，含 onboarding / profile）
     ├── dashboard.ts          # 核心聚合（板塊、預測、metrics）
     ├── daily-spend.ts        # 每日花費 + drill-down
-    ├── cross-month-trend.ts  # 6 個月趨勢 + 儲蓄率
+    ├── cross-month-trend.ts  # 6 個月趨勢 + 儲蓄率（吃 profile.target_savings_rate）
     ├── financial-elasticity.ts # 固定 vs 浮動 + tier
     ├── top-merchants.ts      # 🧛 吸血鬼排行榜
     ├── wealth.ts             # 淨資產聚合
+    ├── load-onboarding.ts    # Onboarding wizard 狀態
+    ├── load-onboarding-progress.ts # checklist 三任務進度
+    ├── load-profile.ts       # 個人設定（暱稱 / 目標 / 預設帳戶）
     └── supabase/             # SSR / server / client 三套 client
 ```
 
