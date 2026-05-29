@@ -41,8 +41,13 @@ export async function createCategory(
   if (err) return { ok: false, error: err };
 
   const supabase = await createClient();
-  // user_id 走 DB DEFAULT auth.uid()；code = null 代表使用者自訂
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  // code = null 代表使用者自訂；RLS WITH CHECK 要求 auth.uid() = user_id，所以這裡明寫
+  // user_id（不靠 DB DEFAULT，避免 column default 缺失時 RLS 直接 42501 拒絕）
   const { error } = await supabase.from("categories").insert({
+    user_id: userData.user.id,
     name: input.name.trim(),
     type: input.type,
     color: input.color,
