@@ -220,12 +220,6 @@ export default async function HomePage({ searchParams }: PageProps) {
         </Alert>
       )}
 
-      {/* 訂閱扣款警報：≤7 天才出現，否則完全隱藏（return null）*/}
-      <SubscriptionAlertWidget
-        subscriptions={subscriptions}
-        accounts={accounts}
-      />
-
       {/* 板塊區（自訂 N 個，最多 4 個 — 沒任何 plate → 引導去 settings 建第一個） */}
       {boardData.length === 0 ? (
         <section
@@ -306,6 +300,12 @@ export default async function HomePage({ searchParams }: PageProps) {
           </section>
         </>
       )}
+
+      {/* 訂閱扣款警報：≤7 天才出現，否則完全隱藏（return null）*/}
+      <SubscriptionAlertWidget
+        subscriptions={subscriptions}
+        accounts={accounts}
+      />
 
       {/* 夢想基金：首頁只放微型版，完整管理在 /goals */}
       <GoalSummaryLink goals={goals} />

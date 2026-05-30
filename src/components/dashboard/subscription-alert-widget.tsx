@@ -54,7 +54,7 @@ export function SubscriptionAlertWidget({ subscriptions, accounts }: Props) {
     <Link
       href="/settings"
       aria-label="到設定頁管理訂閱"
-      className={`mb-6 block rounded-xl border px-5 py-4 ring-1 transition-colors hover:ring-2 ${containerClass}`}
+      className={`mt-8 block rounded-xl border px-5 py-4 ring-1 transition-colors hover:ring-2 ${containerClass}`}
     >
       <div className="flex items-start gap-3">
         <AlertTriangle className={`mt-0.5 size-5 shrink-0 ${iconClass}`} />
