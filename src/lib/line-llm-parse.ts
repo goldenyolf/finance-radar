@@ -85,6 +85,7 @@ ${categoryList}
 
 【判斷原則】
 1. account_override 只擷取**使用者打的原始關鍵字**，不要自己擴寫成完整名稱。例：「晚餐 500 台新」→ "台新"，**不是** "生活支出共同帳戶 (台新)"。
+   ► item 必須把「帳戶關鍵字」整段拿掉（含前後空白），但**保留**括弧內的情境補充（例：「（請家人喝）」「(老家)」「（生日）」）— 那是消費的描述細節，不是帳戶。
 2. 若訊息**完全沒提到**任何帳戶相關詞，account_override 一定要是 null。寧可漏抓，不要硬猜。
 3. amount 必為正數。找不到合理金額就回 0（呼叫端會視為解析失敗）。
 4. category 嚴格只能是上列 code 之一，否則填 null。
@@ -99,7 +100,7 @@ ${categoryList}
 輸出：{"item":"午餐","amount":120,"account_override":null,"category":"food_dining"}
 
 輸入：「台新 Cama 咖啡（請家人喝）542」
-輸出：{"item":"Cama 咖啡","amount":542,"account_override":"台新","category":"food_dining"}
+輸出：{"item":"Cama 咖啡（請家人喝）","amount":542,"account_override":"台新","category":"food_dining"}
 
 輸入：「（郵局）幼兒園學費 8500」
 輸出：{"item":"幼兒園學費","amount":8500,"account_override":"郵局","category":"childcare_education"}
