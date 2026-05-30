@@ -28,11 +28,14 @@ ${KEYS.map((k) => `- ${k}（${EXPENSE_CATEGORY_LABEL[k]}）`).join("\n")}
 判斷原則：
 1. 「便當店」「孝親」「老家」「給長輩」之類涉及長輩消費的 → eldercare
 2. 「托育」「幼兒園」「奶粉」「尿布」「童裝」「玩具」 → childcare_education
-3. 「午餐 / 晚餐 / 早餐 / 手搖 / 超市」 → food_dining
+3. 「午餐 / 晚餐 / 早餐 / 手搖 / 咖啡 / 茶 / 麵包 / 蛋糕 / 超市 / Cama / 星巴克 / 路易莎」 → food_dining
 4. 「水電 / 瓦斯 / 衛生紙 / 管理費 / 家電」 → home_living
 5. 「保險 / 醫療險 / 車險 / 儲蓄險」 → finance_insurance
 6. 「加油 / 停車 / 高鐵 / 計程車 / eTag」 → transport
-7. 其餘無法歸類 → other`;
+7. 其餘無法歸類 → other
+
+特例：「請 X 喝/吃」「買 X 給 Y」這類修飾語**不改變分類本質** — 依消費品項判斷。
+例：「請家人喝咖啡」是 food_dining，不是 other；「買玩具給姪子」是 childcare_education。`;
 
 /**
  * 從使用者自訂 categories 生成 system prompt：

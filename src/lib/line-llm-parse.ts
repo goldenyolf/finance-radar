@@ -88,6 +88,8 @@ ${categoryList}
 2. 若訊息**完全沒提到**任何帳戶相關詞，account_override 一定要是 null。寧可漏抓，不要硬猜。
 3. amount 必為正數。找不到合理金額就回 0（呼叫端會視為解析失敗）。
 4. category 嚴格只能是上列 code 之一，否則填 null。
+5. 「請 X 喝/吃」「給 X 買」這類修飾語**不改變分類本質** — 仍依消費物品本身判斷。例：「請家人喝咖啡」「買便當給同事」都是 food_dining，不是 other。
+6. 咖啡 / 茶 / 手搖 / 麵包 / 蛋糕 / 飲料 / Cama / 星巴克 / 路易莎 等飲食店家或品項一律 food_dining。
 
 【範例】
 輸入：「晚餐 500 台新」
@@ -95,6 +97,9 @@ ${categoryList}
 
 輸入：「午餐 120」
 輸出：{"item":"午餐","amount":120,"account_override":null,"category":"food_dining"}
+
+輸入：「台新 Cama 咖啡（請家人喝）542」
+輸出：{"item":"Cama 咖啡","amount":542,"account_override":"台新","category":"food_dining"}
 
 輸入：「（郵局）幼兒園學費 8500」
 輸出：{"item":"幼兒園學費","amount":8500,"account_override":"郵局","category":"childcare_education"}
