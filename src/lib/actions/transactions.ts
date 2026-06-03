@@ -141,6 +141,10 @@ export async function updateTransaction(
   // 3) Recurring placeholder 核銷 — 跟 transfer / 非 transfer 流獨立，
   //    transfer 本身不會是 placeholder（materialize 出來只給 income/expense），
   //    所以 transfer 路徑這條 if 不會命中，安全。
+  //
+  //    **刻意不打 LINE push**：網頁端核銷是「沉默操作」，視覺焦點留給戰情室
+  //    大盤的數字跳動。LINE webhook 收到使用者主動傳訊才回 reply（per
+  //    line/webhook/route.ts），這條 server action 不該主動觸發訊息推送。
   if (input.fulfillmentState === "confirmed") {
     const { error } = await supabase
       .from("transactions")
@@ -149,7 +153,13 @@ export async function updateTransaction(
     if (error) return { ok: false, error: error.message };
   }
 
+  // 全站數據聯動：通知中心 / 板塊卡 / 分析頁 / 明細頁 / 淨資產頁 都吃
+  // transactions 表，一條交易改動需要打髒所有相關 RSC route 才能即時刷新。
+  // revalidatePath('/') 只負責首頁；分析 / 明細 / 淨資產必須各自打髒。
   revalidatePath("/");
+  revalidatePath("/analytics");
+  revalidatePath("/transactions");
+  revalidatePath("/net-worth");
   return { ok: true };
 }
 

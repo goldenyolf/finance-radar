@@ -131,6 +131,8 @@ export function CashflowLineChart({ data, threshold = 150000 }: Props) {
             strokeWidth={2.5}
             fill="url(#cashGradient)"
             activeDot={{ r: 4, strokeWidth: 0 }}
+            isAnimationActive
+            animationDuration={500}
           />
         </AreaChart>
       </ResponsiveContainer>

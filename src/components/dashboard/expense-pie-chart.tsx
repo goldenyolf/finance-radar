@@ -73,6 +73,8 @@ export function ExpensePieChart({ data }: Props) {
               paddingAngle={2}
               stroke="var(--card)"
               strokeWidth={2}
+              isAnimationActive
+              animationDuration={500}
             >
               {data.map((slice) => (
                 <Cell key={slice.category} fill={slice.color} />

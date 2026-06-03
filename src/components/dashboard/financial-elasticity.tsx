@@ -93,7 +93,8 @@ export function FinancialElasticity({ data }: Props) {
                       paddingAngle={2}
                       stroke="var(--background)"
                       strokeWidth={2}
-                      isAnimationActive={false}
+                      isAnimationActive
+                      animationDuration={500}
                     >
                       {slices.map((s, i) => (
                         <Cell key={i} fill={s.color} />

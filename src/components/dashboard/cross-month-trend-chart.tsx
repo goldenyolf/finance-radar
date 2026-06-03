@@ -119,14 +119,16 @@ export function CrossMonthTrendChart({ data, targetSavingsRate }: Props) {
             dataKey="totalIncome"
             fill={incomeColor}
             radius={[4, 4, 0, 0]}
-            isAnimationActive={false}
+            isAnimationActive
+            animationDuration={500}
           />
           <Bar
             yAxisId="left"
             dataKey="totalExpense"
             fill={expenseColor}
             radius={[4, 4, 0, 0]}
-            isAnimationActive={false}
+            isAnimationActive
+            animationDuration={500}
           />
           <Line
             yAxisId="right"
@@ -136,7 +138,8 @@ export function CrossMonthTrendChart({ data, targetSavingsRate }: Props) {
             strokeWidth={3}
             dot={{ r: 4, strokeWidth: 0, fill: lineColor }}
             activeDot={{ r: 5, strokeWidth: 0 }}
-            isAnimationActive={false}
+            isAnimationActive
+            animationDuration={500}
           />
           {/*
             儲蓄率目標虛線 — 從 profiles.target_savings_rate 來。畫在右軸 (%) 上，

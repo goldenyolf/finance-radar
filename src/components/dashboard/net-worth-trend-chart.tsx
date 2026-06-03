@@ -129,6 +129,8 @@ export function NetWorthTrendChart({ data }: Props) {
             */
             dot={{ r: 4, strokeWidth: 0, fill: lineColor }}
             activeDot={{ r: 5, strokeWidth: 0 }}
+            isAnimationActive
+            animationDuration={500}
           />
         </AreaChart>
       </ResponsiveContainer>

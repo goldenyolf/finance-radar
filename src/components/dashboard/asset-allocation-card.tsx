@@ -115,7 +115,8 @@ export function AssetAllocationCard({ latest }: Props) {
                     paddingAngle={2}
                     stroke="var(--background)"
                     strokeWidth={2}
-                    isAnimationActive={false}
+                    isAnimationActive
+                    animationDuration={500}
                   >
                     {slices.map((s) => (
                       <Cell key={s.account_id} fill={s.color} />
