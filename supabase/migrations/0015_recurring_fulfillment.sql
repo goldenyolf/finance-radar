@@ -122,7 +122,11 @@ BEGIN
       'placeholder',
       v_period
     )
-    ON CONFLICT (recurring_payment_id, recurring_period) DO NOTHING;
+    -- partial unique index 必須在 ON CONFLICT 重複指定 WHERE 子句，
+    -- 否則 PG 42P10「no unique or exclusion constraint matching」
+    ON CONFLICT (recurring_payment_id, recurring_period)
+      WHERE recurring_payment_id IS NOT NULL AND recurring_period IS NOT NULL
+      DO NOTHING;
 
     GET DIAGNOSTICS rows_inserted = ROW_COUNT;
     v_inserted := v_inserted + rows_inserted;
