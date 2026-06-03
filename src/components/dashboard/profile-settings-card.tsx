@@ -112,17 +112,22 @@ export function ProfileSettingsCard({ initial, accounts }: Props) {
         >
           <div className="grid gap-1.5">
             <Label htmlFor="profile-display-name">暱稱（可選）</Label>
-            <Input
-              id="profile-display-name"
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="例：Austin"
-              maxLength={50}
-              autoComplete="nickname"
-            />
+            {/* data-private wrapper：input 整顆套 blur(4px)，包含輸入中的字也會跟著糊 */}
+            <div data-private>
+              <Input
+                id="profile-display-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="例：Austin"
+                maxLength={50}
+                autoComplete="nickname"
+              />
+            </div>
             <p className="text-[11px] text-muted-foreground">
-              留空 → 首頁顯示「歡迎回來！」；有填 → 顯示「歡迎回來，{displayName.trim() || "[暱稱]"}！」
+              留空 → 首頁顯示「歡迎回來！」；有填 → 顯示「歡迎回來，
+              <span data-private>{displayName.trim() || "[暱稱]"}</span>
+              ！」
             </p>
           </div>
 
@@ -171,13 +176,20 @@ export function ProfileSettingsCard({ initial, accounts }: Props) {
                 id="profile-default-account"
                 className="w-full"
               >
+                {/*
+                  data-private 包整顆 Trigger 的文字區 — 防窺時不論選哪個帳戶
+                  都會被 4px 模糊；展開下拉選項時的 SelectContent 在 Portal
+                  外層所以這條包不到，下方 SelectItem 各自加 data-private。
+                */}
                 <SelectValue>
                   {(v) => {
                     if (v === ACCOUNT_NONE || !v) {
                       return "不指定（自動選最早的帳戶）";
                     }
                     const acc = accounts.find((a) => a.id === v);
-                    return acc?.name ?? String(v);
+                    return (
+                      <span data-private>{acc?.name ?? String(v)}</span>
+                    );
                   }}
                 </SelectValue>
               </SelectTrigger>
@@ -187,7 +199,7 @@ export function ProfileSettingsCard({ initial, accounts }: Props) {
                 </SelectItem>
                 {accounts.map((acc) => (
                   <SelectItem key={acc.id} value={acc.id}>
-                    {acc.name}
+                    <span data-private>{acc.name}</span>
                   </SelectItem>
                 ))}
               </SelectContent>

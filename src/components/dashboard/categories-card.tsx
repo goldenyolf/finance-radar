@@ -326,7 +326,7 @@ function CategoryRowItem({
 
         {boundAccount && (
           <p className="truncate text-[11px] text-sky-700 dark:text-sky-400">
-            → 預設記到「{boundAccount.name}」
+            → 預設記到「<span data-private>{boundAccount.name}</span>」
           </p>
         )}
 

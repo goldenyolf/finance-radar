@@ -112,7 +112,7 @@ function RecurringRowCard({
             <span>·</span>
             <span className="inline-flex items-center gap-1">
               <Wallet className="size-3" />
-              {accountName}
+              <span data-private>{accountName}</span>
             </span>
             <span>·</span>
             <span className="inline-flex items-center gap-1">
@@ -196,6 +196,11 @@ export default async function RecurringPage() {
         </div>
       </header>
 
+      {/*
+        頂部 3 看板 hero 數字升級 strong blur — Money 自帶 data-money (6px)，
+        外層額外加 data-private-strong 升到 12px。CSS 規則順序保證 strong
+        rule 勝出（per globals.css）。
+      */}
       <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="ring-1 ring-emerald-500/30">
           <CardHeader>
@@ -205,7 +210,9 @@ export default async function RecurringPage() {
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl font-semibold tabular-nums">
-              <Money value={income} />
+              <span data-private-strong>
+                <Money value={income} />
+              </span>
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               共 {incomeRows.length} 筆
@@ -220,7 +227,9 @@ export default async function RecurringPage() {
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl font-semibold tabular-nums">
-              <Money value={expense} />
+              <span data-private-strong>
+                <Money value={expense} />
+              </span>
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               共 {expenseRows.length} 筆
@@ -241,8 +250,10 @@ export default async function RecurringPage() {
                 net >= 0 ? "text-emerald-400" : ""
               }`}
             >
-              {net >= 0 ? "+" : ""}
-              <Money value={net} />
+              <span data-private-strong>
+                {net >= 0 ? "+" : ""}
+                <Money value={net} />
+              </span>
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               {net >= 0 ? "每月自動累積" : "每月需從現金補貼"}

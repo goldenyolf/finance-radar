@@ -84,7 +84,11 @@ export function LineBindingCard({ currentLineUserId }: Props) {
                 <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                   已綁定
                 </p>
-                <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                <p
+                  data-private-strong
+                  className="mt-0.5 truncate font-mono text-xs text-muted-foreground"
+                  title="此 ID 在防窺模式下會被強模糊"
+                >
                   {currentLineUserId}
                 </p>
               </div>

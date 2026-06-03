@@ -173,9 +173,59 @@ body[data-privacy="on"] .recharts-surface text::selection {
   color: transparent;
 }
 
+/* ──────────────────────────────────────────────────────────────
+ * 三層強度的「非金額」敏感內容遮罩 — 跟 [data-money] (6px) 並排
+ * 構成 4 tier privacy 體系：
+ *
+ *   [data-private-strong]  blur(12px)  身份識別 token / 戰情 hero 數字
+ *   [data-money]           blur(6px)   一般金額 (既有預設)
+ *   [data-private]         blur(4px)   機構 / 帳戶名稱等中度敏感標籤
+ *   [data-private-avatar]  grayscale   頭像識別 — 不模糊改去色 + 透明
+ *
+ * 順序很重要：strong 規則放在 data-money 後面，元素若同時帶兩屬性，
+ * 後者 wins (相同 specificity 後寫者勝)。
+ * ──────────────────────────────────────────────────────────────
+ */
+
+body[data-privacy="on"] [data-private-strong] {
+  filter: blur(12px);
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  pointer-events: none;
+  cursor: default;
+  transition: filter 0.25s ease;
+}
+
+body[data-privacy="on"] [data-private] {
+  filter: blur(4px);
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  transition: filter 0.25s ease;
+}
+
+body[data-privacy="on"] [data-private-avatar] {
+  filter: grayscale(1);
+  opacity: 0.2;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+/* 防選取偷複製 — strong / private 也走透明 ::selection */
+body[data-privacy="on"] [data-private-strong]::selection,
+body[data-privacy="on"] [data-private]::selection {
+  background: transparent;
+  color: transparent;
+}
+
 /* 平滑解除：取消時也走過渡 */
 body [data-money],
+body [data-private-strong],
+body [data-private],
+body [data-private-avatar],
 body .recharts-tooltip-wrapper,
 body .recharts-surface text {
-  transition: filter 0.25s ease;
+  transition: filter 0.25s ease, opacity 0.3s ease;
 }
