@@ -181,14 +181,14 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
 
   const netClass =
     point.netIncome > 0
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-emerald-400"
       : point.netIncome < 0
         ? "text-rose-600 dark:text-rose-400"
         : "text-muted-foreground";
 
   const rateClass =
     point.savingsRate >= 20
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-emerald-400"
       : point.savingsRate >= 0
         ? "text-amber-600 dark:text-amber-400"
         : "text-rose-600 dark:text-rose-400";
@@ -204,7 +204,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
           />
           總收入
         </dt>
-        <dd className="text-right font-medium text-emerald-600 dark:text-emerald-400">
+        <dd className="text-right font-medium text-emerald-400">
           {formatCurrency(point.totalIncome)}
         </dd>
 

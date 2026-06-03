@@ -308,7 +308,7 @@ export function UpdateSnapshotDialog({ accounts, latest }: Props) {
                   <AccountSection
                     title="資產"
                     icon={
-                      <TrendingUp className="size-4 text-emerald-600 dark:text-emerald-400" />
+                      <TrendingUp className="size-4 text-emerald-400" />
                     }
                     accounts={assetAccounts}
                     values={values}
@@ -444,7 +444,7 @@ interface PreviewRowProps {
 }
 
 const PREVIEW_TONE: Record<PreviewRowProps["tone"], string> = {
-  positive: "text-emerald-600 dark:text-emerald-400",
+  positive: "text-emerald-400",
   danger: "text-rose-600 dark:text-rose-400",
 };
 

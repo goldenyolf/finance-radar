@@ -241,7 +241,7 @@ export function TransactionRowActions({
                   </TabsTrigger>
                   <TabsTrigger
                     value="income"
-                    className="gap-1.5 data-[state=active]:text-emerald-600 dark:data-[state=active]:text-emerald-400"
+                    className="gap-1.5 data-[state=active]:text-emerald-400"
                   >
                     <TrendingUp className="size-3.5" /> 收入
                   </TabsTrigger>

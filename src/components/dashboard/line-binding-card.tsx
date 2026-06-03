@@ -79,7 +79,7 @@ export function LineBindingCard({ currentLineUserId }: Props) {
         {isBound ? (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 rounded-lg bg-emerald-500/[0.08] px-4 py-3 ring-1 ring-emerald-500/30">
-              <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
+              <Check className="size-4 text-emerald-400" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                   已綁定

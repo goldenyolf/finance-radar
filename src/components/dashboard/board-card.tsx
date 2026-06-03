@@ -81,7 +81,7 @@ function signedFormat(n: number) {
 
 function amountToneClass(item: BoardDetailItem) {
   if (item.signedAmount > 0)
-    return "text-emerald-600 dark:text-emerald-400";
+    return "text-emerald-400";
   if (item.signedAmount < 0)
     return "text-rose-600 dark:text-rose-400";
   return "text-foreground";
@@ -177,7 +177,7 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
         </p>
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="flex flex-col gap-3">
         {/*
           資產整合看板 — Phase: Multi-account binding
           上：總餘額 headline (大字)；中：分割線；下：子帳戶兩端對齊列表。
@@ -187,7 +187,7 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
         {hasAccounts && (
           <section
             aria-label="子帳戶餘額"
-            className="rounded-xl bg-card px-5 py-4 ring-1 ring-foreground/10"
+            className="rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10"
           >
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
@@ -203,18 +203,11 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
                 <Money value={subAccountTotal} />
               </span>
             </div>
-            <p className="mt-1.5 text-xs text-muted-foreground/70">
+            <p className="mt-1 text-xs text-muted-foreground/70">
               本板塊 {accounts.length} 個帳戶當前餘額加總
             </p>
 
-            {/*
-              divider + 子帳戶 list 合成單一 wrapper：border-t 當分割線、
-              my-3 給上下板塊呼吸、pt-3 給線跟首行之間留位。比兩個兄弟元素
-              （自關閉 divider + ul）DOM 更乾淨、邊距更可預測。
-              金額一律走 <Money> → privacy CSS 自動套 filter: blur(6px)，
-              無需在 element 加任何 blur-* class（per globals.css [data-money] rule）。
-            */}
-            <div className="my-3 border-t border-zinc-800/40 pt-3">
+            <div className="my-2 border-t border-zinc-800/40 pt-2">
               <ul className="flex flex-col">
                 {accounts.map((a) => {
                   const Icon = ACCOUNT_TYPE_ICON[a.type] ?? Wallet;
@@ -246,8 +239,8 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
           </section>
         )}
 
-        {/* 三個核心數字 */}
-        <div className="grid grid-cols-1 gap-4">
+        {/* 三個核心數字 — 收緊 25% (gap-4 → gap-3) */}
+        <div className="grid grid-cols-1 gap-3">
           <MetricRow
             label="本月可支配預算"
             value={metrics.budget}
@@ -401,11 +394,23 @@ interface MetricRowProps {
   big?: boolean;
 }
 
+/**
+ * big 大字（剩餘額度）才動 tone 配色（positive=emerald / danger=rose），
+ * 抓住視覺主焦點；非 big 的次要數字（預算 / 已支出）統一降級成 zinc-200/300
+ * 灰白系，降低視覺競爭。對齊 Apple/Linear 「single hero color per card」哲學。
+ */
 const TONE_VALUE_CLASS: Record<MetricRowProps["tone"], string> = {
   neutral: "text-foreground",
   warning: "text-amber-600 dark:text-amber-400",
-  positive: "text-emerald-600 dark:text-emerald-400",
+  positive: "text-emerald-400",
   danger: "text-rose-600 dark:text-rose-400",
+};
+
+const TONE_VALUE_SMALL: Record<MetricRowProps["tone"], string> = {
+  neutral: "text-zinc-200",
+  warning: "text-zinc-300",
+  positive: "text-zinc-200",
+  danger: "text-zinc-200",
 };
 
 const TONE_RING_CLASS: Record<MetricRowProps["tone"], string> = {
@@ -418,7 +423,7 @@ const TONE_RING_CLASS: Record<MetricRowProps["tone"], string> = {
 function MetricRow({ label, value, hint, tone, big }: MetricRowProps) {
   return (
     <div
-      className={`rounded-xl bg-card px-5 py-4 ring-1 ${TONE_RING_CLASS[tone]} ${
+      className={`rounded-xl bg-card px-4 py-3 ring-1 ${TONE_RING_CLASS[tone]} ${
         big ? "shadow-sm" : ""
       }`}
     >
@@ -427,14 +432,16 @@ function MetricRow({ label, value, hint, tone, big }: MetricRowProps) {
           {label}
         </span>
         <span
-          className={`tabular-nums tracking-tight ${TONE_VALUE_CLASS[tone]} ${
-            big ? "text-2xl font-bold" : "text-xl font-semibold"
+          className={`tabular-nums tracking-tight ${
+            big
+              ? `text-2xl font-bold ${TONE_VALUE_CLASS[tone]}`
+              : `text-lg font-medium ${TONE_VALUE_SMALL[tone]}`
           }`}
         >
           <AnimatedNumber value={value} />
         </span>
       </div>
-      <p className="mt-1.5 text-xs text-muted-foreground/70">{hint}</p>
+      <p className="mt-1 text-xs text-muted-foreground/70">{hint}</p>
     </div>
   );
 }

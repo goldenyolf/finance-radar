@@ -48,7 +48,7 @@ function budgetTone(pct: number): {
   return {
     bar: "bg-emerald-500",
     track: "bg-emerald-500/15",
-    text: "text-emerald-600 dark:text-emerald-400",
+    text: "text-emerald-400",
   };
 }
 

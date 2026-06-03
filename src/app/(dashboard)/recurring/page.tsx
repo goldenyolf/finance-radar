@@ -95,7 +95,7 @@ function RecurringRowCard({
         <span
           className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
             isIncome
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              ? "bg-emerald-500/10 text-emerald-400"
               : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
           }`}
         >
@@ -126,7 +126,7 @@ function RecurringRowCard({
         <div>
           <p
             className={`text-sm font-semibold tabular-nums ${
-              isIncome ? "text-emerald-600 dark:text-emerald-400" : ""
+              isIncome ? "text-emerald-400" : ""
             }`}
           >
             {isIncome ? "+" : "−"}
@@ -238,7 +238,7 @@ export default async function RecurringPage() {
           <CardContent>
             <CardTitle
               className={`text-2xl font-semibold tabular-nums ${
-                net >= 0 ? "text-emerald-600 dark:text-emerald-400" : ""
+                net >= 0 ? "text-emerald-400" : ""
               }`}
             >
               {net >= 0 ? "+" : ""}
@@ -255,7 +255,7 @@ export default async function RecurringPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <TrendingUp className="size-4 text-emerald-600 dark:text-emerald-400" />
+              <TrendingUp className="size-4 text-emerald-400" />
               <CardTitle className="text-base">固定收入</CardTitle>
             </div>
             <CardDescription>薪水、利息、副業⋯⋯</CardDescription>

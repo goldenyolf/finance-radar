@@ -45,7 +45,7 @@ export function WealthAccountsList({ accounts }: Props) {
         title="資產"
         subtitle="存款、投資、不動產等正資產"
         icon={
-          <TrendingUp className="size-4 text-emerald-600 dark:text-emerald-400" />
+          <TrendingUp className="size-4 text-emerald-400" />
         }
         items={assets}
         emptyHint="尚未建立任何資產帳戶"
@@ -75,7 +75,7 @@ interface ColumnProps {
 }
 
 const TONE_VALUE: Record<ColumnProps["tone"], string> = {
-  positive: "text-emerald-600 dark:text-emerald-400",
+  positive: "text-emerald-400",
   danger: "text-rose-600 dark:text-rose-400",
 };
 

@@ -57,7 +57,7 @@ export function MoreHub() {
           subtitle="管理你的儲蓄目標、進度追蹤與達成日"
           gradient="from-emerald-500/[0.08] via-emerald-500/[0.04] to-sky-500/[0.04]"
           hoverGradient="hover:from-emerald-500/[0.15] hover:to-sky-500/[0.08]"
-          iconBg="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+          iconBg="bg-emerald-500/15 text-emerald-400"
           icon={<Target className="size-5" />}
         />
 

@@ -313,7 +313,7 @@ function TransactionRow({ row, accounts, lookup, categories }: RowProps) {
             isExpense
               ? "text-rose-600 dark:text-rose-400"
               : row.type === "income"
-                ? "text-emerald-600 dark:text-emerald-400"
+                ? "text-emerald-400"
                 : "text-foreground"
           }`}
         >

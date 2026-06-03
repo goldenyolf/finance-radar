@@ -12,7 +12,7 @@ interface Props {
 }
 
 function netToneClass(n: number) {
-  if (n > 0) return "text-emerald-600 dark:text-emerald-400";
+  if (n > 0) return "text-emerald-400";
   if (n < 0) return "text-rose-600 dark:text-rose-400";
   return "text-muted-foreground";
 }
@@ -90,7 +90,7 @@ function ItemColumn({ accent, label, items }: ItemColumnProps) {
   const isPos = accent === "positive";
   const dotClass = isPos ? "bg-emerald-500" : "bg-rose-500";
   const amountClass = isPos
-    ? "text-emerald-600 dark:text-emerald-400"
+    ? "text-emerald-400"
     : "text-rose-600 dark:text-rose-400";
   const sign = isPos ? "+" : "−";
 

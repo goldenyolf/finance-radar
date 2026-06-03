@@ -343,7 +343,7 @@ function GoalRowItem({ goal, onDeposit, onDelete, deleting }: RowProps) {
         <span
           className={`text-base font-bold tabular-nums ${
             completed
-              ? "text-emerald-600 dark:text-emerald-400"
+              ? "text-emerald-400"
               : "text-foreground"
           }`}
         >

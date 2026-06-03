@@ -66,7 +66,7 @@ export function PrivacyToggle({
         "flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground",
         collapsed ? "justify-center px-2" : "px-3",
         isPrivacyMode &&
-          "text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300",
+          "text-emerald-400 hover:text-emerald-300",
         className
       )}
     >

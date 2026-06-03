@@ -218,7 +218,7 @@ function TaskRow({
           aria-hidden
           className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-full transition-colors ${
             done
-              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+              ? "bg-emerald-500/15 text-emerald-400"
               : "bg-foreground/[0.06] text-muted-foreground"
           }`}
         >
@@ -228,7 +228,7 @@ function TaskRow({
           <p
             className={`truncate text-sm ${
               done
-                ? "text-muted-foreground line-through decoration-emerald-600/40 dark:decoration-emerald-400/40"
+                ? "text-muted-foreground line-through decoration-emerald-400/40"
                 : "font-medium"
             }`}
           >

@@ -92,7 +92,7 @@ interface MetricCardProps {
 }
 
 const TONE_VALUE: Record<Tone, string> = {
-  positive: "text-emerald-600 dark:text-emerald-400",
+  positive: "text-emerald-400",
   danger: "text-rose-600 dark:text-rose-400",
 };
 
@@ -144,7 +144,7 @@ function MetricCard({ label, value, tone, icon, big, momRate }: MetricCardProps)
 function MoMBadge({ rate }: { rate: number }) {
   const isPositive = rate >= 0;
   const tone = isPositive
-    ? "text-emerald-600 dark:text-emerald-400"
+    ? "text-emerald-400"
     : "text-rose-600 dark:text-rose-400";
   const arrow = isPositive ? "▲" : "▼";
   const abs = Math.abs(rate);

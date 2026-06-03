@@ -86,7 +86,7 @@ export function GoalSummaryLink({ goals }: Props) {
             <span
               className={`shrink-0 text-sm font-bold tabular-nums ${
                 completed
-                  ? "text-emerald-600 dark:text-emerald-400"
+                  ? "text-emerald-400"
                   : "text-foreground"
               }`}
             >
