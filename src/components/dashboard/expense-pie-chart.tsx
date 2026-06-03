@@ -9,6 +9,7 @@ import {
   Tooltip,
 } from "recharts";
 
+import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
 import { Money } from "@/components/ui/money";
 import type { CategorySlice } from "@/lib/expense-categories";
 
@@ -53,11 +54,7 @@ function budgetTone(pct: number): {
 
 export function ExpensePieChart({ data }: Props) {
   if (data.length === 0) {
-    return (
-      <div className="grid h-72 w-full place-items-center rounded-lg border border-dashed border-foreground/10 bg-muted/30 text-center text-xs text-muted-foreground">
-        本月尚無已記帳的花費
-      </div>
-    );
+    return <ChartEmptyState variant="pie" />;
   }
 
   const total = data.reduce((sum, s) => sum + s.amount, 0);

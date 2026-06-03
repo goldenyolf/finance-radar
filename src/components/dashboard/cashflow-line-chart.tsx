@@ -13,6 +13,8 @@ import {
   YAxis,
 } from "recharts";
 
+import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
+
 export type CashflowPoint = {
   /** 顯示用標籤，例如 "5月" 或 "Wk 21" */
   label: string;
@@ -25,17 +27,6 @@ type Props = {
   /** 安全準備金門檻（紅色基準線） */
   threshold?: number;
 };
-
-const MOCK: CashflowPoint[] = [
-  { label: "5月", cash: 312000 },
-  { label: "6月", cash: 295500 },
-  { label: "7月", cash: 271200 },
-  { label: "8月", cash: 263800 },
-  { label: "9月", cash: 248100 },
-  { label: "10月", cash: 232400 },
-  { label: "11月", cash: 215000 },
-  { label: "12月", cash: 198750 },
-];
 
 function formatTwd(n: number) {
   return new Intl.NumberFormat("zh-TW", {
@@ -53,7 +44,15 @@ function formatCompact(n: number) {
 }
 
 export function CashflowLineChart({ data, threshold = 150000 }: Props) {
-  const points = data && data.length > 0 ? data : MOCK;
+  if (!data || data.length === 0) {
+    return (
+      <ChartEmptyState
+        variant="area"
+        message="📊 還沒足夠的記帳資料畫現金流預測 — 累積幾筆收支後這裡會自動展開趨勢！"
+      />
+    );
+  }
+  const points = data;
 
   // theme-aware 配色：dark 走霓虹藍 + 亮紅，light 維持 indigo + 標準紅
   const { resolvedTheme } = useTheme();

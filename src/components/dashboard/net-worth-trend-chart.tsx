@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
 import { formatTwd, type NetWorthPoint } from "@/lib/wealth";
 
 interface Props {
@@ -41,9 +42,10 @@ export function NetWorthTrendChart({ data }: Props) {
 
   if (data.length === 0) {
     return (
-      <div className="grid h-72 w-full place-items-center rounded-lg border border-dashed border-foreground/10 bg-muted/30 text-center text-xs text-muted-foreground">
-        還沒拍過任何資產快照 — 拍第一張開始就會出現起點
-      </div>
+      <ChartEmptyState
+        variant="area"
+        message="📊 還沒拍過任何資產快照 — 到「淨資產」頁拍第一張，這裡就會冒出趨勢線！"
+      />
     );
   }
 
