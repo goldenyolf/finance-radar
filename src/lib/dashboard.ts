@@ -17,7 +17,10 @@ export type DebtType =
   | "car_loan"
   | "other";
 
-export type AccountType = "bank" | "credit_card";
+export type AccountType = "bank" | "credit_card" | "cash";
+
+/** 付款方式（per 0012 migration）— 跟 transactions.payment_method 對齊。 */
+export type PaymentMethod = "cash" | "credit_card" | "transfer";
 
 export type TransactionTypeAll = "income" | "expense" | "transfer";
 export type TransactionStatus = "completed" | "upcoming";
@@ -90,6 +93,7 @@ export interface TransactionRow {
   date: string;
   transfer_group_id?: string | null;
   transfer_direction?: TransferDirection | null;
+  payment_method?: PaymentMethod | null;
 }
 
 export interface RecurringRow {
@@ -147,7 +151,7 @@ export function availableCash(assets: AssetRow[], accounts: AccountRow[]) {
     .reduce((s, a) => s + num(a.current_value), 0);
   if (liquid > 0) return liquid;
   return accounts
-    .filter((a) => a.type === "bank")
+    .filter((a) => a.type === "bank" || a.type === "cash")
     .reduce((s, a) => Math.max(0, num(a.balance)) + s, 0);
 }
 

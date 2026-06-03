@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Loader2Icon, Search } from "lucide-react";
+import { Banknote, CreditCard, Landmark, Loader2Icon, Search } from "lucide-react";
 
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
@@ -16,6 +16,7 @@ import {
 import {
   num,
   type AccountRow,
+  type PaymentMethod,
   type TransactionRow,
 } from "@/lib/dashboard";
 import {
@@ -35,7 +36,14 @@ interface Props {
 
 type SearchRow = Pick<
   TransactionRow,
-  "id" | "description" | "amount" | "date" | "account_id" | "category" | "type"
+  | "id"
+  | "description"
+  | "amount"
+  | "date"
+  | "account_id"
+  | "category"
+  | "type"
+  | "payment_method"
 >;
 
 const DEBOUNCE_MS = 350;
@@ -65,6 +73,7 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
       account_id: t.account_id,
       category: t.category,
       type: t.type,
+      payment_method: t.payment_method ?? null,
     }))
   );
   const [loading, setLoading] = useState(false);
@@ -116,7 +125,7 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
       const supabase = createClient();
       const { data, error: err } = await supabase
         .from("transactions")
-        .select("id, description, amount, date, account_id, category, type")
+        .select("id, description, amount, date, account_id, category, type, payment_method")
         .ilike("description", `%${debounced}%`)
         .order("date", { ascending: false })
         .limit(200);
@@ -228,6 +237,29 @@ interface RowProps {
   categories?: CategoryRow[];
 }
 
+const PAYMENT_METHOD_META: Record<
+  PaymentMethod,
+  { label: string; Icon: typeof Banknote }
+> = {
+  cash: { label: "現金", Icon: Banknote },
+  credit_card: { label: "刷卡", Icon: CreditCard },
+  transfer: { label: "轉帳", Icon: Landmark },
+};
+
+function PaymentMethodBadge({ method }: { method: PaymentMethod | null }) {
+  if (!method) return null;
+  const { label, Icon } = PAYMENT_METHOD_META[method];
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className="inline-flex size-6 items-center justify-center rounded-full bg-foreground/[0.05] text-muted-foreground ring-1 ring-foreground/10"
+    >
+      <Icon className="size-3" aria-hidden />
+    </span>
+  );
+}
+
 function TransactionRow({ row, accounts, lookup, categories }: RowProps) {
   const accName = getAccountLabel(
     row.account_id,
@@ -275,18 +307,21 @@ function TransactionRow({ row, accounts, lookup, categories }: RowProps) {
         </p>
       </div>
 
-      <span
-        className={`shrink-0 text-sm font-semibold tabular-nums ${
-          isExpense
-            ? "text-rose-600 dark:text-rose-400"
-            : row.type === "income"
-              ? "text-emerald-600 dark:text-emerald-400"
-              : "text-foreground"
-        }`}
-      >
-        {sign}
-        <Money value={num(row.amount)} />
-      </span>
+      <div className="flex shrink-0 items-center justify-end gap-1.5">
+        <span
+          className={`text-sm font-semibold tabular-nums ${
+            isExpense
+              ? "text-rose-600 dark:text-rose-400"
+              : row.type === "income"
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-foreground"
+          }`}
+        >
+          {sign}
+          <Money value={num(row.amount)} />
+        </span>
+        <PaymentMethodBadge method={row.payment_method ?? null} />
+      </div>
 
       <div className="flex min-h-7 items-center justify-end">
         <TransactionRowActions

@@ -12,6 +12,7 @@ export type TransactionType = "income" | "expense" | "transfer";
 export type TransactionPriority = "essential" | "non_essential";
 export type TransactionStatus = "completed" | "upcoming";
 export type TransferDirection = "out" | "in";
+export type PaymentMethod = "cash" | "credit_card" | "transfer";
 
 export interface CreateTransactionInput {
   /** Deprecated：後端走 auth.uid()，這個欄位忽略；保留是為了避免改 caller */
@@ -23,6 +24,8 @@ export interface CreateTransactionInput {
   priority: TransactionPriority;
   /** 花費大類；未提供時 server 端套用 'other' 預設值，由 DB 預設或這裡顯式填入。 */
   category?: ExpenseCategory;
+  /** 付款方式；undefined 不寫 → DB 為 NULL（caller 沒指定就讓欄位空著）。 */
+  paymentMethod?: PaymentMethod;
   status: TransactionStatus;
   date: string;
 }
@@ -181,6 +184,7 @@ export async function createTransaction(
   // user_id 走 DB DEFAULT auth.uid()
   // income 沒有「花費分類」概念 → 寫 null；expense 預設 'other'
   const category = input.type === "income" ? null : (input.category ?? "other");
+  // payment_method：caller 沒給就寫 null（DB CHECK 允許 NULL），給了就照寫
   const { error } = await supabase.from("transactions").insert({
     account_id: input.accountId,
     description: input.description.trim(),
@@ -188,6 +192,7 @@ export async function createTransaction(
     type: input.type,
     priority: input.priority,
     category,
+    payment_method: input.paymentMethod ?? null,
     status: input.status,
     date: input.date,
   });
@@ -226,6 +231,7 @@ export async function createTransfer(
       type: "transfer",
       priority: "non_essential",
       category: "other",
+      payment_method: "transfer",
       status: input.status,
       date: input.date,
       transfer_group_id: groupId,
@@ -238,6 +244,7 @@ export async function createTransfer(
       type: "transfer",
       priority: "non_essential",
       category: "other",
+      payment_method: "transfer",
       status: input.status,
       date: input.date,
       transfer_group_id: groupId,

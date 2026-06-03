@@ -5,6 +5,9 @@ import { useEffect, useId, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowRight,
+  Banknote,
+  CreditCard,
+  Landmark,
   Loader2Icon,
   Plus,
   Repeat,
@@ -38,15 +41,18 @@ import {
   createTransfer,
   type CreateTransactionInput,
   type CreateTransferInput,
+  type PaymentMethod,
   type TransactionPriority,
   type TransactionStatus,
   type TransactionType,
 } from "@/lib/actions/transactions";
 import { getAccountLabel } from "@/lib/account-display";
+import type { AccountType } from "@/lib/dashboard";
 
 export interface QuickAddAccount {
   id: string;
   name: string;
+  type: AccountType;
 }
 
 interface Props {
@@ -65,10 +71,27 @@ const INITIAL_TYPE: TransactionType = "expense";
 const INITIAL_PRIORITY: TransactionPriority = "essential";
 const INITIAL_STATUS: TransactionStatus = "completed";
 
+// 帳戶類型 <-> 付款方式：bank 帳戶現代消費場景就是「銀行轉帳/匯款」，
+// cash/credit_card 帳戶則一一對應。雙向綁定的核心 mapping。
+const ACCOUNT_TYPE_TO_PAYMENT: Record<AccountType, PaymentMethod> = {
+  cash: "cash",
+  credit_card: "credit_card",
+  bank: "transfer",
+};
+const PAYMENT_TO_ACCOUNT_TYPE: Record<PaymentMethod, AccountType> = {
+  cash: "cash",
+  credit_card: "credit_card",
+  transfer: "bank",
+};
+
 export function QuickAddTransaction({ accounts }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  // 初始 paymentMethod 跟著第一個帳戶 type 走（最常見：cash → cash, bank → transfer）
+  const initialPaymentMethod = (): PaymentMethod =>
+    accounts[0] ? ACCOUNT_TYPE_TO_PAYMENT[accounts[0].type] : "cash";
 
   const [type, setType] = useState<TransactionType>(INITIAL_TYPE);
   const [description, setDescription] = useState("");
@@ -77,6 +100,7 @@ export function QuickAddTransaction({ accounts }: Props) {
   const [status, setStatus] = useState<TransactionStatus>(INITIAL_STATUS);
   const [date, setDate] = useState(todayIsoDate);
   const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? "");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initialPaymentMethod);
   const [fromAccountId, setFromAccountId] = useState<string>(accounts[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState<string>(accounts[1]?.id ?? "");
 
@@ -88,6 +112,7 @@ export function QuickAddTransaction({ accounts }: Props) {
   const toFieldId = useId();
   const priorityGroupId = useId();
   const statusGroupId = useId();
+  const paymentGroupId = useId();
 
   const isTransfer = type === "transfer";
   const needsTwoAccounts = isTransfer;
@@ -104,8 +129,27 @@ export function QuickAddTransaction({ accounts }: Props) {
     setStatus(INITIAL_STATUS);
     setDate(todayIsoDate());
     setAccountId(accounts[0]?.id ?? "");
+    setPaymentMethod(initialPaymentMethod());
     setFromAccountId(accounts[0]?.id ?? "");
     setToAccountId(accounts[1]?.id ?? "");
+  }
+
+  // 雙向綁定：選帳戶 -> 同步 paymentMethod
+  function handleAccountChange(id: string) {
+    setAccountId(id);
+    const acc = accounts.find((a) => a.id === id);
+    if (acc) setPaymentMethod(ACCOUNT_TYPE_TO_PAYMENT[acc.type]);
+  }
+
+  // 雙向綁定：選 paymentMethod -> 若 current account type 不匹配，切到第一個 matching 帳戶
+  function handlePaymentMethodChange(pm: PaymentMethod) {
+    setPaymentMethod(pm);
+    const wantType = PAYMENT_TO_ACCOUNT_TYPE[pm];
+    const currentAcc = accounts.find((a) => a.id === accountId);
+    if (!currentAcc || currentAcc.type !== wantType) {
+      const next = accounts.find((a) => a.type === wantType);
+      if (next) setAccountId(next.id);
+    }
   }
 
   function handleOpenChange(next: boolean) {
@@ -161,6 +205,7 @@ export function QuickAddTransaction({ accounts }: Props) {
       amount: parsedAmount,
       type,
       priority,
+      paymentMethod,
       status,
       date,
     };
@@ -426,14 +471,52 @@ export function QuickAddTransaction({ accounts }: Props) {
               )}
             </div>
           ) : (
-            <div className="grid gap-1.5">
+            <div className="grid gap-3">
+              {/* 付款方式 Segmented Control — 跟扣款帳戶雙向綁定 */}
+              <div className="grid gap-1.5">
+                <Label id={paymentGroupId}>
+                  {type === "income" ? "收款方式" : "付款方式"}
+                </Label>
+                <div
+                  role="radiogroup"
+                  aria-labelledby={paymentGroupId}
+                  className="grid grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1 ring-1 ring-foreground/5"
+                >
+                  <PaymentMethodPill
+                    value="cash"
+                    label="現金"
+                    icon={<Banknote className="size-3.5" />}
+                    current={paymentMethod}
+                    disabled={!accounts.some((a) => a.type === "cash")}
+                    onSelect={handlePaymentMethodChange}
+                  />
+                  <PaymentMethodPill
+                    value="credit_card"
+                    label="刷卡"
+                    icon={<CreditCard className="size-3.5" />}
+                    current={paymentMethod}
+                    disabled={!accounts.some((a) => a.type === "credit_card")}
+                    onSelect={handlePaymentMethodChange}
+                  />
+                  <PaymentMethodPill
+                    value="transfer"
+                    label="轉帳"
+                    icon={<Landmark className="size-3.5" />}
+                    current={paymentMethod}
+                    disabled={!accounts.some((a) => a.type === "bank")}
+                    onSelect={handlePaymentMethodChange}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-1.5">
               <Label htmlFor={accountFieldId}>
                 {type === "income" ? "入帳" : "扣款"}帳戶
               </Label>
               {accounts.length > 0 ? (
                 <Select
                   value={accountId}
-                  onValueChange={(v) => setAccountId(v as string)}
+                  onValueChange={(v) => handleAccountChange(v as string)}
                 >
                   <SelectTrigger id={accountFieldId} className="w-full">
                     <SelectValue placeholder="選擇帳戶">
@@ -460,6 +543,7 @@ export function QuickAddTransaction({ accounts }: Props) {
                   目前尚未建立任何帳戶，請先到 Supabase 新增 accounts。
                 </p>
               )}
+              </div>
             </div>
           )}
 
@@ -523,6 +607,40 @@ interface ChoiceProps<T extends string> {
   hint: string;
   current: T;
   onSelect: (v: T) => void;
+}
+
+interface PaymentMethodPillProps {
+  value: PaymentMethod;
+  label: string;
+  icon: React.ReactNode;
+  current: PaymentMethod;
+  disabled?: boolean;
+  onSelect: (v: PaymentMethod) => void;
+}
+
+function PaymentMethodPill({
+  value,
+  label,
+  icon,
+  current,
+  disabled = false,
+  onSelect,
+}: PaymentMethodPillProps) {
+  const active = current === value;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      disabled={disabled}
+      onClick={() => onSelect(value)}
+      data-state={active ? "active" : "inactive"}
+      className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-foreground/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-muted-foreground"
+    >
+      {icon}
+      {label}
+    </button>
+  );
 }
 
 function ChoiceCard<T extends string>({

@@ -147,7 +147,7 @@ export default async function HomePage({ searchParams }: PageProps) {
           <TodayBadge />
           <div className="flex flex-wrap items-center gap-2 sm:flex-row-reverse">
             <QuickAddTransaction
-              accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+              accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
             />
             {/* 週期性收支入口：行動版只露 icon（min 44x44 觸控標準），sm+ 才顯示文字 pill */}
             <Link
