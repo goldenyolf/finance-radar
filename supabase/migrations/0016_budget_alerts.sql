@@ -97,9 +97,22 @@ CREATE POLICY budget_alerts_delete ON budget_alerts
 --     FROM pg_constraint WHERE conrelid = 'budget_alerts'::regclass;
 --
 -- (B) 試插 dry-run 確認 UNIQUE 生效
+--   ⚠️ SQL Editor 預設 postgres role 跑，auth.uid() 永遠 NULL，
+--   用會踩 NOT NULL constraint（23502）。要在 SQL Editor 測必須帶
+--   explicit user UUID（從 auth.users 撈一個出來）：
+--
 --   INSERT INTO budget_alerts (user_id, alert_type, alert_period)
---   VALUES (auth.uid(), 'low_remaining', '2026-06');
---   -- 第一次成功；第二次同 params 報 23505 unique violation = OK
+--   VALUES ('<some user uuid>', 'low_remaining', '2026-06');
+--   -- 第 1 次：INSERT 0 1
+--
+--   INSERT INTO budget_alerts (user_id, alert_type, alert_period)
+--   VALUES ('<same uuid>', 'low_remaining', '2026-06');
+--   -- 第 2 次：ERROR 23505 duplicate key value violates unique constraint
+--
+--   DELETE FROM budget_alerts
+--    WHERE user_id = '<uuid>' AND alert_type = 'low_remaining'
+--      AND alert_period = '2026-06';
+--   -- 清乾淨測試資料
 --
 -- (C) RLS policy 數量
 --   SELECT policyname FROM pg_policies WHERE tablename = 'budget_alerts';
