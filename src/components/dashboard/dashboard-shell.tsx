@@ -1,10 +1,12 @@
 "use client";
 
 import { Navigation } from "@/components/dashboard/navigation";
+import { RecurringBell } from "@/components/dashboard/recurring-bell";
 import {
   SidebarCollapsedProvider,
   useSidebarCollapsed,
 } from "@/components/sidebar-collapsed-provider";
+import type { PlaceholderTransaction } from "@/lib/load-placeholders";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,11 +19,21 @@ import { cn } from "@/lib/utils";
  *     fetch / metadata），shell 才是 client island。
  *   - state 用 Context，避免 prop drilling 到 Navigation 跟 MainPad 兩條
  *     獨立支線。
+ *
+ * RecurringBell：固定右上角浮動通知鈴鐺，本層接收 server 預取的 placeholders
+ * 列表 + 透過 router.refresh() 同步資料變動（confirm 一筆後重整就少一筆）。
  */
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({
+  children,
+  placeholders,
+}: {
+  children: React.ReactNode;
+  placeholders: PlaceholderTransaction[];
+}) {
   return (
     <SidebarCollapsedProvider>
       <Navigation />
+      <RecurringBell placeholders={placeholders} />
       <MainPad>{children}</MainPad>
     </SidebarCollapsedProvider>
   );

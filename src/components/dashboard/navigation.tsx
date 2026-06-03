@@ -95,8 +95,11 @@ export function Navigation() {
       {/*
         Mobile 右上浮動工具列：防窺 + 主題切換。只在 <md 顯示（desktop 走 sidebar 底部）。
         順序：防窺在左、主題在右 — 防窺是 demo 時最常用的「擋一下」動作，放手指最容易碰的位置。
+
+        位置：右上往左移到 right-[3.75rem]，留 right-3 給 RecurringBell；
+        size-10 鈴鐺寬 2.5rem + 0.5rem 安全間距 = 3rem，3.75rem 留 0.75rem 呼吸感。
       */}
-      <div className="fixed top-3 right-3 z-30 flex items-center gap-2 md:hidden">
+      <div className="fixed top-3 right-[3.75rem] z-30 flex items-center gap-2 md:hidden">
         <PrivacyToggle variant="floating" />
         <ThemeToggle variant="floating" />
       </div>
