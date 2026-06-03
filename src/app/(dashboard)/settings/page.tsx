@@ -5,6 +5,7 @@ import { DashboardPlatesCard } from "@/components/dashboard/dashboard-plates-car
 import { LineBindingCard } from "@/components/dashboard/line-binding-card";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { ProfileSettingsCard } from "@/components/dashboard/profile-settings-card";
+import { SeedDemoButton } from "@/components/dashboard/seed-demo-button";
 import { SignOutButton } from "@/components/dashboard/sign-out-button";
 import { SubscriptionsCard } from "@/components/dashboard/subscriptions-card";
 import { SystemSettingsForm } from "@/components/dashboard/system-settings-form";
@@ -88,6 +89,13 @@ export default async function SettingsPage() {
         <div className="mt-8 flex justify-center md:hidden">
           <SignOutButton className="rounded-full ring-1 ring-foreground/10" />
         </div>
+
+        {/*
+          ⚡ Demo 種子按鈕 — 「開箱即用體驗」的最後一哩路。
+          env gate 不過時 SeedDemoButton 內部直接 return null，正式環境
+          不會看到。要在 fork production 啟用：設 NEXT_PUBLIC_ENABLE_DEMO_SEED=true。
+        */}
+        <SeedDemoButton />
       </main>
     </PageTransition>
   );
