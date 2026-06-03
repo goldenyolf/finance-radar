@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ChevronLeft,
+  ChevronRight,
   Home,
-  PanelLeft,
-  PanelLeftClose,
   PieChart,
   ScrollText,
   Settings,
@@ -115,15 +115,18 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
   return (
     <aside
       aria-label="主要導航"
+      // group + 邊框微光：hover (鼠標) / focus-within (鍵盤) 任一觸發即喚醒
+      // toggle 鈕跟邊框升色。border-r 顯式走 literal zinc-900/800 配合
+      // 深色「moody edge」美學（per spec）。
       className={cn(
-        "fixed top-0 bottom-0 left-0 z-30 hidden flex-col border-r border-foreground/10 bg-background/95 backdrop-blur-md transition-[width] duration-300 ease-in-out md:flex",
+        "group fixed top-0 bottom-0 left-0 z-30 hidden flex-col border-r border-zinc-900 bg-background/95 backdrop-blur-md transition-[width,border-color] duration-300 ease-in-out hover:border-zinc-800 focus-within:border-zinc-800 md:flex",
         collapsed ? "w-20" : "w-64"
       )}
     >
-      {/* Header — logo + 文字 + 摺疊按鈕（按鈕浮在 sidebar 右邊緣） */}
+      {/* Header — logo + 文字 */}
       <div
         className={cn(
-          "relative flex h-16 items-center border-b border-foreground/10",
+          "flex h-16 items-center border-b border-foreground/10",
           collapsed ? "justify-center px-0" : "gap-2 px-5"
         )}
       >
@@ -144,22 +147,38 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
           </span>
           <span className="text-sm font-semibold">戰情室</span>
         </div>
-
-        {/* 摺疊切換鈕 — 浮在 sidebar 右邊緣，跨越 border 形成「拉手」視覺 */}
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={collapsed ? "展開側邊欄" : "收合側邊欄"}
-          aria-pressed={collapsed}
-          className="absolute top-1/2 -right-3 z-40 grid size-6 -translate-y-1/2 place-items-center rounded-full border border-foreground/10 bg-background text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {collapsed ? (
-            <PanelLeft className="size-3" />
-          ) : (
-            <PanelLeftClose className="size-3" />
-          )}
-        </button>
       </div>
+
+      {/*
+        Hover-to-Reveal 摺疊鈕 — 預設 opacity-0 + scale-95 + pointer-events-none
+        完全不干擾游標；side bar hover / focus-within / button focus-visible
+        三個觸發點任一即浮現。按鈕本體跨越 aside 右邊界（-right-3）形成
+        「邊緣浮現」視覺亮點。
+
+        為什麼要 absolute 在 <aside> 直接子層而非 header 內：top-12 是相對
+        sidebar 量、不是 header 量；放在 header 裡會被 overflow 行為干擾。
+      */}
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={collapsed ? "展開側邊欄" : "收合側邊欄"}
+        aria-pressed={collapsed}
+        className={cn(
+          "absolute top-12 -right-3 z-50 flex size-6 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900/90 text-zinc-400 shadow-md backdrop-blur-md cursor-pointer",
+          "opacity-0 scale-95 pointer-events-none",
+          "transition-all duration-200",
+          "hover:text-zinc-200",
+          "group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto",
+          "group-focus-within:opacity-100 group-focus-within:scale-100 group-focus-within:pointer-events-auto",
+          "focus-visible:opacity-100 focus-visible:scale-100 focus-visible:pointer-events-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/40"
+        )}
+      >
+        {collapsed ? (
+          <ChevronRight className="size-3.5" strokeWidth={2.5} />
+        ) : (
+          <ChevronLeft className="size-3.5" strokeWidth={2.5} />
+        )}
+      </button>
 
       <nav className="flex flex-1 flex-col gap-1 p-3">
         {DESKTOP_NAV_ITEMS.map((item) => (
