@@ -9,11 +9,12 @@ import { loadProfileSettings } from "@/lib/load-profile";
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
-  const [{ accounts, transactions }, categories, profile] = await Promise.all([
-    loadDashboard(),
-    loadCategories(),
-    loadProfileSettings(),
-  ]);
+  const [{ accounts, transactions, recurring }, categories, profile] =
+    await Promise.all([
+      loadDashboard(),
+      loadCategories(),
+      loadProfileSettings(),
+    ]);
 
   return (
     <PageTransition>
@@ -36,6 +37,7 @@ export default async function AnalyticsPage() {
         transactions={transactions}
         categories={categories}
         targetSavingsRate={profile.target_savings_rate}
+        recurring={recurring}
       />
     </main>
     </PageTransition>

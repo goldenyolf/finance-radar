@@ -654,6 +654,7 @@ async function handleTextMessage(
   let overrideAccountId: string | null;
   let llmCategory: ExpenseCategory | null;
   let llmPaymentMethod: PaymentMethod | null;
+  let llmIncomeCategory: import("@/lib/dashboard").IncomeCategory | null = null;
 
   if (llmResult) {
     item = llmResult.item;
@@ -661,6 +662,7 @@ async function handleTextMessage(
     overrideAccountId = llmResult.accountId;
     llmCategory = llmResult.category;
     llmPaymentMethod = llmResult.paymentMethod;
+    llmIncomeCategory = llmResult.incomeCategory;
   } else {
     // 4. Fallback：regex 純抽 amount+title
     const regex = parseExpenseMessage(text);
@@ -709,6 +711,8 @@ async function handleTextMessage(
 
   if (txType === "income") {
     try {
+      // income_category：LLM 沒給 / 推不出來 → fallback 'other'（per prompt 規則 E）
+      const safeIncomeCategory = llmIncomeCategory ?? "other";
       const { error } = await db().from("transactions").insert({
         user_id: userId,
         account_id: target.id,
@@ -717,6 +721,7 @@ async function handleTextMessage(
         type: "income",
         priority: "non_essential", // income 此欄無意義，給預設值避免 NOT NULL
         category: null,
+        income_category: safeIncomeCategory,
         payment_method: paymentMethod,
         status: "completed",
         date: todayInTaipei(),

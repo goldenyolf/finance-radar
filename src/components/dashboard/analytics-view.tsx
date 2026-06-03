@@ -11,7 +11,11 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import type { CategoryRow } from "@/lib/categories";
-import type { AccountRow, TransactionRow } from "@/lib/dashboard";
+import type {
+  AccountRow,
+  RecurringRow,
+  TransactionRow,
+} from "@/lib/dashboard";
 
 interface Props {
   accounts: AccountRow[];
@@ -19,6 +23,8 @@ interface Props {
   categories?: CategoryRow[];
   /** 使用者設定的每月儲蓄率目標（%）— 跨月趨勢圖會畫成灰色虛線 */
   targetSavingsRate: number;
+  /** recurring_payments — 月度財務彈性「零收入 fallback」計算用 */
+  recurring: RecurringRow[];
 }
 
 function todayIsoTaipei(): string {
@@ -47,6 +53,7 @@ export function AnalyticsView({
   transactions,
   categories,
   targetSavingsRate,
+  recurring,
 }: Props) {
   const today = useMemo(() => todayIsoTaipei(), []);
   const [tab, setTab] = useState<string>("monthly");
@@ -78,6 +85,7 @@ export function AnalyticsView({
           selectedDate={selectedDate}
           onDrillDownToDay={handleDrillDownToDay}
           targetSavingsRate={targetSavingsRate}
+          recurring={recurring}
         />
       </TabsContent>
 

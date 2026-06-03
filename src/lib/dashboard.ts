@@ -38,6 +38,13 @@ export type ExpenseCategory =
   | "transport"
   | "other";
 
+/** 收入多維度分類（per 0017）— LINE LLM / Quick Add / 編輯 dialog 填入。 */
+export type IncomeCategory =
+  | "salary"        // 主業薪資 / 年終 / 獎金
+  | "side_hustle"   // 副業 / 接案 / 顧問費
+  | "investment"    // 投資配息 / 股息 / 利息
+  | "other";        // 補助 / 退稅 / 紅包等其他
+
 export type RecurringType = "income" | "expense";
 export type RecurringFrequency =
   | "daily"
@@ -104,6 +111,8 @@ export interface TransactionRow {
   fulfillment_state?: "placeholder" | "confirmed" | null;
   /** materialize 當下所屬的 'YYYY-MM' period。配 (recurring_id, period) UNIQUE 防重。 */
   recurring_period?: string | null;
+  /** 收入多維度分類（per 0017）— 只在 type='income' 時有值；expense / transfer 一律 null。 */
+  income_category?: IncomeCategory | null;
 }
 
 /** 抽出來給 UI / actions / line-bot 共用的字面 type。 */

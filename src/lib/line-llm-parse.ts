@@ -12,7 +12,11 @@
  */
 
 import type { CategoryRow } from "@/lib/categories";
-import type { AccountType, PaymentMethod } from "@/lib/dashboard";
+import type {
+  AccountType,
+  IncomeCategory,
+  PaymentMethod,
+} from "@/lib/dashboard";
 import {
   EXPENSE_CATEGORY_LABEL,
   type ExpenseCategory,
@@ -36,6 +40,8 @@ export interface LineLlmParseResult {
   category: ExpenseCategory | null;
   /** 付款方式：LLM 必填三值之一（per Phase 3 prompt）。fallback 視 caller 決定。 */
   paymentMethod: PaymentMethod | null;
+  /** 收入多維度分類（per 0017）— LLM 在判定為 income 時抽四選一；expense 為 null。 */
+  incomeCategory: IncomeCategory | null;
 }
 
 const CATEGORY_CODES = Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[];
@@ -45,6 +51,12 @@ const PAYMENT_METHOD_SET = new Set<string>([
   "credit_card",
   "transfer",
 ] satisfies PaymentMethod[]);
+const INCOME_CATEGORY_SET = new Set<string>([
+  "salary",
+  "side_hustle",
+  "investment",
+  "other",
+] satisfies IncomeCategory[]);
 
 /** 帳戶 type → 中文標籤，用在 prompt 帳戶清單後綴。 */
 const ACCOUNT_TYPE_HINT: Record<AccountType, string> = {
@@ -99,8 +111,9 @@ ${categoryList}
   "item": string,                          // 消費項目（去掉金額與帳戶關鍵字後的核心描述）
   "amount": number,                        // 純數字，不含貨幣符號或單位
   "account_override": string | null,       // 訊息中**明確提到**的帳戶關鍵字原文，例如「台新」「中信」「郵局」；若未提及一律 null
-  "category": string | null,               // 上列分類 code 之一；判斷不出來填 null
-  "payment_method": "cash" | "credit_card" | "transfer"  // 必填三選一，依下方規則判斷
+  "category": string | null,               // 上列支出分類 code 之一；判斷不出來填 null。**只有 expense 訊息才填**，income 一律 null
+  "payment_method": "cash" | "credit_card" | "transfer",  // 必填三選一，依下方規則判斷
+  "income_category": "salary" | "side_hustle" | "investment" | "other" | null  // **判定為收入時必填四選一**；非收入訊息一律 null
 }
 
 【判斷原則】
@@ -117,6 +130,14 @@ ${categoryList}
    - **「現金」「現金錢包」「錢包」單字** → account_override 寫 "現金"（讓系統匹配 type='cash' 帳戶）
    - **純「刷卡 / 信用卡 / 卡」後綴**（沒帶具體銀行名）→ account_override 寫 null，靠 payment_method='credit_card' 兜底
    - 「台新刷卡」「兆豐刷卡」這種**銀行名+刷卡** → account_override 寫 "台新" / "兆豐"（仍是銀行名優先，payment_method=credit_card 並行存在）
+
+【income_category 判定規則】（**只在你判斷為收入訊息時填**，依序檢查命中即定）：
+A. 「薪水 / 薪資 / 工資 / 年終 / 獎金 / 紅利 / 發薪」→ "salary"
+B. 「接案 / 副業 / 外快 / 顧問費 / 兼差 / 講師費」→ "side_hustle"
+C. 「股息 / 配息 / 利息 / 中租 / 房租收入 / 股利 / 債券利息 / 基金回饋」→ "investment"
+D. 「補助 / 退稅 / 退款 / 紅包 / 中獎 / 禮金 / 回饋 / 津貼」→ "other"
+E. 收入訊息但**找不到明確線索** → "other"（保底，避免錯抓到 expense category）
+F. 訊息是支出 → income_category 一律 null
 
 【payment_method 判定流程】（依序檢查，命中即定）
 A. 出現「刷 / 卡 / 信用卡 / 信」這類字 → "credit_card"
@@ -167,7 +188,21 @@ F. 以上皆無線索 → "cash"（小額日常消費的合理預設）
 輸出：{"item":"Cama 咖啡（請家人喝）","amount":542,"account_override":"台新","category":"food_dining","payment_method":"transfer"}
 
 輸入：「（郵局）幼兒園學費 8500」
-輸出：{"item":"幼兒園學費","amount":8500,"account_override":"郵局","category":"childcare_education","payment_method":"transfer"}`;
+輸出：{"item":"幼兒園學費","amount":8500,"account_override":"郵局","category":"childcare_education","payment_method":"transfer"}
+
+【收入範例 — income_category 必填四選一】
+
+輸入：「薪水 75000 中信」
+輸出：{"item":"薪水","amount":75000,"account_override":"中信","category":null,"payment_method":"transfer","income_category":"salary"}
+
+輸入：「接案稿費 12000」
+輸出：{"item":"接案稿費","amount":12000,"account_override":null,"category":null,"payment_method":"transfer","income_category":"side_hustle"}
+
+輸入：「中租配息 3200」
+輸出：{"item":"中租配息","amount":3200,"account_override":null,"category":null,"payment_method":"transfer","income_category":"investment"}
+
+輸入：「領到幼兒補助 5000」
+輸出：{"item":"領到幼兒補助","amount":5000,"account_override":null,"category":null,"payment_method":"transfer","income_category":"other"}`;
 }
 
 /* ─────────────────────── LLM 呼叫 ─────────────────────── */
@@ -184,6 +219,7 @@ interface LlmRawJson {
   account_override?: unknown;
   category?: unknown;
   payment_method?: unknown;
+  income_category?: unknown;
 }
 
 /**
@@ -287,6 +323,16 @@ function normalizeLlmOutput(
   const paymentMethod =
     pmRaw && PAYMENT_METHOD_SET.has(pmRaw) ? (pmRaw as PaymentMethod) : null;
 
+  // income_category：同款 enum 守備；prompt 規定 expense 訊息應該 null。
+  const icRaw =
+    typeof raw.income_category === "string"
+      ? raw.income_category.trim().toLowerCase()
+      : "";
+  const incomeCategory =
+    icRaw && INCOME_CATEGORY_SET.has(icRaw)
+      ? (icRaw as IncomeCategory)
+      : null;
+
   return {
     item,
     amount: amountNum,
@@ -294,6 +340,7 @@ function normalizeLlmOutput(
     accountLabel: matched?.name ?? null,
     category,
     paymentMethod,
+    incomeCategory,
   };
 }
 

@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { runBudgetAlerts } from "@/lib/budget-alerts";
 import { createClient } from "@/lib/supabase/server";
 
-import type { ExpenseCategory } from "@/lib/dashboard";
+import type { ExpenseCategory, IncomeCategory } from "@/lib/dashboard";
 
 export type TransactionType = "income" | "expense" | "transfer";
 export type TransactionPriority = "essential" | "non_essential";
@@ -27,6 +27,8 @@ export interface CreateTransactionInput {
   category?: ExpenseCategory;
   /** 付款方式；undefined 不寫 → DB 為 NULL（caller 沒指定就讓欄位空著）。 */
   paymentMethod?: PaymentMethod;
+  /** 收入多維度分類（type='income' 才有意義；expense 一律 null） */
+  incomeCategory?: IncomeCategory;
   status: TransactionStatus;
   date: string;
 }
@@ -219,6 +221,9 @@ export async function createTransaction(
   // user_id 走 DB DEFAULT auth.uid()
   // income 沒有「花費分類」概念 → 寫 null；expense 預設 'other'
   const category = input.type === "income" ? null : (input.category ?? "other");
+  // income_category 反過來：只有 income 時帶值；expense / transfer 強制 null
+  const incomeCategory =
+    input.type === "income" ? (input.incomeCategory ?? null) : null;
   // payment_method：caller 沒給就寫 null（DB CHECK 允許 NULL），給了就照寫
   const { error } = await supabase.from("transactions").insert({
     account_id: input.accountId,
@@ -227,6 +232,7 @@ export async function createTransaction(
     type: input.type,
     priority: input.priority,
     category,
+    income_category: incomeCategory,
     payment_method: input.paymentMethod ?? null,
     status: input.status,
     date: input.date,

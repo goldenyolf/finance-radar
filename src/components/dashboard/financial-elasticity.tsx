@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, PartyPopper, Scale } from "lucide-react";
+import { AlertTriangle, PartyPopper, Scale, Sparkles } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -142,6 +142,12 @@ export function FinancialElasticity({ data }: Props) {
                     <span data-money>{data.burdenRate.toFixed(1)}%</span>
                   )}
                 </p>
+                {/* fallback baseline 小灰標 — 提示分母是預期固定收入而非實際入帳 */}
+                {data.isFallbackBaseline && (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                    （基於 recurring 設定的預期固定收入）
+                  </p>
+                )}
                 <p className="mt-1 text-xs text-muted-foreground">
                   {TIER_HINT[tier]}
                 </p>
@@ -177,14 +183,58 @@ export function FinancialElasticity({ data }: Props) {
           掉到 safe 預設），但實際上是「靠存量燒錢」的高風險狀態。攔截後改顯示
           黃色 NoIncomeAlert，不誤導使用者「彈性絕佳」。
         */}
-        {hasAnyActivity &&
-          (data.totalIncome === 0 ? (
-            <NoIncomeAlert />
-          ) : (
-            <AdvisorAlert tier={tier} />
-          ))}
+        {hasAnyActivity && (
+          <>
+            {/*
+              本月零收入但已開花的防呆優先級最高 — 跳過 tier alert 與
+              diversification 訊息，避免「燒存量還被讚多元化」。fallback
+              到 recurring 預期收入時不算「零收入」，因為已有可信分母。
+            */}
+            {data.totalIncome === 0 && !data.isFallbackBaseline ? (
+              <NoIncomeAlert />
+            ) : (
+              <>
+                {/* 收入多元化智囊：非工資佔比 ≥ 10% 才出，避免噪音 */}
+                {data.incomeBreakdown.nonWagePct !== null &&
+                  data.incomeBreakdown.nonWagePct >= 10 && (
+                    <DiversificationAlert
+                      pct={data.incomeBreakdown.nonWagePct}
+                    />
+                  )}
+                <AdvisorAlert tier={tier} />
+              </>
+            )}
+          </>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+/* ─────────────────── 收入多元化智囊 ─────────────────── */
+
+/**
+ * 非工資收入（side_hustle + investment + other）佔比達到 10% 以上時顯示。
+ * 跟 NoIncomeAlert / AdvisorAlert 一樣是 financial card 內的 alert 風格，
+ * 走 emerald 鼓勵色 — 「多元化是好事」的正向訊號。
+ */
+function DiversificationAlert({ pct }: { pct: number }) {
+  return (
+    <Alert
+      className={cn(
+        "mt-4 border-emerald-500/30 bg-emerald-500/[0.04] text-foreground ring-1 ring-emerald-500/20",
+        "*:data-[slot=alert-description]:text-emerald-300",
+        "*:[svg]:text-emerald-400"
+      )}
+    >
+      <Sparkles className="size-4" />
+      <AlertTitle className="font-semibold">💡 收入多元化表現優異</AlertTitle>
+      <AlertDescription className="leading-relaxed">
+        本月非工資收入（副業 / 投資配息 / 其他）已達{" "}
+        <strong className="tabular-nums">{pct.toFixed(1)}%</strong>
+        ，您的財務彈性大幅提升 — 收入結構不再單靠主業，抗風險能力強！
+      </AlertDescription>
+    </Alert>
   );
 }
 

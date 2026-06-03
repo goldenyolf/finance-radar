@@ -22,7 +22,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { CategoryRow } from "@/lib/categories";
 import { getCrossMonthTrendData } from "@/lib/cross-month-trend";
 import { buildDailySpendData } from "@/lib/daily-spend";
-import type { AccountRow, TransactionRow } from "@/lib/dashboard";
+import type {
+  AccountRow,
+  RecurringRow,
+  TransactionRow,
+} from "@/lib/dashboard";
 import { buildFinancialElasticity } from "@/lib/financial-elasticity";
 import { buildSankeyData } from "@/lib/sankey-data";
 import { getTopMerchantsData } from "@/lib/top-merchants";
@@ -39,6 +43,8 @@ interface Props {
   onDrillDownToDay: (iso: string) => void;
   /** profiles.target_savings_rate；跨月趨勢圖會畫成灰色目標虛線 */
   targetSavingsRate: number;
+  /** recurring_payments 全清單 — 0 收入 fallback 計算財務彈性用 */
+  recurring: RecurringRow[];
 }
 
 /**
@@ -58,6 +64,7 @@ export function AnalyticsMonthlyTab({
   selectedDate,
   onDrillDownToDay,
   targetSavingsRate,
+  recurring,
 }: Props) {
   const [monthDate, setMonthDate] = useState<Date>(() => new Date());
   const [isMonthSwitching, setIsMonthSwitching] = useState(false);
@@ -85,8 +92,9 @@ export function AnalyticsMonthlyTab({
   );
 
   const elasticity = useMemo(
-    () => buildFinancialElasticity(transactions, categories, monthDate),
-    [transactions, categories, monthDate]
+    () =>
+      buildFinancialElasticity(transactions, categories, monthDate, recurring),
+    [transactions, categories, monthDate, recurring]
   );
 
   function handleMonthChange(next: Date) {
