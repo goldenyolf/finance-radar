@@ -325,6 +325,112 @@ const allowed =
 
 ---
 
+### 🚨 主動預算警報 — LINE Push + Flex Message
+
+> **不需要使用者主動打開 App 檢查，預算燒到門檻時系統會主動推一張 Apple 暗黑奢華 Flex 圖卡到你的 LINE。**
+
+每筆 expense 寫入 / 編輯 / 核銷後自動跑 `runBudgetAlerts(supabase, userId)` 監控兩個門檻：
+
+| 場景 | 觸發條件 | 推播文字 |
+|---|---|---|
+| **A · 月度活錢預警** | `monthlyRemaining / monthlyBudget < 20%` | 🚨 跌破 20% 安全線（僅剩 $X）。吸血鬼排行顯示主要破口為「分類」($Y) |
+| **B · 單日熔斷** | `todaySpent ≥ dailyBaseline × 5` | 🔥 今日已達基準的 X.X 倍（$Y），請確認是否單次大額預付 |
+
+#### 去重機制（0016）
+
+`budget_alerts` 表 + `UNIQUE (user_id, alert_type, alert_period)`：
+- `low_remaining` 同月只推一次（period=`YYYY-MM`）
+- `daily_burst` 同日只推一次（period=`YYYY-MM-DD`）
+- INSERT 23505 conflict = 已推過、靜默 skip；PG 強原子保證**零 race condition**
+
+#### Flex Message 視覺
+
+```
+┌─ #09090b (zinc-950) ────────────────┐
+│ 📡 MONEY RADAR 戰情預警       ●     │ ← header + 紅/綠狀態燈
+│  剩餘可用活錢                         │
+│  $3,210                            │ ← hero 3xl 白字
+│  本月總預算 $30,000 的 10.7%           │ ← subtitle zinc-500
+│  ███▓░░░░░░░░░░░░░░░░░               │ ← 動態進度條
+│ ⚠️ 主要破口為「餐飲食品」($8,450)。     │ ← 智囊文字
+│ [🛡️ 開啟戰情室]                      │ ← uri button
+└────────────────────────────────────┘
+```
+
+進度條：外殼 `#27272a` 6px rounded，內條 `width: ${pct}%` + 顏色路由（< 20% red / ≥ 20% emerald）；clamp [2%, 100%] 防破版。
+
+#### 三層 fallback 保護
+
+- `LINE_CHANNEL_ACCESS_TOKEN` 未設 → 靜默 skip（fork 不接 LINE 也跑得起來）
+- `NEXT_PUBLIC_SITE_URL` 未設 → footer 不渲染按鈕（剩智囊文字）
+- LINE 客戶端不支援 Flex → 顯示 altText 純文字
+
+---
+
+### 💰 收入多維度分類 — Salary / Side Hustle / Investment / Other
+
+不只記「收了多少」，更要拆「怎麼收的」。
+
+#### 4 維度語意 + Apple 暗黑 palette
+
+| Category | Hex | Tailwind | 語意 |
+|---|---|---|---|
+| `salary` | `#3B82F6` | blue-500 | 深藍 — 主業薪資 / 年終 / 獎金 |
+| `side_hustle` | `#10B981` | emerald-500 | 翡翠綠 — 副業 / 接案 / 顧問費 |
+| `investment` | `#F59E0B` | amber-500 | 琥珀黃 — 配息 / 股息 / 利息 |
+| `other` | `#71717A` | zinc-500 | neutral — 補助 / 退稅 / 紅包 |
+
+#### LINE LLM 自動分流（per 0017）
+
+prompt 規則 9 強化判定流程：
+- 「薪水 / 發薪 / 年終 / 獎金」→ `salary`
+- 「接案 / 副業 / 顧問費 / 講師費」→ `side_hustle`
+- 「股息 / 配息 / 利息 / 中租」→ `investment`
+- 「補助 / 退稅 / 紅包 / 中獎」→ `other`
+- 收入找不到線索 → `other`（保底，避免錯抓 expense category）
+
+#### 首頁克制總覽 vs 分析頁深度解鎖
+
+**首頁 BoardCard** — 只用 zinc-500 小字呈現一行：
+```
+💰 本月已進帳總收入: $XXXXX
+```
+零收入時不渲染，避免空字串視覺垃圾干擾「本月剩餘額度」的閱讀焦點。
+
+**分析頁 MonthCategoryCard** — 雙模式 Pie + iPhone 級 spring 滑塊：
+- 頂部加自訂膠囊 segmented control：`[ 💸 支出 ] [ 💰 收入 ]`
+- 滑塊背景用 `motion.div layoutId="activeModeIndicator"` — framer-motion 自動 morph 兩格之間 transform
+- `transition: { type: 'spring', stiffness: 380, damping: 30 }` = iPhone 觸感校準（0.2 秒完成 + 落點微吸附震動）
+- 圖表切換 `AnimatePresence mode="wait"`：0.2s fade + 8px Y 軸位移，內層 Recharts 500ms 扇區動畫接力
+
+```tsx
+<motion.span
+  layoutId="activeModeIndicator"
+  className="absolute inset-0 -z-10 rounded-full bg-[#27272a] ring-1 ring-white/[0.06]"
+  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+/>
+```
+
+#### 財務彈性零收入 fallback（Bug Fix）
+
+**問題**：原本月份初期 `totalIncome=0` → `burdenRate=NaN` → tier 退化 safe → 誤判「彈性絕佳」。
+
+**修法**：`buildFinancialElasticity` 多收 `recurring` 參數
+- 真實 `totalIncome=0` 但 recurring 有設預期收入 → 用 `recurringMonthlyIncome` 當分母（標 `isFallbackBaseline=true`）
+- UI 在硬性負擔率下方加灰字小標：「(基於 recurring 預期固定收入)」
+- 真實 income=0 且 recurring=0 → 維持 NoIncomeAlert「燒存量」黃色預警
+
+#### 收入多元化智囊
+
+`nonWagePct = (side_hustle + investment + other) ÷ totalIncome × 100` ≥ 10% 時顯示 emerald 鼓勵 alert：
+```
+💡 收入多元化表現優異
+本月非工資收入（副業 / 投資配息 / 其他）已達 X.X%，
+您的財務彈性大幅提升 — 收入結構不再單靠主業，抗風險能力強！
+```
+
+---
+
 ## 🛠️ 技術棧
 
 ### Front-end
@@ -387,7 +493,7 @@ const allowed =
 
 ### 資料庫亮點
 
-- **9+ 張表 / 30+ RLS policy / 14 個 migration**：所有資料以 `auth.uid() = user_id` 強制多租戶隔離
+- **10+ 張表 / 30+ RLS policy / 17 個 migration**：所有資料以 `auth.uid() = user_id` 強制多租戶隔離
 - **DB 端 invariant**：`wealth_snapshots.net_worth` GENERATED STORED；`transactions.user_id` DEFAULT `auth.uid()` — 應用層連碰都碰不到，零繞過可能
 - **BEFORE INSERT trigger** 自動 backfill：`categories.is_fixed` 依 code、`dashboard_plates` 依 user 自動 seed 3 條預設
 - **`(user_id, recorded_at)` UNIQUE** + ON CONFLICT — 同日重複拍快照走 UPSERT 覆蓋，避免汙染趨勢線
@@ -492,7 +598,7 @@ NEXT_PUBLIC_ENABLE_DEMO_SEED=false
 
 ### 3. 跑 Migration
 
-把 `supabase/migrations/` 14 個 `.sql` 依序貼到 **Supabase Dashboard → SQL Editor** 執行：
+把 `supabase/migrations/` 17 個 `.sql` 依序貼到 **Supabase Dashboard → SQL Editor** 執行：
 
 | Migration | 內容 |
 |---|---|
@@ -510,6 +616,9 @@ NEXT_PUBLIC_ENABLE_DEMO_SEED=false
 | `0012` | transactions.payment_method 維度（cash / credit_card / transfer）+ accounts_type_check 擴 'cash' + auth.users trigger 自動 seed 現金錢包 |
 | `0013` | dashboard_plates 從 1:1 升級 N:1：`linked_account_id` → `linked_account_ids TEXT[]` + backfill + DROP 舊欄 |
 | `0014` | 把現金錢包自動綁進「個人財務」板塊（backfill 既有 user + CREATE OR REPLACE 0007 trigger 讓新會員一註冊就吃到）|
+| `0015` | recurring placeholder/confirmed 雙態：transactions 加 recurring_payment_id + fulfillment_state + recurring_period；materialize_due_recurrings() PL/pgSQL |
+| `0016` | budget_alerts 表 + UNIQUE (user_id, alert_type, alert_period) 去重；月度活錢預警 + 單日熔斷 LINE Push 狀態追蹤 |
+| `0017` | transactions.income_category 收入 4 維度分類 (salary / side_hustle / investment / other) |
 
 ### 4. 啟動
 
@@ -569,10 +678,14 @@ src/
 - [x] ~~1:N plate-account mapping~~ — 0013 落地，板塊已支援多帳戶綁定
 - [x] ~~LINE bot payment_method 智慧判定~~ — 0012 + LLM prompt 升級已落地
 - [x] ~~Demo 模式（一鍵 seed 展示資料）~~ — open-source 開箱即用
+- [x] ~~預算超標 LINE push 警報~~ — 0016 + Flex Message 視覺圖卡（活錢預警 + 單日熔斷）
+- [x] ~~收入分類（薪資 / 副業 / 投資配息）~~ — 0017 + LLM prompt 規則 9 + 雙模式 CategoryPieCard
+- [x] ~~週期性收支 placeholder 雙態~~ — 0015 + LINE 補繳訊息自動核銷 + 通知中心 Bell
+- [x] ~~財務彈性月初零收入 fallback~~ — 用 recurring 預期收入當分母，不再誤判「彈性絕佳」
 - [ ] 自訂 emoji + 拖拉排序 plates
-- [ ] 預算超標 LINE push 警報
-- [ ] 收入分類（薪資 / 副業 / 投資配息）
 - [ ] CSV / PDF 報表匯出
+- [ ] 大額預付跨月分攤（目前是 Mock UI）
+- [ ] LINE Profile API 接入頭像 + display name
 - [ ] Plaid / Open Banking 自動串接
 - [ ] PWA 離線記帳
 
