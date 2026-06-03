@@ -6,6 +6,7 @@ import {
 } from "@line/bot-sdk";
 
 import { createServiceClient } from "@/lib/supabase/service";
+import { runBudgetAlerts } from "@/lib/budget-alerts";
 import {
   buildCategoryLookup,
   classifyByCategoryKeywords,
@@ -770,6 +771,9 @@ async function handleTextMessage(
       replyToken,
       `${replyPrefix}✅ 已核銷週期：[${categoryLabel}] ${confirmation.matchedTitle} $${amount} ${PAYMENT_METHOD_EMOJI[paymentMethod]}${deltaHint}${warning}`
     );
+    // 核銷修正後重算門檻 — placeholder 從預估值改成實付，可能讓「本月剩餘率」
+    // 從 25% 跌到 18% 觸發 low_remaining 警報。
+    await runBudgetAlerts(db(), userId);
     return;
   }
 
@@ -802,6 +806,8 @@ async function handleTextMessage(
       replyToken,
       `${replyPrefix}✅ 已成功記帳：[${categoryLabel}] ${item} $${amount} ${PAYMENT_METHOD_EMOJI[paymentMethod]}（${target.label}）${warning}`
     );
+    // 新交易寫入後跑門檻監控（per spec：場景 A 月度 / B 單日）
+    await runBudgetAlerts(db(), userId);
   } catch (err) {
     console.error("[LINE webhook] Unexpected error:", err);
     await replyText(

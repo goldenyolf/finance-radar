@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 
+import { runBudgetAlerts } from "@/lib/budget-alerts";
 import { createClient } from "@/lib/supabase/server";
 
 import type { ExpenseCategory } from "@/lib/dashboard";
@@ -160,6 +161,16 @@ export async function updateTransaction(
   revalidatePath("/analytics");
   revalidatePath("/transactions");
   revalidatePath("/net-worth");
+
+  // 預算門檻監控 — 跌破 20% / 單日 5× 觸發 LINE Push。
+  // 用 await 而非 fire-and-forget — Next.js server action 回應後可能 kill
+  // 背景 Promise，導致警報邏輯被中斷。執行時間 < 200ms 影響極微。
+  // runBudgetAlerts 內部 try/catch 包死，警報失敗不會炸主流程。
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData?.user) {
+    await runBudgetAlerts(supabase, userData.user.id);
+  }
+
   return { ok: true };
 }
 
@@ -224,6 +235,18 @@ export async function createTransaction(
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/");
+  revalidatePath("/analytics");
+  revalidatePath("/transactions");
+
+  // 預算門檻警報 — 同 updateTransaction 的處理，只在 expense 觸發
+  // （income / transfer 都不該打活錢告急、單日熔斷）。
+  if (input.type === "expense") {
+    const { data: userData } = await supabase.auth.getUser();
+    if (userData?.user) {
+      await runBudgetAlerts(supabase, userData.user.id);
+    }
+  }
+
   return { ok: true };
 }
 
