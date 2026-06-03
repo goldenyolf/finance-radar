@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 interface Props {
   /** 視覺變體：sidebar 走橫躺、floating 走圓形浮動鈕 */
   variant?: "sidebar" | "floating";
+  /** sidebar 摺疊狀態 — true 時隱藏文字、icon 置中。只對 sidebar variant 有效。 */
+  collapsed?: boolean;
   className?: string;
 }
 
@@ -16,7 +18,11 @@ interface Props {
  * 主題切換按鈕。next-themes 的 hook 在 SSR 階段拿不到正確值，
  * 所以用 mounted guard：未掛載前先 render placeholder 避免 hydration mismatch。
  */
-export function ThemeToggle({ variant = "sidebar", className }: Props) {
+export function ThemeToggle({
+  variant = "sidebar",
+  collapsed = false,
+  className,
+}: Props) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -51,12 +57,20 @@ export function ThemeToggle({ variant = "sidebar", className }: Props) {
       onClick={toggle}
       aria-label={isDark ? "切換到淺色模式" : "切換到深色模式"}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground",
+        "flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground",
+        collapsed ? "justify-center px-2" : "px-3",
         className
       )}
     >
       <ThemeIcon isDark={isDark} mounted={mounted} />
-      {mounted ? (isDark ? "淺色模式" : "深色模式") : "主題"}
+      <span
+        className={cn(
+          "overflow-hidden whitespace-nowrap transition-all duration-300",
+          collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+        )}
+      >
+        {mounted ? (isDark ? "淺色模式" : "深色模式") : "主題"}
+      </span>
     </button>
   );
 }

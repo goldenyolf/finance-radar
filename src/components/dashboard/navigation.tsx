@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Home,
+  PanelLeft,
+  PanelLeftClose,
   PieChart,
   ScrollText,
   Settings,
@@ -15,6 +17,12 @@ import {
 import { PrivacyToggle } from "@/components/dashboard/privacy-toggle";
 import { SignOutButton } from "@/components/dashboard/sign-out-button";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
+import { useSidebarCollapsed } from "@/components/sidebar-collapsed-provider";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -99,56 +107,163 @@ export function Navigation() {
 /* ─────────────────────────── Desktop Sidebar ─────────────────────────── */
 
 function DesktopSidebar({ pathname }: { pathname: string }) {
+  const { isCollapsed, toggle, mounted } = useSidebarCollapsed();
+  // mounted 前一律走「展開」狀態，避免 hydration mismatch flash（SSR HTML 出
+  // 展開版，client 掛載後若使用者偏好摺疊，再 transition 縮進去）
+  const collapsed = mounted && isCollapsed;
+
   return (
     <aside
       aria-label="主要導航"
-      className="fixed top-0 bottom-0 left-0 z-30 hidden w-56 flex-col border-r border-foreground/10 bg-background/95 backdrop-blur-md md:flex"
+      className={cn(
+        "fixed top-0 bottom-0 left-0 z-30 hidden flex-col border-r border-foreground/10 bg-background/95 backdrop-blur-md transition-[width] duration-300 ease-in-out md:flex",
+        collapsed ? "w-20" : "w-64"
+      )}
     >
-      <div className="flex h-16 items-center gap-2 border-b border-foreground/10 px-5">
+      {/* Header — logo + 文字 + 摺疊按鈕（按鈕浮在 sidebar 右邊緣） */}
+      <div
+        className={cn(
+          "relative flex h-16 items-center border-b border-foreground/10",
+          collapsed ? "justify-center px-0" : "gap-2 px-5"
+        )}
+      >
         <span
           aria-hidden
-          className="grid size-8 place-items-center rounded-lg bg-foreground text-background"
+          className="grid size-8 shrink-0 place-items-center rounded-lg bg-foreground text-background"
         >
           <PieChart className="size-4" />
         </span>
-        <div className="flex flex-col leading-tight">
+        <div
+          className={cn(
+            "flex flex-col leading-tight overflow-hidden whitespace-nowrap transition-all duration-300",
+            collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+          )}
+        >
           <span className="text-[10px] font-medium tracking-widest text-muted-foreground uppercase">
             Money Radar
           </span>
           <span className="text-sm font-semibold">戰情室</span>
         </div>
+
+        {/* 摺疊切換鈕 — 浮在 sidebar 右邊緣，跨越 border 形成「拉手」視覺 */}
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={collapsed ? "展開側邊欄" : "收合側邊欄"}
+          aria-pressed={collapsed}
+          className="absolute top-1/2 -right-3 z-40 grid size-6 -translate-y-1/2 place-items-center rounded-full border border-foreground/10 bg-background text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {collapsed ? (
+            <PanelLeft className="size-3" />
+          ) : (
+            <PanelLeftClose className="size-3" />
+          )}
+        </button>
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 p-3">
-        {DESKTOP_NAV_ITEMS.map((item) => {
-          const active = isActive(pathname, item.href);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                active
-                  ? "bg-foreground/[0.08] text-foreground"
-                  : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-              )}
-            >
-              <Icon className={cn("size-4", active && "text-foreground")} />
-              {item.label}
-            </Link>
-          );
-        })}
+        {DESKTOP_NAV_ITEMS.map((item) => (
+          <NavLinkItem
+            key={item.href}
+            item={item}
+            active={isActive(pathname, item.href)}
+            collapsed={collapsed}
+          />
+        ))}
       </nav>
 
-      {/* Sidebar 底部：防窺 + 主題切換 + 登出 */}
-      <div className="border-t border-foreground/10 p-3 flex flex-col gap-1">
-        <PrivacyToggle variant="sidebar" />
-        <ThemeToggle variant="sidebar" />
-        <SignOutButton />
+      {/* Sidebar 底部：防窺 + 主題切換 + 登出 — 摺疊時改用 Tooltip 標籤 */}
+      <div className="flex flex-col gap-1 border-t border-foreground/10 p-3">
+        <SidebarTooltipWrap label="防窺模式" enabled={collapsed}>
+          <PrivacyToggle variant="sidebar" collapsed={collapsed} />
+        </SidebarTooltipWrap>
+        <SidebarTooltipWrap label="切換主題" enabled={collapsed}>
+          <ThemeToggle variant="sidebar" collapsed={collapsed} />
+        </SidebarTooltipWrap>
+        <SidebarTooltipWrap label="登出" enabled={collapsed}>
+          <SignOutButton collapsed={collapsed} />
+        </SidebarTooltipWrap>
       </div>
     </aside>
+  );
+}
+
+/* ─────────────────────────── Sidebar helpers ─────────────────────────── */
+
+/**
+ * 一條 nav link。摺疊時：
+ *   - text span 用 w-0 opacity-0 fade 出去
+ *   - button 視覺變成方形包 icon
+ *   - 整顆包進 Tooltip，hover 顯示右側中文標籤
+ */
+function NavLinkItem({
+  item,
+  active,
+  collapsed,
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed: boolean;
+}) {
+  const Icon = item.icon;
+  const link = (
+    <Link
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      aria-label={item.label}
+      className={cn(
+        "flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium transition-colors",
+        collapsed ? "justify-center px-2" : "px-3",
+        active
+          ? "bg-foreground/[0.08] text-foreground"
+          : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+      )}
+    >
+      <Icon className={cn("size-4 shrink-0", active && "text-foreground")} />
+      <span
+        className={cn(
+          "overflow-hidden whitespace-nowrap transition-all duration-300",
+          collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+        )}
+      >
+        {item.label}
+      </span>
+    </Link>
+  );
+
+  if (!collapsed) return link;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={link} />
+      <TooltipContent side="right" sideOffset={12}>
+        {item.label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * 給底部 toggle 群（PrivacyToggle / ThemeToggle / SignOutButton）共用的
+ * Tooltip 包殼。enabled=false 時 pass-through 不包，避免展開狀態下
+ * tooltip 跟既有 inline label 重疊。
+ */
+function SidebarTooltipWrap({
+  label,
+  enabled,
+  children,
+}: {
+  label: string;
+  enabled: boolean;
+  children: React.ReactNode;
+}) {
+  if (!enabled) return <>{children}</>;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children as React.ReactElement} />
+      <TooltipContent side="right" sideOffset={12}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

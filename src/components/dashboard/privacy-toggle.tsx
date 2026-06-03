@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 interface Props {
   /** 視覺變體：sidebar 走橫躺、floating 走圓形浮動鈕 */
   variant?: "sidebar" | "floating";
+  /** sidebar 摺疊狀態 — true 時隱藏文字、icon 置中。只對 sidebar variant 有效。 */
+  collapsed?: boolean;
   className?: string;
 }
 
@@ -20,7 +22,11 @@ interface Props {
  *
  * 跟 ThemeToggle 同款 mounted guard：避免 SSR / 持久化值未讀回前 icon 跳動。
  */
-export function PrivacyToggle({ variant = "sidebar", className }: Props) {
+export function PrivacyToggle({
+  variant = "sidebar",
+  collapsed = false,
+  className,
+}: Props) {
   const { isPrivacyMode, togglePrivacy, mounted } = usePrivacy();
 
   const label = mounted
@@ -57,14 +63,22 @@ export function PrivacyToggle({ variant = "sidebar", className }: Props) {
       aria-pressed={isPrivacyMode}
       title={label}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground",
+        "flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground",
+        collapsed ? "justify-center px-2" : "px-3",
         isPrivacyMode &&
           "text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300",
         className
       )}
     >
       <PrivacyIcon on={isPrivacyMode} mounted={mounted} />
-      {mounted ? (isPrivacyMode ? "防窺中" : "防窺模式") : "防窺模式"}
+      <span
+        className={cn(
+          "overflow-hidden whitespace-nowrap transition-all duration-300",
+          collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+        )}
+      >
+        {mounted ? (isPrivacyMode ? "防窺中" : "防窺模式") : "防窺模式"}
+      </span>
     </button>
   );
 }
