@@ -8,6 +8,7 @@ import { CrossMonthTrendChart } from "@/components/dashboard/cross-month-trend-c
 import { DailySpendChart } from "@/components/dashboard/daily-spend-chart";
 import { FinancialElasticity } from "@/components/dashboard/financial-elasticity";
 import { MonthCategoryCard } from "@/components/dashboard/month-category-card";
+import { MonthHeadlineCards } from "@/components/dashboard/month-headline-cards";
 import { MonthNavigator } from "@/components/dashboard/month-navigator";
 import { TopMerchantsList } from "@/components/dashboard/top-merchants-list";
 import {
@@ -110,34 +111,108 @@ export function AnalyticsMonthlyTab({
         />
       </div>
 
-      {/* 0) 近 6 個月財務趨勢 — 跨月儀表板，最 high-level 的健康度檢查擺第一 */}
+      {/*
+        新版資訊架構 — 由上至下 6 段：
+          (1) 本月核心數據大字報（3 欄）
+          (2) 本月花費分類（Donut）
+          (3) 吸血鬼排行榜
+          (4) 本月現金流向圖（Sankey）
+          (5) 當月每日花費透視（Stacked Bar）
+          (6) 財務彈性（含零收入防呆）
+          (7) 近 6 個月財務趨勢（壓軸，跨月歷史檢驗）
+      */}
+
+      {/* (1) 🆕 本月核心數據大字報 — 第一眼就拿到 expense / income / 儲蓄率 */}
+      {isMonthSwitching ? (
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-[6.5rem] w-full rounded-xl" />
+          ))}
+        </div>
+      ) : (
+        <MonthHeadlineCards
+          transactions={transactions}
+          monthDate={monthDate}
+        />
+      )}
+
+      {/* (2) 本月花費分類 — Donut + 預算消耗條 */}
+      {isMonthSwitching ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="mt-2 h-3 w-72" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
+              <Skeleton className="h-72 w-full" />
+              <div className="flex flex-col gap-3">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mb-6">
+          <MonthCategoryCard
+            transactions={transactions}
+            accounts={accounts}
+            now={monthDate}
+            categories={categories}
+          />
+        </div>
+      )}
+
+      {/* (3) 🧛 吸血鬼排行榜 — 跟上面分類維度互補 */}
+      {isMonthSwitching ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="mt-2 h-3 w-72" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-4">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                  <Skeleton className="h-1 w-full" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mb-6">
+          <TopMerchantsList data={topMerchants} />
+        </div>
+      )}
+
+      {/* (4) 本月現金流向圖 — Sankey */}
       <Card className="mb-6">
         <CardHeader>
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">📈 近 6 個月財務趨勢</CardTitle>
+            <GitMerge className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">本月現金流向圖</CardTitle>
           </div>
           <CardDescription className="mt-1">
-            綠 / 紅長條 = 月度收入 / 支出；藍色折線 = 儲蓄率。
-            <span className="text-emerald-700 dark:text-emerald-400">
-              {" "}持續維持 20% 以上的儲蓄率
-            </span>
-            是穩健理財的關鍵。
+            從收入來源流入帳戶、再分流到各花費分類，連線粗細代表金額大小。手機請橫向滑動檢視。
           </CardDescription>
         </CardHeader>
         <CardContent>
           {isMonthSwitching ? (
-            <Skeleton className="h-72 w-full" />
+            <Skeleton className="h-[460px] w-full" />
           ) : (
-            <CrossMonthTrendChart
-              data={trendData}
-              targetSavingsRate={targetSavingsRate}
-            />
+            <CashflowSankeyChart data={sankeyData} />
           )}
         </CardContent>
       </Card>
 
-      {/* 1) 當月每日花費透視 — 最常看的「哪天花最多」daily breakdown */}
+      {/* (5) 當月每日花費透視 — Stacked Bar，點柱可 drill 進單日 */}
       <Card className="mb-6">
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -167,63 +242,7 @@ export function AnalyticsMonthlyTab({
         </CardContent>
       </Card>
 
-      {/* 2) 本月花費分類 — 圓餅圖 + 分類預算消耗 */}
-      {isMonthSwitching ? (
-        <Card className="mb-6">
-          <CardHeader>
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="mt-2 h-3 w-72" />
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
-              <Skeleton className="h-72 w-full" />
-              <div className="flex flex-col gap-3">
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="mb-6">
-          <MonthCategoryCard
-            transactions={transactions}
-            accounts={accounts}
-            now={monthDate}
-            categories={categories}
-          />
-        </div>
-      )}
-
-      {/* 3) 🧛 吸血鬼排行榜 — 按 merchant 維度看「誰吸最多」，跟上面分類維度互補 */}
-      {isMonthSwitching ? (
-        <Card className="mb-6">
-          <CardHeader>
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="mt-2 h-3 w-72" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-4">
-              {[0, 1, 2, 3, 4].map((i) => (
-                <div key={i} className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-4 w-16" />
-                  </div>
-                  <Skeleton className="h-1 w-full" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="mb-6">
-          <TopMerchantsList data={topMerchants} />
-        </div>
-      )}
-
-      {/* 4) ⚖️ 財務彈性分析 — 固定 vs 浮動 + tier 智囊；高階健康度指標 */}
+      {/* (6) ⚖️ 財務彈性分析 — 含「本月零收入」防呆 alert（在元件內部） */}
       {isMonthSwitching ? (
         <Card className="mb-6">
           <CardHeader>
@@ -251,22 +270,29 @@ export function AnalyticsMonthlyTab({
         </div>
       )}
 
-      {/* 5) 本月現金流向圖 — Sankey 視覺重，擺最下面當 deep-dive */}
+      {/* (7) 近 6 個月財務趨勢 — 跨月歷史壓軸，最 high-level 的健康度檢查 */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <GitMerge className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">本月現金流向圖</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">📈 近 6 個月財務趨勢</CardTitle>
           </div>
           <CardDescription className="mt-1">
-            從收入來源流入帳戶、再分流到各花費分類，連線粗細代表金額大小。手機請橫向滑動檢視。
+            綠 / 紅長條 = 月度收入 / 支出；藍色折線 = 儲蓄率。
+            <span className="text-emerald-700 dark:text-emerald-400">
+              {" "}持續維持 20% 以上的儲蓄率
+            </span>
+            是穩健理財的關鍵。
           </CardDescription>
         </CardHeader>
         <CardContent>
           {isMonthSwitching ? (
-            <Skeleton className="h-[460px] w-full" />
+            <Skeleton className="h-72 w-full" />
           ) : (
-            <CashflowSankeyChart data={sankeyData} />
+            <CrossMonthTrendChart
+              data={trendData}
+              targetSavingsRate={targetSavingsRate}
+            />
           )}
         </CardContent>
       </Card>

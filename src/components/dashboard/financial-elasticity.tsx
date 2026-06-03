@@ -8,6 +8,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { HelpTip } from "@/components/ui/help-tip";
 import { Money } from "@/components/ui/money";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -170,10 +171,43 @@ export function FinancialElasticity({ data }: Props) {
           財富智囊 — 依 tier 動態文案。刻意塞在同一張卡（不獨立卡）：
           建議跟負擔率視覺上耦合，使用者一掃就「看到數字 → 看到對應建議」，
           中間隔張卡反而割裂語境。
+
+          防呆：本月零收入 + 有支出 → tier 算出來會是 safe（fixed/0 = NaN，邏輯
+          掉到 safe 預設），但實際上是「靠存量燒錢」的高風險狀態。攔截後改顯示
+          黃色 NoIncomeAlert，不誤導使用者「彈性絕佳」。
         */}
-        {hasAnyActivity && <AdvisorAlert tier={tier} />}
+        {hasAnyActivity &&
+          (data.totalIncome === 0 ? (
+            <NoIncomeAlert />
+          ) : (
+            <AdvisorAlert tier={tier} />
+          ))}
       </CardContent>
     </Card>
+  );
+}
+
+/* ─────────────────── No-income guard ─────────────────── */
+
+/**
+ * 本月零收入專屬 alert — 蓋過 tier-based 文案，避免「totalIncome=0 →
+ * burdenRate=NaN/null → tier 預設 safe → 誤判財務彈性絕佳」的邏輯陷阱。
+ */
+function NoIncomeAlert() {
+  return (
+    <Alert
+      className={cn(
+        "mt-6 border-amber-500/30 bg-amber-500/[0.04] text-foreground ring-1 ring-amber-500/20",
+        "*:data-[slot=alert-description]:text-amber-700 dark:*:data-[slot=alert-description]:text-amber-200",
+        "*:[svg]:text-amber-500 dark:*:[svg]:text-amber-400"
+      )}
+    >
+      <AlertTriangle className="size-4" />
+      <AlertTitle className="font-semibold">⚠️ 本月尚無收入進帳</AlertTitle>
+      <AlertDescription className="leading-relaxed">
+        目前支出全數由存量資金流出，請密切注意浮動開銷的累積速度。建議到「歷史時光機」對照上個月的儲蓄率，確認支出節奏是否需要收斂。
+      </AlertDescription>
+    </Alert>
   );
 }
 
