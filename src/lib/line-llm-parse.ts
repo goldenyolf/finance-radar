@@ -357,14 +357,14 @@ export function matchAccount(
   return best?.acc ?? null;
 }
 
-function normalizeForMatch(s: string): string {
+export function normalizeForMatch(s: string): string {
   // 去掉所有括弧、空白、底線、標點、底線 ─ 留純文字 + 數字。
   return s
     .toLowerCase()
     .replace(/[（）()【】\[\]\s·・,，.。_\-]+/g, "");
 }
 
-function scoreMatch(needle: string, hay: string): number {
+export function scoreMatch(needle: string, hay: string): number {
   if (!needle || !hay) return 0;
   if (needle === hay) return 100;
   if (hay.includes(needle)) return 80;

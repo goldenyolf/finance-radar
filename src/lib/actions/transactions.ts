@@ -53,6 +53,9 @@ export interface UpdateTransactionInput {
   category?: ExpenseCategory;
   /** 可選；只允許 income ↔ expense 互改。Transfer row 不接受 type 變更（會破壞配對）。 */
   type?: Exclude<TransactionType, "transfer">;
+  /** 週期性 placeholder 編輯時帶 'confirmed' → 把 fulfillment_state 改成
+   *  confirmed。不傳的話 state 不動。 */
+  fulfillmentState?: "confirmed";
 }
 
 export async function updateTransaction(
@@ -133,6 +136,17 @@ export async function updateTransaction(
         .eq("id", input.id);
       if (error) return { ok: false, error: error.message };
     }
+  }
+
+  // 3) Recurring placeholder 核銷 — 跟 transfer / 非 transfer 流獨立，
+  //    transfer 本身不會是 placeholder（materialize 出來只給 income/expense），
+  //    所以 transfer 路徑這條 if 不會命中，安全。
+  if (input.fulfillmentState === "confirmed") {
+    const { error } = await supabase
+      .from("transactions")
+      .update({ fulfillment_state: "confirmed" })
+      .eq("id", input.id);
+    if (error) return { ok: false, error: error.message };
   }
 
   revalidatePath("/");

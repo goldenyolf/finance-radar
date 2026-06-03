@@ -327,7 +327,17 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
                       {item.category}
                     </span>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{item.title}</p>
+                      <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                        <span className="truncate">{item.title}</span>
+                        {item.fulfillmentState === "placeholder" && (
+                          <span
+                            className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/[0.08] px-1.5 py-0.5 text-[9px] font-normal text-amber-500 ring-1 ring-amber-500/20"
+                            title="此筆為週期性扣款的預估佔位，實付後將自動核銷"
+                          >
+                            ⏳ 待確認
+                          </span>
+                        )}
+                      </p>
                       <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                         {item.accountName}
                         {item.source === "transaction" && (
@@ -370,6 +380,7 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
                                 ? "income"
                                 : "expense"
                           }
+                          fulfillmentState={item.fulfillmentState ?? null}
                           accounts={allAccounts}
                           categories={categories}
                         />

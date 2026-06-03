@@ -19,7 +19,9 @@ import {
   type ExpenseCategory,
 } from "@/lib/expense-categories";
 import {
+  normalizeForMatch,
   parseLineMessageWithLlm,
+  scoreMatch,
   type LineAccountContext,
 } from "@/lib/line-llm-parse";
 import { downloadLineMedia } from "@/lib/line-media";
@@ -361,6 +363,96 @@ const PAYMENT_METHOD_EMOJI: Record<PaymentMethod, string> = {
   transfer: "🏦",
 };
 
+/* ─────────────── Placeholder 核銷（recurring fulfillment）─────────────── */
+
+/**
+ * 試著把 LLM 抽到的 item / amount 對到當月某筆 placeholder（recurring 落地
+ * 但還沒實付確認）。命中 → UPDATE 該筆 amount + state='confirmed'；沒命中
+ * 回 ok:false 讓 caller 走一般 INSERT 路徑。
+ *
+ * 比對策略：
+ *   - placeholder.description = recurring.title (per materialize fn)，所以
+ *     對 description 跑 fuzzy 即可，無需 JOIN。
+ *   - 門檻 80（hay 完整包含 needle，反向且 needle 短 = 60 過鬆會誤匹配）
+ *   - 同月份過濾：用 monthStart + nextMonthStart 區間夾，避免跨月誤配
+ *   - 沒處理 amount sanity：實付跟 template 差 N 倍是常態（保費 / 學費）
+ */
+async function tryConfirmPlaceholder(opts: {
+  userId: string;
+  item: string;
+  amount: number;
+  paymentMethod: PaymentMethod;
+}): Promise<
+  | { ok: true; matchedTitle: string; previousAmount: number }
+  | { ok: false }
+> {
+  const today = todayInTaipei();
+  const monthStart = today.slice(0, 7) + "-01";
+  const nextMonthStart = computeNextMonthStart(monthStart);
+
+  const { data: rows, error } = await db()
+    .from("transactions")
+    .select("id, amount, description, recurring_payment_id")
+    .eq("user_id", opts.userId)
+    .eq("fulfillment_state", "placeholder")
+    .gte("date", monthStart)
+    .lt("date", nextMonthStart);
+
+  if (error || !rows || rows.length === 0) return { ok: false };
+
+  const needle = normalizeForMatch(opts.item);
+  if (!needle) return { ok: false };
+
+  let best: { id: string; score: number; description: string; amount: number } | null = null;
+  for (const r of rows) {
+    const desc = String(r.description ?? "");
+    const hay = normalizeForMatch(desc);
+    const score = scoreMatch(needle, hay);
+    if (score >= 80 && (!best || score > best.score)) {
+      best = {
+        id: r.id as string,
+        score,
+        description: desc,
+        amount: Number(r.amount),
+      };
+    }
+  }
+
+  if (!best) return { ok: false };
+
+  // 多租戶 scope 雙保險：.eq('user_id') (per memory) — RLS 已擋，但顯式寫
+  // 出來避免哪天 service client 繞過 RLS 時還能擋住跨租戶污染。
+  const { error: updateErr } = await db()
+    .from("transactions")
+    .update({
+      amount: opts.amount,
+      fulfillment_state: "confirmed",
+      payment_method: opts.paymentMethod,
+    })
+    .eq("id", best.id)
+    .eq("user_id", opts.userId);
+
+  if (updateErr) {
+    console.error("[LINE webhook] confirm placeholder failed:", updateErr);
+    return { ok: false };
+  }
+
+  return {
+    ok: true,
+    matchedTitle: best.description,
+    previousAmount: best.amount,
+  };
+}
+
+/** "2026-06-01" → "2026-07-01"；12 月 → 隔年 1 月 */
+function computeNextMonthStart(monthStart: string): string {
+  const [y, m] = monthStart.split("-").map(Number);
+  if (!y || !m) return monthStart;
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, "0")}-01`;
+}
+
 function todayInTaipei(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
@@ -656,6 +748,30 @@ async function handleTextMessage(
   // ── Expense flow ──
   const safeCategory = category ?? "other";
   const categoryLabel = resolveCategoryLabel(safeCategory, lookup);
+
+  // 在 INSERT 新交易前，先試 placeholder 核銷：把 LLM 抽到的 item 對到
+  // 當月的 recurring placeholder（同 user_id）。命中就 UPDATE 既存那筆，
+  // 不再 insert 新交易，避免「同個固定支出記兩次」的雙扣 bug。
+  const confirmation = await tryConfirmPlaceholder({
+    userId,
+    item,
+    amount,
+    paymentMethod,
+  });
+
+  if (confirmation.ok) {
+    const warning = await buildBudgetWarning(userId, safeCategory, lookup);
+    const deltaHint =
+      confirmation.previousAmount !== amount
+        ? `（預估 $${confirmation.previousAmount} → 實付 $${amount}）`
+        : "";
+    await replyText(
+      client,
+      replyToken,
+      `${replyPrefix}✅ 已核銷週期：[${categoryLabel}] ${confirmation.matchedTitle} $${amount} ${PAYMENT_METHOD_EMOJI[paymentMethod]}${deltaHint}${warning}`
+    );
+    return;
+  }
 
   try {
     const { error } = await db().from("transactions").insert({

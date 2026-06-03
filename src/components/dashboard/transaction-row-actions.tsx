@@ -55,6 +55,8 @@ interface Props {
   isTransfer: boolean;
   /** 該筆原本的 type — 預填 dialog 的 income/expense tab；transfer 走鎖定狀態 */
   transactionType?: "income" | "expense" | "transfer";
+  /** 週期性核銷狀態 — 'placeholder' 時 dialog 提示「儲存即核銷」並把 state 設成 confirmed。 */
+  fulfillmentState?: "placeholder" | "confirmed" | null;
   accounts: AccountRow[];
   /** 動態 categories — 編輯 dialog 的分類下拉用使用者自訂清單；省略時走靜態 7 大類。 */
   categories?: CategoryRow[];
@@ -72,9 +74,11 @@ export function TransactionRowActions({
   expenseCategory,
   isTransfer,
   transactionType,
+  fulfillmentState,
   accounts,
   categories,
 }: Props) {
+  const isPlaceholder = fulfillmentState === "placeholder";
   // 推導初始 editable type：transfer 不會被使用者改（dialog 鎖定 income/expense tab）
   // 沒傳 transactionType 時 fallback：有 expenseCategory → expense；否則看 transfer
   const initialEditableType: EditableType =
@@ -170,6 +174,9 @@ export function TransactionRowActions({
         accountId: accountChanged ? draftAccountId : undefined,
         category: categoryChanged ? draftCategory : undefined,
         type: typeChanged ? draftType : undefined,
+        // Placeholder 編輯儲存即視為核銷 — 把 state 一併推到 confirmed，
+        // 避免多一顆「確認」按鈕讓使用者再決策一次。
+        fulfillmentState: isPlaceholder ? "confirmed" : undefined,
       });
       if (!result.ok) {
         toast.error("更新失敗", { description: result.error });
@@ -178,7 +185,7 @@ export function TransactionRowActions({
       const target = accounts.find((a) => a.id === draftAccountId);
       const targetAccountName = getAccountLabel(draftAccountId, target?.name);
       const movedHint = accountChanged ? `・已移至 ${targetAccountName}` : "";
-      toast.success("已更新帳目", {
+      toast.success(isPlaceholder ? "已核銷週期" : "已更新帳目", {
         description: `${draftTitle.trim()}・NT$ ${parsed.toLocaleString("zh-TW")}${movedHint}`,
       });
       setEditOpen(false);
@@ -217,11 +224,15 @@ export function TransactionRowActions({
       <Dialog open={editOpen} onOpenChange={openEdit}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>編輯帳目</DialogTitle>
+            <DialogTitle>
+              {isPlaceholder ? "核銷週期扣款" : "編輯帳目"}
+            </DialogTitle>
             <DialogDescription>
-              {isTransfer
-                ? "內部轉帳僅可編輯名稱與金額；帳戶與分類不適用。"
-                : "改帳戶後這筆會立刻飛到對應的板塊卡片。"}
+              {isPlaceholder
+                ? "🪄 這是週期性扣款的預估佔位。改成實付金額後儲存，會自動標記為已核銷，「⏳ 待確認」字樣就會消失。"
+                : isTransfer
+                  ? "內部轉帳僅可編輯名稱與金額；帳戶與分類不適用。"
+                  : "改帳戶後這筆會立刻飛到對應的板塊卡片。"}
             </DialogDescription>
           </DialogHeader>
 

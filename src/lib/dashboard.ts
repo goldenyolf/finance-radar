@@ -96,7 +96,18 @@ export interface TransactionRow {
   payment_method?: PaymentMethod | null;
   /** ISO 8601 timestamp — DB DEFAULT now()，給單日時間軸 / 排序用。 */
   created_at?: string;
+  /** 由 recurring_payments materialize 出來時帶；一般手動交易為 null。 */
+  recurring_payment_id?: string | null;
+  /** 'placeholder' = 預估佔位（金額是 recurring.amount 模板值）；
+   *  'confirmed' = LINE 或網頁端核銷後的實付金額；
+   *  null = 跟 recurring 無關的一般交易。 */
+  fulfillment_state?: "placeholder" | "confirmed" | null;
+  /** materialize 當下所屬的 'YYYY-MM' period。配 (recurring_id, period) UNIQUE 防重。 */
+  recurring_period?: string | null;
 }
+
+/** 抽出來給 UI / actions / line-bot 共用的字面 type。 */
+export type FulfillmentState = "placeholder" | "confirmed";
 
 export interface RecurringRow {
   id: string;
@@ -490,6 +501,9 @@ export interface BoardDetailItem {
   expenseCategory?: ExpenseCategory | null;
   /** 是否為內部轉帳。Transfer row 不顯示帳戶/分類編輯欄位（避免破壞兩腿配對）。 */
   isTransfer?: boolean;
+  /** materialize 出來且還沒被 LINE / 網頁端核銷時 = 'placeholder'；
+   *  核銷後 = 'confirmed'；一般交易則 null（不渲染 badge）。 */
+  fulfillmentState?: FulfillmentState | null;
   /** ISO date string (for sorting) */
   date: string;
 }
@@ -707,6 +721,7 @@ export function buildBoardData(opts: {
         accountId: t.account_id,
         expenseCategory: t.category,
         isTransfer: t.type === "transfer",
+        fulfillmentState: t.fulfillment_state ?? null,
         date: t.date,
       });
     }
