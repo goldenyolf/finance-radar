@@ -387,7 +387,7 @@ const allowed =
 
 ### 資料庫亮點
 
-- **9+ 張表 / 30+ RLS policy / 13 個 migration**：所有資料以 `auth.uid() = user_id` 強制多租戶隔離
+- **9+ 張表 / 30+ RLS policy / 14 個 migration**：所有資料以 `auth.uid() = user_id` 強制多租戶隔離
 - **DB 端 invariant**：`wealth_snapshots.net_worth` GENERATED STORED；`transactions.user_id` DEFAULT `auth.uid()` — 應用層連碰都碰不到，零繞過可能
 - **BEFORE INSERT trigger** 自動 backfill：`categories.is_fixed` 依 code、`dashboard_plates` 依 user 自動 seed 3 條預設
 - **`(user_id, recorded_at)` UNIQUE** + ON CONFLICT — 同日重複拍快照走 UPSERT 覆蓋，避免汙染趨勢線
@@ -492,7 +492,7 @@ NEXT_PUBLIC_ENABLE_DEMO_SEED=false
 
 ### 3. 跑 Migration
 
-把 `supabase/migrations/` 13 個 `.sql` 依序貼到 **Supabase Dashboard → SQL Editor** 執行：
+把 `supabase/migrations/` 14 個 `.sql` 依序貼到 **Supabase Dashboard → SQL Editor** 執行：
 
 | Migration | 內容 |
 |---|---|
@@ -509,6 +509,7 @@ NEXT_PUBLIC_ENABLE_DEMO_SEED=false
 | `0011` | categories.default_account_id + profiles.default_account_id（LINE 帳戶 fallback chain 鋪路）|
 | `0012` | transactions.payment_method 維度（cash / credit_card / transfer）+ accounts_type_check 擴 'cash' + auth.users trigger 自動 seed 現金錢包 |
 | `0013` | dashboard_plates 從 1:1 升級 N:1：`linked_account_id` → `linked_account_ids TEXT[]` + backfill + DROP 舊欄 |
+| `0014` | 把現金錢包自動綁進「個人財務」板塊（backfill 既有 user + CREATE OR REPLACE 0007 trigger 讓新會員一註冊就吃到）|
 
 ### 4. 啟動
 
