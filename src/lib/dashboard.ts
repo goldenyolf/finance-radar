@@ -521,6 +521,8 @@ export interface BoardMetrics {
   budget: number;
   spent: number;
   remaining: number;
+  /** 本月實際入帳收入（type='income' + completed）。首頁卡片用內斂小字呈現。 */
+  realIncome: number;
 }
 
 export interface BoardData {
@@ -628,7 +630,7 @@ export function buildBoardData(opts: {
       return {
         meta,
         accounts: [],
-        metrics: { budget: 0, spent: 0, remaining: 0 },
+        metrics: { budget: 0, spent: 0, remaining: 0, realIncome: 0 },
         items: [],
         hasAccounts: false,
         hasRecurringIncome: false,
@@ -657,6 +659,17 @@ export function buildBoardData(opts: {
       .filter(
         (t) =>
           t.type === "expense" &&
+          isInMonthOf(t.date, now) &&
+          effectiveTransactionStatus(t, now) === "completed"
+      )
+      .reduce((s, t) => s + num(t.amount), 0);
+
+    // 本月實際入帳收入 — 跟 spent 同款 effective-status 處理，避免「下週才到」
+    // 的 upcoming income 被當已入帳；transfer 兩腿互抵不算。
+    const realIncome = boardTransactions
+      .filter(
+        (t) =>
+          t.type === "income" &&
           isInMonthOf(t.date, now) &&
           effectiveTransactionStatus(t, now) === "completed"
       )
@@ -746,7 +759,7 @@ export function buildBoardData(opts: {
     return {
       meta,
       accounts: boardAccounts,
-      metrics: { budget, spent, remaining },
+      metrics: { budget, spent, remaining, realIncome },
       items,
       hasAccounts: true,
       hasRecurringIncome: recurringIncome > 0,

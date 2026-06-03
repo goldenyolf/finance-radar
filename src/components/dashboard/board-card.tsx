@@ -257,6 +257,24 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
             hint="當月已完成的浮動支出"
             tone="warning"
           />
+
+          {/*
+            收入脈絡內斂小字 — 首頁刻意「克制總覽」不展開細項分類，留給
+            /analytics 的雙模式 Pie Chart 做深度拆解。
+            metrics.realIncome=0 不渲染（避免空字串視覺垃圾）。
+          */}
+          {metrics.realIncome > 0 && (
+            <div className="-mt-1 flex items-center justify-between px-1 text-xs text-zinc-500">
+              <span className="flex items-center gap-1.5">
+                <span aria-hidden>💰</span>
+                本月已進帳總收入
+              </span>
+              <span className="tabular-nums" data-money>
+                <Money value={metrics.realIncome} />
+              </span>
+            </div>
+          )}
+
           <MetricRow
             label="本月剩餘額度"
             value={metrics.remaining}
