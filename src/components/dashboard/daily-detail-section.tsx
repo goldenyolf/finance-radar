@@ -79,7 +79,7 @@ export function DailyDetailSection({
 
   return (
     <section aria-label="當日細項花費" className="flex flex-col gap-4">
-      {/* Navigator: < 日期 > [今天] | 右側合計 chip */}
+      {/* Navigator: < 日期 > [今天] — 右側合計 chip 已移到下方 Hero 大字 */}
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex items-center gap-1.5">
           <motion.div
@@ -141,16 +141,26 @@ export function DailyDetailSection({
             </motion.div>
           )}
         </div>
-
-        {hasSpend && (
-          <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted-foreground tabular-nums">
-            共 {totalLabel} 筆 · 合計
-            <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
-              <Money value={detail.total} />
-            </span>
-          </span>
-        )}
       </header>
+
+      {/*
+        🆕 今日 Hero 大字報 — 取代原本擠在右上角的紅字 chip。
+        標題小字 + 大字總額（tabular-nums tracking-tight）+ 筆數副標。
+        永遠用 zinc-100/200 中性色，「紅」這個視覺權重留給真正的超預算警示。
+      */}
+      {hasSpend && (
+        <div className="rounded-xl bg-card px-5 py-4 ring-1 ring-foreground/10">
+          <p className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+            今日總支出
+          </p>
+          <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-zinc-100">
+            <Money value={detail.total} />
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground/70 tabular-nums">
+            共 {totalLabel} 筆消費紀錄
+          </p>
+        </div>
+      )}
 
       {/* Body — empty state 或 N 張分類卡 */}
       {hasSpend ? (
@@ -176,6 +186,8 @@ export function DailyDetailSection({
 /* ─────────────────── 單一分類卡片 ─────────────────── */
 
 function CategoryGroupCard({ group }: { group: DailyDetailGroup }) {
+  // 預留鉤點：未來若把預算資訊接進 DailyDetailGroup，這裡判定超支才走 rose 染色
+  const isOverBudget = false;
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -191,7 +203,12 @@ function CategoryGroupCard({ group }: { group: DailyDetailGroup }) {
               · {group.items.length} 筆
             </span>
           </span>
-          <span className="shrink-0 font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+          {/* 預設中性 zinc，只有超預算才轉 rose — 避免整頁紅字焦慮 */}
+          <span
+            className={`shrink-0 font-semibold tabular-nums ${
+              isOverBudget ? "text-rose-500" : "text-zinc-200"
+            }`}
+          >
             <Money value={group.total} />
           </span>
         </CardTitle>

@@ -111,6 +111,12 @@ ${categoryList}
 4. category 嚴格只能是上列 code 之一，否則填 null。
 5. 「請 X 喝/吃」「給 X 買」這類修飾語**不改變分類本質** — 仍依消費物品本身判斷。例：「請家人喝咖啡」「買便當給同事」都是 food_dining，不是 other。
 6. 咖啡 / 茶 / 手搖 / 麵包 / 蛋糕 / 飲料 / Cama / 星巴克 / 路易莎 等飲食店家或品項一律 food_dining。
+7. **Uber / Uber Eats / 外送 / foodpanda / 熊貓 是送餐服務不是交通**。若同句出現「午餐 / 晚餐 / 早餐 / 吃 / 餐 / 食物 / 麥當勞 / 摩斯 / 肯德基 / KFC」等任一餐飲詞 → 強制歸類 food_dining，絕對禁止判成 transport。只有「Uber 機場 / Uber 公司」這種沒帶餐飲詞的純載客場景才是 transport。
+8. account_override 抽取規則升級 — 不只擷取銀行名，「現金線索」也要抓：
+   - **銀行 / 帳戶關鍵字**（「台新」「中信」「合庫」「郵局」「聯邦」「玉山」「國泰」「兆豐」「華南」「第一」「永豐」⋯）→ 原樣 echo
+   - **「現金」「現金錢包」「錢包」單字** → account_override 寫 "現金"（讓系統匹配 type='cash' 帳戶）
+   - **純「刷卡 / 信用卡 / 卡」後綴**（沒帶具體銀行名）→ account_override 寫 null，靠 payment_method='credit_card' 兜底
+   - 「台新刷卡」「兆豐刷卡」這種**銀行名+刷卡** → account_override 寫 "台新" / "兆豐"（仍是銀行名優先，payment_method=credit_card 並行存在）
 
 【payment_method 判定流程】（依序檢查，命中即定）
 A. 出現「刷 / 卡 / 信用卡 / 信」這類字 → "credit_card"
@@ -140,7 +146,19 @@ F. 以上皆無線索 → "cash"（小額日常消費的合理預設）
 輸出：{"item":"加油","amount":1200,"account_override":"中信","category":"transport","payment_method":"transfer"}
 
 輸入：「現金 早餐 60」
-輸出：{"item":"早餐","amount":60,"account_override":null,"category":"food_dining","payment_method":"cash"}
+輸出：{"item":"早餐","amount":60,"account_override":"現金","category":"food_dining","payment_method":"cash"}
+
+輸入：「安全帽 現金 1200」
+輸出：{"item":"安全帽","amount":1200,"account_override":"現金","category":"other","payment_method":"cash"}
+
+輸入：「午餐（麥當勞） uber 信用卡 299」
+輸出：{"item":"午餐（麥當勞） uber","amount":299,"account_override":null,"category":"food_dining","payment_method":"credit_card"}
+
+輸入：「午餐摩斯（幫老婆買）台新刷卡 105」
+輸出：{"item":"午餐摩斯（幫老婆買）","amount":105,"account_override":"台新","category":"food_dining","payment_method":"credit_card"}
+
+輸入：「早餐 台新卡 35」
+輸出：{"item":"早餐","amount":35,"account_override":"台新","category":"food_dining","payment_method":"credit_card"}
 
 輸入：「網銀繳電費 1850」
 輸出：{"item":"繳電費","amount":1850,"account_override":null,"category":"home_living","payment_method":"transfer"}
@@ -282,17 +300,31 @@ function normalizeLlmOutput(
 /* ─────────────────────── 帳戶模糊比對 ─────────────────────── */
 
 /**
+ * normalize 後等於這些值，直接走 type='cash' 快速通道，跳過 name fuzzy。
+ * 解決真實情境：user 的 cash 帳戶名是「現金錢包」，但 user 打的 override
+ * 可能只有「現金」「錢包」；同時 user 的 bank 帳戶可能名為「個人主帳戶
+ * (Bank A)」不含「現金」二字。靠純 name fuzzy 永遠 connect 不起來。
+ */
+const CASH_OVERRIDE_TOKENS = new Set([
+  "現金",
+  "現金錢包",
+  "錢包",
+  "cash",
+]);
+
+/**
  * 把 override 字串對到 user 的某個帳戶。沒命中回 null。
  *
- * 分數階梯（高 → 低）：
- *   100 完全等於（normalize 後）
- *    80 帳戶 name 完整包含 override（典型：「中信」⊂「百五的薪資帳戶 (中信)」）
- *    60 override 完整包含 name（user 打多、帳戶名很短）
- *    40 override 前 2-3 字 ⊂ name（保底：抗錯字、抗同義詞如「中國信託」vs「中信」）
+ * 比對順序：
+ *   (0) Cash 快速通道：override 是「現金/錢包/cash」家族 → 找 type='cash' 帳戶
+ *       （避開 name 對不上的尷尬）
+ *   (1) Name fuzzy 分數階梯：
+ *        100 完全等於（normalize 後）
+ *         80 帳戶 name 完整包含 override（典型：「中信」⊂「百五的薪資帳戶 (中信)」）
+ *         60 override 完整包含 name（user 打多、帳戶名很短）
+ *         40 override 前 2-3 字 ⊂ name（保底：抗錯字、同義詞如「中國信託」vs「中信」）
  *
  * 同分時取 id 字典序較前，行為可重現。
- *
- * 也可直接 export 給 regex fallback path 使用（webhook 端的安全網）。
  */
 export function matchAccount(
   override: string,
@@ -301,6 +333,14 @@ export function matchAccount(
   const needle = normalizeForMatch(override);
   if (!needle) return null;
 
+  // (0) Cash override fast-path — 不靠 name 比對，直接看 type
+  if (CASH_OVERRIDE_TOKENS.has(needle)) {
+    const cashAcc = accounts.find((a) => a.type === "cash");
+    if (cashAcc) return cashAcc;
+    // 沒 cash 帳戶（理論上 0012 trigger 保證有；防御性 fallthrough）
+  }
+
+  // (1) Name fuzzy
   let best: { acc: LineAccountContext; score: number } | null = null;
   for (const acc of accounts) {
     const hay = normalizeForMatch(acc.name);
