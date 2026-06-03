@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Settings } from "lucide-react";
+import { Banknote, CreditCard, Landmark, Settings, Wallet } from "lucide-react";
 
 import {
   Card,
@@ -15,7 +15,9 @@ import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import type { CategoryRow } from "@/lib/categories";
 import {
   formatCurrency,
+  num,
   type AccountRow,
+  type AccountType,
   type BoardData,
   type BoardDetailItem,
   type DetailCategory,
@@ -52,6 +54,13 @@ const STATUS_DOT: Record<DetailStatus, string> = {
   預計扣款: "bg-rose-500/50",
 };
 
+/** account.type → lucide icon。跟 Quick Add Segmented / 明細 badge / Settings chip 同套。 */
+const ACCOUNT_TYPE_ICON: Record<AccountType, typeof Banknote> = {
+  cash: Banknote,
+  credit_card: CreditCard,
+  bank: Landmark,
+};
+
 function formatDateShort(iso: string) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -81,6 +90,10 @@ function amountToneClass(item: BoardDetailItem) {
 export function BoardCard({ data, allAccounts, categories }: Props) {
   const { meta, accounts, metrics, items, hasAccounts, hasRecurringIncome, isUnlinked } = data;
   const remainingPositive = metrics.remaining >= 0;
+
+  // 資產整合看板 — 板塊所綁定的全部 cash flow accounts 餘額加總。
+  // 信用卡 balance 偶為負（欠款），加總會自然抵消，跟「淨資產」語意一致。
+  const subAccountTotal = accounts.reduce((s, a) => s + num(a.balance), 0);
 
   // 預算消耗進度
   // - budget <= 0：無有效預算 → 0%（避免除以零或負值）
@@ -165,6 +178,66 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
+        {/*
+          資產整合看板 — Phase: Multi-account binding
+          上：總餘額 headline (大字)；中：分割線；下：子帳戶兩端對齊列表。
+          accounts 全空（未綁定 / 帳戶被刪）時整段不渲染，header 的 chip
+          line 已 cover 引導。<Money> 自動套 privacy blur，無需額外處理。
+        */}
+        {hasAccounts && (
+          <section
+            aria-label="子帳戶餘額"
+            className="rounded-xl bg-card px-5 py-4 ring-1 ring-foreground/10"
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+                資產總額
+              </span>
+              <span
+                className={`text-2xl font-bold tabular-nums tracking-tight ${
+                  subAccountTotal < 0
+                    ? "text-rose-600 dark:text-rose-400"
+                    : "text-foreground"
+                }`}
+              >
+                <Money value={subAccountTotal} />
+              </span>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground/70">
+              本板塊 {accounts.length} 個帳戶當前餘額加總
+            </p>
+
+            <div className="my-3 border-t border-foreground/10" />
+
+            <ul className="flex flex-col gap-1.5">
+              {accounts.map((a) => {
+                const Icon = ACCOUNT_TYPE_ICON[a.type] ?? Wallet;
+                const balance = num(a.balance);
+                return (
+                  <li
+                    key={a.id}
+                    className="flex items-center justify-between gap-3 text-xs"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                      <Icon className="size-3 shrink-0" aria-hidden />
+                      <span className="truncate">{a.name}</span>
+                    </span>
+                    <span
+                      className={`shrink-0 font-medium tabular-nums ${
+                        balance < 0
+                          ? "text-rose-600 dark:text-rose-400"
+                          : "text-foreground"
+                      }`}
+                    >
+                      <Money value={balance} />
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
         {/* 三個核心數字 */}
         <div className="grid grid-cols-1 gap-4">
           <MetricRow

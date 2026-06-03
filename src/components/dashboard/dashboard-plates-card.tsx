@@ -3,6 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import {
+  Banknote,
+  Check,
+  CreditCard,
+  Landmark,
   LayoutGrid,
   Loader2Icon,
   Pencil,
@@ -30,13 +34,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { getAccountLabel } from "@/lib/account-display";
 import {
   createDashboardPlate,
@@ -47,7 +44,7 @@ import {
   DASHBOARD_PLATES_MAX,
   type DashboardPlateRow,
 } from "@/lib/dashboard-plates";
-import type { AccountRow } from "@/lib/dashboard";
+import type { AccountRow, AccountType } from "@/lib/dashboard";
 
 interface Props {
   plates: DashboardPlateRow[];
@@ -58,18 +55,22 @@ interface DraftState {
   id?: string;
   name: string;
   description: string;
-  /** "" 表示「未綁定」（Select 不接受 null 當 value，所以用 sentinel） */
-  linkedAccountId: string;
+  /** N:1 multi-binding (per 0013)；空陣列 = 未綁定 */
+  linkedAccountIds: string[];
 }
 
 const BLANK_DRAFT: DraftState = {
   name: "",
   description: "",
-  linkedAccountId: "",
+  linkedAccountIds: [],
 };
 
-/** Select 的「未綁定」sentinel — base-ui Select.Item value 不能是 null/empty */
-const NO_ACCOUNT = "__none__";
+/** account.type 對應的 lucide icon — 跟 Quick Add Segmented / 明細 badge 同套，視覺一致。 */
+const ACCOUNT_TYPE_ICON: Record<AccountType, typeof Banknote> = {
+  cash: Banknote,
+  credit_card: CreditCard,
+  bank: Landmark,
+};
 
 /**
  * 🧱 戰情室板塊配置 — Settings 頁的子卡。
@@ -104,21 +105,17 @@ export function DashboardPlatesCard({ plates, accounts }: Props) {
       id: plate.id,
       name: plate.name,
       description: plate.description,
-      linkedAccountId: plate.linked_account_id ?? "",
+      linkedAccountIds: [...(plate.linked_account_ids ?? [])],
     });
     setDialogOpen(true);
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const linkedAccountId =
-      draft.linkedAccountId && draft.linkedAccountId !== NO_ACCOUNT
-        ? draft.linkedAccountId
-        : null;
     const payload = {
       name: draft.name,
       description: draft.description,
-      linkedAccountId,
+      linkedAccountIds: draft.linkedAccountIds,
     };
     startTransition(async () => {
       const result = draft.id
@@ -194,7 +191,7 @@ export function DashboardPlatesCard({ plates, accounts }: Props) {
               <PlateRowItem
                 key={plate.id}
                 plate={plate}
-                accountName={resolveAccountName(plate.linked_account_id, accounts)}
+                boundAccounts={resolveBoundAccounts(plate.linked_account_ids, accounts)}
                 onEdit={() => openEdit(plate)}
                 onDelete={() => handleDelete(plate)}
                 deleting={deletingId === plate.id}
@@ -225,19 +222,32 @@ export function DashboardPlatesCard({ plates, accounts }: Props) {
 
 /* ─────────────────── helpers ─────────────────── */
 
-function resolveAccountName(
-  id: string | null,
+/**
+ * 把 plate.linked_account_ids 投射成實際 AccountRow 陣列。找不到的 id 視為
+ * 帳戶已被刪 — 用 placeholder 標記，PlateRowItem 會顯示「（已刪除）」chip。
+ */
+interface BoundAccount {
+  id: string;
+  name: string;
+  type: AccountType | null; // null = 已刪除
+}
+function resolveBoundAccounts(
+  ids: string[],
   accounts: AccountRow[]
-): string | null {
-  if (!id) return null;
-  return accounts.find((a) => a.id === id)?.name ?? "（已刪除帳戶）";
+): BoundAccount[] {
+  return ids.map((id) => {
+    const a = accounts.find((x) => x.id === id);
+    return a
+      ? { id: a.id, name: a.name, type: a.type }
+      : { id, name: "（已刪除）", type: null };
+  });
 }
 
 /* ─────────────────── Row ─────────────────── */
 
 interface RowProps {
   plate: DashboardPlateRow;
-  accountName: string | null;
+  boundAccounts: BoundAccount[];
   onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
@@ -245,7 +255,7 @@ interface RowProps {
 
 function PlateRowItem({
   plate,
-  accountName,
+  boundAccounts,
   onEdit,
   onDelete,
   deleting,
@@ -254,19 +264,38 @@ function PlateRowItem({
     <li
       className="group grid grid-cols-[1fr_auto] items-start gap-x-3 gap-y-1 rounded-lg border border-foreground/5 bg-card px-3 py-2.5 hover:bg-muted/40 sm:border-transparent sm:bg-transparent sm:p-2"
     >
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0 space-y-1.5">
         <p className="truncate text-sm font-semibold">{plate.name}</p>
         {plate.description && (
           <p className="line-clamp-2 text-[11px] text-muted-foreground">
             {plate.description}
           </p>
         )}
-        <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Wallet className="size-3" />
-          {accountName ?? (
+        {boundAccounts.length === 0 ? (
+          <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Wallet className="size-3" />
             <span className="italic text-muted-foreground/70">未綁定帳戶</span>
-          )}
-        </p>
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1">
+            {boundAccounts.map((b) => {
+              const Icon = b.type ? ACCOUNT_TYPE_ICON[b.type] : Wallet;
+              return (
+                <span
+                  key={b.id}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ring-1 ${
+                    b.type
+                      ? "bg-foreground/[0.04] text-muted-foreground ring-foreground/10"
+                      : "bg-rose-500/5 text-rose-600 ring-rose-500/20 dark:text-rose-400"
+                  }`}
+                >
+                  <Icon className="size-2.5" />
+                  {b.name}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Actions：行動版永遠顯示，sm+ hover-reveal */}
@@ -322,10 +351,14 @@ function PlateDialog({
 }: DialogProps) {
   const nameId = useId();
   const descId = useId();
-  const accId = useId();
+  const accGroupId = useId();
 
-  // base-ui Select.Value 不接受 "" / null — 用 NO_ACCOUNT sentinel 表示未綁定
-  const selectValue = draft.linkedAccountId || NO_ACCOUNT;
+  function toggleAccount(id: string) {
+    const set = new Set(draft.linkedAccountIds);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    setDraft({ ...draft, linkedAccountIds: [...set] });
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -367,37 +400,53 @@ function PlateDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor={accId}>關聯帳戶（可選）</Label>
-            <Select
-              value={selectValue}
-              onValueChange={(v) =>
-                setDraft({
-                  ...draft,
-                  linkedAccountId: v === NO_ACCOUNT ? "" : String(v),
-                })
-              }
-            >
-              <SelectTrigger id={accId} className="w-full">
-                <SelectValue placeholder="未綁定">
-                  {(v) => {
-                    const value = typeof v === "string" ? v : "";
-                    if (!value || value === NO_ACCOUNT) return "未綁定";
-                    return getAccountLabel(
-                      value,
-                      accounts.find((a) => a.id === value)?.name
-                    );
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_ACCOUNT}>未綁定</SelectItem>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {getAccountLabel(a.id, a.name)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label id={accGroupId}>關聯帳戶（可複選）</Label>
+            {accounts.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-input px-3 py-2 text-xs text-muted-foreground">
+                目前尚未建立任何帳戶，請先到 Supabase 新增 accounts。
+              </p>
+            ) : (
+              <div
+                role="group"
+                aria-labelledby={accGroupId}
+                className="flex flex-col gap-1.5 rounded-lg bg-muted/30 p-2 ring-1 ring-foreground/5"
+              >
+                {accounts.map((a) => {
+                  const selected = draft.linkedAccountIds.includes(a.id);
+                  const Icon = ACCOUNT_TYPE_ICON[a.type] ?? Wallet;
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={selected}
+                      onClick={() => toggleAccount(a.id)}
+                      data-state={selected ? "selected" : "unselected"}
+                      className="group/chip flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-foreground/[0.04] data-[state=selected]:bg-foreground/[0.06] data-[state=selected]:ring-1 data-[state=selected]:ring-foreground/15"
+                    >
+                      <span
+                        aria-hidden
+                        className="grid size-5 shrink-0 place-items-center rounded-full bg-foreground/[0.06] text-muted-foreground group-data-[state=selected]/chip:bg-foreground group-data-[state=selected]/chip:text-background"
+                      >
+                        {selected ? (
+                          <Check className="size-3" strokeWidth={3} />
+                        ) : (
+                          <Icon className="size-3" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {getAccountLabel(a.id, a.name)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {draft.linkedAccountIds.length === 0 && accounts.length > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                未勾選即為「未綁定」 — 首頁該板塊會顯示綁定 CTA。
+              </p>
+            )}
           </div>
 
           <DialogFooter className="mt-2">

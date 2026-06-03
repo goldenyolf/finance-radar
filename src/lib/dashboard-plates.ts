@@ -15,8 +15,8 @@ export interface DashboardPlateRow {
   user_id: string;
   name: string;
   description: string;
-  /** 綁定的 cash flow accounts.id；null = 未綁定 */
-  linked_account_id: string | null;
+  /** 綁定的 cash flow accounts.id 陣列；空陣列 = 未綁定 (per 0013 migration) */
+  linked_account_ids: string[];
   sort_order: number;
   created_at?: string;
   updated_at?: string;

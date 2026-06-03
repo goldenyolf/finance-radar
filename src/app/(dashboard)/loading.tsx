@@ -48,6 +48,26 @@ function BoardCardSkeleton() {
       </div>
       <Skeleton className="h-3 w-48" />
       <div className="flex flex-col gap-4">
+        {/* 資產整合看板 — headline + divider + 子帳戶 3 列 */}
+        <div className="rounded-xl bg-card px-5 py-4 ring-1 ring-foreground/10">
+          <div className="flex items-baseline justify-between">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-7 w-28" />
+          </div>
+          <Skeleton className="mt-2 h-3 w-40" />
+          <div className="my-3 border-t border-foreground/10" />
+          <div className="flex flex-col gap-2">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Skeleton className="size-3 rounded-sm" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
+          </div>
+        </div>
         {[0, 1, 2].map((i) => (
           <div
             key={i}

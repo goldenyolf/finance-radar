@@ -10,15 +10,15 @@ export type MutationResult = { ok: true } | { ok: false; error: string };
 export interface CreateDashboardPlateInput {
   name: string;
   description?: string;
-  /** UUID of accounts row；null/undefined = 不綁定 */
-  linkedAccountId?: string | null;
+  /** accounts.id 陣列；undefined 或 [] = 不綁定 (per 0013 multi-binding) */
+  linkedAccountIds?: string[];
 }
 
 export interface UpdateDashboardPlateInput {
   id: string;
   name: string;
   description?: string;
-  linkedAccountId?: string | null;
+  linkedAccountIds?: string[];
 }
 
 /**
@@ -58,7 +58,7 @@ export async function createDashboardPlate(
   const { error } = await supabase.from("dashboard_plates").insert({
     name,
     description: input.description?.trim() ?? "",
-    linked_account_id: input.linkedAccountId ?? null,
+    linked_account_ids: input.linkedAccountIds ?? [],
     sort_order: nextOrder,
   });
   if (error) return { ok: false, error: error.message };
@@ -85,7 +85,7 @@ export async function updateDashboardPlate(
     .update({
       name,
       description: input.description?.trim() ?? "",
-      linked_account_id: input.linkedAccountId ?? null,
+      linked_account_ids: input.linkedAccountIds ?? [],
     })
     .eq("id", input.id);
   if (error) return { ok: false, error: error.message };

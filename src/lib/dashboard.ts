@@ -424,7 +424,7 @@ export const FREQUENCY_LABEL: Record<RecurringFrequency, string> = {
 // ─── Plate-based board model ───────────────────────────────
 // 取代原本寫死的 BoardKey enum + classifyAccount regex hack。
 // 每個 plate (dashboard_plates 一筆) 對應一張 BoardCard，
-// plate.linked_account_id 明確綁定一個 cash flow account（1:1）。
+// plate.linked_account_ids 綁定 N 個 cash flow accounts (N:1，per 0013)。
 
 /**
  * 把 plate.name 對應到 emoji。預設 seed plates（家庭/補助/個人）對到原本
@@ -500,13 +500,13 @@ export interface BoardMetrics {
 
 export interface BoardData {
   meta: BoardMeta;
-  /** 1:1 model — 最多 1 個 account（plate.linked_account_id 對應），空 = 未綁定 */
+  /** N:1 model — plate.linked_account_ids 對應的所有 accounts；空 = 未綁定 */
   accounts: AccountRow[];
   metrics: BoardMetrics;
   items: BoardDetailItem[];
   hasAccounts: boolean;
   hasRecurringIncome: boolean;
-  /** plate.linked_account_id 為 null → UI 顯示「請到設定頁綁定帳戶」CTA */
+  /** plate.linked_account_ids 為空 → UI 顯示「請到設定頁綁定帳戶」CTA */
   isUnlinked: boolean;
 }
 
@@ -559,16 +559,15 @@ function transactionStatusLabel(
  * 把 accounts / recurring / transactions 切成 N 個 plate 對應的 board 資料，
  * 每片含 metrics（預算 / 已支出 / 剩餘）與整合過的明細清單。
  *
- * 1:1 model：每個 plate 透過 linked_account_id 綁一個 account。未綁定 →
- * accounts 空陣列、isUnlinked=true，UI 走 CTA empty state。
+ * N:1 model：plate.linked_account_ids 帶 N 個 account ids。空陣列 →
+ * accounts 為空、isUnlinked=true，UI 走 CTA empty state。
  *
- * 排序：依 plate.sort_order ASC 回傳陣列，UI 直接 .map render 就好，
- * 不再需要靠 BoardKey 當 dict key。
+ * 排序：依 plate.sort_order ASC 回傳陣列，UI 直接 .map render 就好。
  *
  * 時間感知：跟舊版相同 — completed 嚴格本月、upcoming 過期視為 completed。
  */
 export function buildBoardData(opts: {
-  plates: { id: string; name: string; description: string; linked_account_id: string | null; sort_order: number }[];
+  plates: { id: string; name: string; description: string; linked_account_ids: string[]; sort_order: number }[];
   accounts: AccountRow[];
   recurring: RecurringRow[];
   transactions: TransactionRow[];
@@ -583,10 +582,10 @@ export function buildBoardData(opts: {
   const orderedPlates = [...plates].sort((a, b) => a.sort_order - b.sort_order);
 
   return orderedPlates.map((plate) => {
-    const linkedAccount = plate.linked_account_id
-      ? accountById.get(plate.linked_account_id)
-      : null;
-    const boardAccounts: AccountRow[] = linkedAccount ? [linkedAccount] : [];
+    // 把 ids 投射成實際 AccountRow；找不到的（帳戶被刪 / id 漂）就 skip
+    const boardAccounts: AccountRow[] = (plate.linked_account_ids ?? [])
+      .map((id) => accountById.get(id))
+      .filter((a): a is AccountRow => !!a);
     const accountIdSet = new Set(boardAccounts.map((a) => a.id));
 
     const meta: BoardMeta = {
@@ -598,7 +597,9 @@ export function buildBoardData(opts: {
     };
 
     // 未綁定帳戶 → 直接回 zero metrics + empty items，省下後面遍歷
-    if (!linkedAccount) {
+    if (boardAccounts.length === 0) {
+      // isUnlinked 區分「設定漏綁」vs「綁了但帳戶都被刪了」兩種空狀態
+      const isUnlinked = (plate.linked_account_ids ?? []).length === 0;
       return {
         meta,
         accounts: [],
@@ -606,7 +607,7 @@ export function buildBoardData(opts: {
         items: [],
         hasAccounts: false,
         hasRecurringIncome: false,
-        isUnlinked: true,
+        isUnlinked,
       };
     }
 
