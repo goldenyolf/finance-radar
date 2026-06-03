@@ -30,8 +30,11 @@
 -- (1) transactions 加兩個新欄位
 -- --------------------------------------------------------------
 
+-- recurring_payments.id 是 TEXT 不是 UUID (per memory「accounts_id_is_text」
+-- 的兄弟雷 — 本專案多張表 id 都走 TEXT 不走 UUID)，FK 必須對齊型別否則
+-- PG 報 42804 incompatible types。
 ALTER TABLE transactions
-  ADD COLUMN IF NOT EXISTS recurring_payment_id UUID
+  ADD COLUMN IF NOT EXISTS recurring_payment_id TEXT
     REFERENCES recurring_payments(id) ON DELETE SET NULL;
 
 ALTER TABLE transactions
