@@ -17,7 +17,10 @@
  */
 
 import { formatCurrency } from "@/lib/dashboard";
-import { sendLinePushNotification } from "@/lib/line-push";
+import {
+  sendLineFlexNotification,
+  type FlexBubble,
+} from "@/lib/line-push";
 
 /**
  * 寬鬆 Supabase client 型別 — 接受 server action 的 authenticated client、
@@ -101,7 +104,7 @@ export async function runBudgetAlerts(
           remaining: ctx.monthlyRemaining,
           remaining_pct: ctx.remainingPct,
         },
-        () => composeLowRemainingMessage(ctx)
+        () => buildLowRemainingFlex(ctx)
       );
     }
 
@@ -120,7 +123,7 @@ export async function runBudgetAlerts(
           today_spent: ctx.todaySpent,
           multiplier: ctx.todaySpent / ctx.dailyBaseline,
         },
-        () => composeDailyBurstMessage(ctx)
+        () => buildDailyBurstFlex(ctx)
       );
     }
   } catch (err) {
@@ -245,8 +248,11 @@ async function collectContext(
 /* ─────────────────── 警報 fire + 去重 ─────────────────── */
 
 /**
- * 嘗試 INSERT budget_alerts；成功（首度觸發）才呼 LINE push。
+ * 嘗試 INSERT budget_alerts；成功（首度觸發）才呼 LINE Flex push。
  * 23505 (unique violation) = 此 period 已推過、靜默 skip。
+ *
+ * composeFlex 回傳 {altText, contents}：altText 是純文字 fallback（LINE
+ * 通知列 / Apple Watch / 舊客戶端顯示）、contents 是 bubble JSON。
  */
 async function fireIfFirst(
   supabase: SupabaseLike,
@@ -254,7 +260,7 @@ async function fireIfFirst(
   alertType: "low_remaining" | "daily_burst",
   alertPeriod: string,
   payload: Record<string, unknown>,
-  composeMessage: () => string
+  composeFlex: () => { altText: string; contents: FlexBubble }
 ): Promise<void> {
   const insertRes = await supabase.from("budget_alerts").insert({
     user_id: userId,
@@ -273,16 +279,17 @@ async function fireIfFirst(
     return;
   }
 
-  // 首度觸發 → push
-  const text = composeMessage();
-  const ok = await sendLinePushNotification({
+  // 首度觸發 → Flex Message push
+  const { altText, contents } = composeFlex();
+  const ok = await sendLineFlexNotification({
     userId: (await getLineUserId(supabase, userId)) ?? "",
-    text,
+    altText,
+    contents,
     channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "",
   });
   if (!ok) {
     console.error(
-      `[budget-alerts] LINE push failed for ${alertType} ${alertPeriod}`
+      `[budget-alerts] LINE flex push failed for ${alertType} ${alertPeriod}`
     );
   }
 }
@@ -304,32 +311,279 @@ async function getLineUserId(
   return res.data?.line_user_id ?? null;
 }
 
-/* ─────────────────── 文案組裝 ─────────────────── */
+/* ─────────────────── Flex Message 組裝 ─────────────────── */
 
-function composeLowRemainingMessage(ctx: AlertContext): string {
-  const topCat = topExpenseCategory(ctx.transactions, ctx.categories);
-  const topCatLine = topCat
-    ? `吸血鬼排行顯示本月主要破口為「${topCat.name}」（${formatCurrency(topCat.amount)}）。`
-    : "本月支出尚未明顯集中於某分類，注意整體節奏。";
-  return [
-    "🚨 Money Radar 活錢預警！",
-    "",
-    `本月剩餘可用預算已跌破 20% 安全線（僅剩 ${formatCurrency(ctx.monthlyRemaining)}）。`,
-    topCatLine,
-    "",
-    "🛡️ 戰情室建議您接下來 7 天切換至極簡生活模式。",
-  ].join("\n");
+/**
+ * Apple 暗黑奢華調色板 — 一處宣告，bubble 內所有顏色從這吃。
+ */
+const FLEX_COLORS = {
+  bg: "#09090b",            // zinc-950 — bubble 整體底
+  bgSubtle: "#27272a",      // zinc-800 — 進度條外殼底色
+  textPrimary: "#ffffff",   // hero 大字
+  textSecondary: "#a1a1aa", // zinc-400 — 標題 / footer
+  textTertiary: "#71717a",  // zinc-500 — subtitle / hint
+  alertRed: "#ef4444",      // red-500 — 進度條警戒色 / 狀態燈危險
+  emerald: "#10b981",       // emerald-500 — 進度條安全色 / 按鈕 / 狀態燈
+  amber: "#f59e0b",         // amber-500 — 警告中間值
+} as const;
+
+/**
+ * 戰情室 web URL — 按鈕跳轉用。LINE button uri 必須絕對路徑。
+ * Fork repo 沒設 → 退回不渲染按鈕的版本（buildFooter 自動處理）。
+ */
+function getSiteUrl(): string | null {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (!raw) return null;
+  return raw.replace(/\/$/, ""); // 統一去掉結尾斜線
 }
 
-function composeDailyBurstMessage(ctx: AlertContext): string {
+/**
+ * 場景 A：活錢告急 — 月度剩餘率 < 20%。
+ *
+ * Bubble 結構：
+ *   header: 📡 戰情預警 + 紅色狀態燈
+ *   body:   「剩餘可用活錢」標籤 + $ 大字 + 預算佔比副標 + 動態進度條
+ *   footer: 主要破口分類描述 + 「開啟戰情室」按鈕
+ */
+function buildLowRemainingFlex(ctx: AlertContext): {
+  altText: string;
+  contents: FlexBubble;
+} {
+  const topCat = topExpenseCategory(ctx.transactions, ctx.categories);
+  const advisorText = topCat
+    ? `⚠️ 本月預算即將熔斷，主要破口為「${topCat.name}」(${formatCurrency(topCat.amount)})。`
+    : "⚠️ 本月預算即將熔斷，請即刻收斂浮動開銷。";
+
+  // 進度條：剩餘率對應寬度，clamp 至 [2%, 100%]（< 2% 看不見、避免破版）
+  const barPct = Math.max(2, Math.min(100, ctx.remainingPct));
+  const barColor =
+    ctx.remainingPct < 20 ? FLEX_COLORS.alertRed : FLEX_COLORS.emerald;
+
+  const altText = `🚨 活錢預警！剩餘 ${formatCurrency(ctx.monthlyRemaining)}（${ctx.remainingPct.toFixed(1)}%）— ${topCat?.name ?? "整體"} 為主要破口`;
+
+  const contents: FlexBubble = {
+    type: "bubble",
+    size: "kilo",
+    styles: {
+      header: { backgroundColor: FLEX_COLORS.bg },
+      body: { backgroundColor: FLEX_COLORS.bg },
+      footer: { backgroundColor: FLEX_COLORS.bg },
+    },
+    header: buildHeader("alert"),
+    body: buildBody({
+      label: "剩餘可用活錢",
+      heroAmount: ctx.monthlyRemaining,
+      subtitle: `本月總預算 ${formatCurrency(ctx.monthlyBudget)} 的 ${ctx.remainingPct.toFixed(1)}%`,
+      progressPct: barPct,
+      progressColor: barColor,
+    }),
+    footer: buildFooter({
+      advisor: advisorText,
+      buttonLabel: "🛡️ 開啟戰情室",
+      buttonTone: "alert",
+    }),
+  };
+
+  return { altText, contents };
+}
+
+/**
+ * 場景 B：單日熔斷 — 今日支出 ≥ 每日基準 × 5。
+ */
+function buildDailyBurstFlex(ctx: AlertContext): {
+  altText: string;
+  contents: FlexBubble;
+} {
   const multiplier = ctx.todaySpent / ctx.dailyBaseline;
-  return [
-    "🔥 錢包熔斷警告！",
-    "",
-    `今日單日開銷已達每日基準預算的 ${multiplier.toFixed(1)} 倍（今日已花費 ${formatCurrency(ctx.todaySpent)}）。`,
-    "",
-    "💡 請確認是否為單次大額預付，或前往網頁戰情室啟動「智慧攤平」機制。",
-  ].join("\n");
+  const advisorText = `🔥 今日已達基準的 ${multiplier.toFixed(1)} 倍，請確認是否為單次大額預付。`;
+
+  // 進度條：「今日支出佔基準的倍率」，超過 100% 全紅滿；clamp [2%, 100%]
+  const barPct = Math.max(2, Math.min(100, (1 / multiplier) * 100));
+
+  const altText = `🔥 單日熔斷！今日 ${formatCurrency(ctx.todaySpent)}（${multiplier.toFixed(1)}× 基準）`;
+
+  const contents: FlexBubble = {
+    type: "bubble",
+    size: "kilo",
+    styles: {
+      header: { backgroundColor: FLEX_COLORS.bg },
+      body: { backgroundColor: FLEX_COLORS.bg },
+      footer: { backgroundColor: FLEX_COLORS.bg },
+    },
+    header: buildHeader("alert"),
+    body: buildBody({
+      label: "今日已花費",
+      heroAmount: ctx.todaySpent,
+      subtitle: `每日基準預算 ${formatCurrency(ctx.dailyBaseline)} 的 ${multiplier.toFixed(1)} 倍`,
+      progressPct: barPct,
+      progressColor: FLEX_COLORS.alertRed, // 單日熔斷一律紅
+    }),
+    footer: buildFooter({
+      advisor: advisorText,
+      buttonLabel: "💡 啟動智慧攤平",
+      buttonTone: "alert",
+    }),
+  };
+
+  return { altText, contents };
+}
+
+/* ─────────────────── Flex 子元件 builder ─────────────────── */
+
+function buildHeader(status: "safe" | "alert"): FlexBubble {
+  const dotColor =
+    status === "alert" ? FLEX_COLORS.alertRed : FLEX_COLORS.emerald;
+  return {
+    type: "box",
+    layout: "horizontal",
+    paddingAll: "16px",
+    paddingBottom: "8px",
+    contents: [
+      {
+        type: "text",
+        text: "📡 MONEY RADAR 戰情預警",
+        size: "xs",
+        weight: "bold",
+        color: FLEX_COLORS.textSecondary,
+        flex: 1,
+      },
+      // 狀態燈圓點 — 用「●」文字 + 顏色，省 image asset
+      {
+        type: "text",
+        text: "●",
+        size: "xs",
+        color: dotColor,
+        align: "end",
+        flex: 0,
+      },
+    ],
+  };
+}
+
+interface BodyArgs {
+  label: string;
+  heroAmount: number;
+  subtitle: string;
+  progressPct: number;
+  progressColor: string;
+}
+
+function buildBody({
+  label,
+  heroAmount,
+  subtitle,
+  progressPct,
+  progressColor,
+}: BodyArgs): FlexBubble {
+  return {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "20px",
+    paddingTop: "4px",
+    spacing: "sm",
+    contents: [
+      {
+        type: "text",
+        text: label,
+        size: "xs",
+        color: FLEX_COLORS.textTertiary,
+      },
+      {
+        type: "text",
+        text: formatCurrency(heroAmount),
+        size: "3xl",
+        weight: "bold",
+        color: FLEX_COLORS.textPrimary,
+      },
+      {
+        type: "text",
+        text: subtitle,
+        size: "xxs",
+        color: FLEX_COLORS.textTertiary,
+        margin: "sm",
+      },
+      // 進度條：外殼 horizontal box（bg-subtle + rounded + 6px 高），
+      // 內層 width % 控制 fill 比例 + 染色
+      {
+        type: "box",
+        layout: "horizontal",
+        margin: "md",
+        height: "6px",
+        backgroundColor: FLEX_COLORS.bgSubtle,
+        cornerRadius: "3px",
+        contents: [
+          {
+            type: "box",
+            layout: "vertical",
+            width: `${progressPct.toFixed(1)}%`,
+            backgroundColor: progressColor,
+            cornerRadius: "3px",
+            contents: [
+              // 空 box — LINE 需要至少一個 content；用透明 text 填位
+              {
+                type: "filler",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+interface FooterArgs {
+  advisor: string;
+  buttonLabel: string;
+  buttonTone: "alert" | "safe";
+}
+
+function buildFooter({
+  advisor,
+  buttonLabel,
+  buttonTone,
+}: FooterArgs): FlexBubble {
+  const siteUrl = getSiteUrl();
+  const buttonColor =
+    buttonTone === "alert" ? FLEX_COLORS.alertRed : FLEX_COLORS.emerald;
+
+  const contents: FlexBubble[] = [
+    {
+      type: "separator",
+      color: FLEX_COLORS.bgSubtle,
+    },
+    {
+      type: "text",
+      text: advisor,
+      size: "xs",
+      color: FLEX_COLORS.textSecondary,
+      wrap: true,
+      margin: "md",
+    },
+  ];
+
+  // 沒設 NEXT_PUBLIC_SITE_URL → 不渲染按鈕（fork dev 環境保護）
+  if (siteUrl) {
+    contents.push({
+      type: "button",
+      style: "primary",
+      color: buttonColor,
+      height: "sm",
+      margin: "lg",
+      action: {
+        type: "uri",
+        label: buttonLabel,
+        uri: `${siteUrl}/analytics`,
+      },
+    });
+  }
+
+  return {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "16px",
+    paddingTop: "0px",
+    contents,
+  };
 }
 
 /**
