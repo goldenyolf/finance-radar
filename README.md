@@ -53,26 +53,31 @@
 
 | 通道 | 技術 | 用途 |
 |---|---|---|
-| 文字 | 關鍵字優先 + **Gemini JSON 抽取** | 一次拿 `{item, amount, account_override, category}` 四欄；regex 是 fallback |
+| 文字 | 關鍵字優先 + **Gemini JSON 抽取** | 一次拿 `{item, amount, account_override, category, payment_method}` 五欄；regex 是 fallback |
 | **語音** | **OpenAI Whisper STT** | 「晚餐花了一百五」→ 自動辨識 + 記帳 |
 | **發票圖片** | **GPT-4o Vision** | 一張發票辨識多筆 item，批次寫入 |
 | 收入意圖偵測 | 26 個中文關鍵字（領到/收到/補助/獎金⋯）| 零成本判斷 type，不耗 LLM token |
+| **付款方式判定** | LLM 6 階決策樹 | 關鍵字（刷/卡/轉/匯）→ 高額固定支出（房貸/房租/學費）→ 帳戶 type 暗示 → 預設 cash |
 
-#### 🪜 帳戶歸屬 fallback chain（退役 `acc-001` 寫死）
+#### 🪜 帳戶歸屬 fallback chain（7 階智慧路由）
 
-LLM prompt 動態注入使用者所有 `accounts` + `categories` 作上下文，抽出 `account_override` 後走四層 fallback — 任何一層中就停：
+LLM prompt 動態注入使用者所有 `accounts`（含 `type` 提示）+ `categories` 作上下文，一次抽出 `{account_override, payment_method, category}` 三層線索，走 7 階 fallback — 任何一層中就停：
 
 ```
-LLM account_override (e.g. 「晚餐 120 台新」→ acc-taishin)
-  ↓ 不命中
-categories.default_account_id  (e.g.「水電」分類綁台新)
-  ↓ 不命中
-profiles.default_account_id    (帳號層 singleton 主帳戶)
-  ↓ 不命中
-accounts created_at 最早一筆  (code-side 保底)
+1. LLM account_override         (使用者明示：「晚餐 120 台新」→ acc-taishin)
+   ↓ 不命中
+2. paymentMethod=cash           → 第一個 type='cash' 帳戶（per 0012 trigger 保證每個 user 都有現金錢包）
+   ↓ 不命中
+3. paymentMethod=credit_card    → 第一個 type='credit_card' 帳戶
+   ↓ 不命中
+4. categories.default_account_id (e.g.「水電」分類綁台新)
+   ↓ 不命中
+5. profiles.default_account_id   (帳號層 singleton 主帳戶)
+   ↓ 不命中
+6. accounts id 字典序第一筆      (code-side 保底)
 ```
 
-> 💡 寫死 `acc-001 / acc-taishin` 不能跨用戶。Schema 補了 `categories.default_account_id` 與 `profiles.default_account_id` 兩條 FK（ON DELETE SET NULL）+ 設定頁的「預設帳戶」下拉，讓 LINE 入帳走的是**使用者自己的偏好**。
+> 💡 LLM 自己判 `payment_method` 後，「現金消費走現金錢包、刷卡走信用卡帳戶」變成 zero-config 自動行為。輸入「吃午餐 100」→ 自動 cash + 現金錢包；輸入「繳房貸 25000」→ 自動 transfer + 銀行帳戶；輸入「刷卡買鞋 1980」→ 自動 credit_card + 信用卡帳戶。LINE 回覆會帶 `💵 / 💳 / 🏦` emoji 讓使用者立刻看見大腦判斷。
 
 ---
 
@@ -96,6 +101,41 @@ export function buildBoardData(opts: {
   now?: Date;
 }): BoardData[]
 ```
+
+---
+
+### 🧱 多帳戶資產整合看板（N:1 binding）
+
+板塊從 1:1 升級成 **N:1 multi-binding** — 一個板塊看「現金 + 銀行 + 信用卡」三條現金流的整合視角，貼合真實家庭金流的分散現實。
+
+- 📊 卡片新增 headline **「資產總額」大字** = 板塊所綁定 accounts 的 `balance` 加總（信用卡負餘額自動扣減 → 淨值語意）
+- 💵 子帳戶 flex justify-between：左 type icon（Banknote / CreditCard / Landmark）+ 帳戶名 / 右金額；負餘額自動 rose 染色
+- 🔧 Settings 綁定 UI：Select → multi-toggle chip list（`role="checkbox" + aria-checked` 可勾多帳戶）
+- 🗄️ **0013 migration**：`linked_account_id` (TEXT) → `linked_account_ids` (TEXT[])，舊值 backfill 進單元素 array 再 DROP
+
+```sql
+-- 0013_plates_multi_account_binding.sql
+ALTER TABLE dashboard_plates
+  ADD COLUMN IF NOT EXISTS linked_account_ids TEXT[] NOT NULL DEFAULT '{}';
+UPDATE dashboard_plates
+   SET linked_account_ids = ARRAY[linked_account_id]
+ WHERE linked_account_ids = '{}' AND linked_account_id IS NOT NULL;
+ALTER TABLE dashboard_plates DROP COLUMN IF EXISTS linked_account_id;
+```
+
+> 💡 `<Money>` 包好的 balance 自動跟著全域防窺 blur 走，N:1 結構零額外處理。
+
+---
+
+### 💳 三維付款方式 — 現金 / 信用卡 / 轉帳
+
+真實消費場景的付款工具錯綜複雜（房貸走匯款、外送刷卡、小吃付現金），多個銀行戶的餘額永遠跟記帳軟體對不起來。Money Radar 把 `payment_method` 拉成**獨立資料維度**，讓每筆交易都記下「怎麼付的」：
+
+- 🗄️ **0012 migration**：`transactions.payment_method` CHECK `IN ('cash','credit_card','transfer')` + 既有資料 backfill 規則（transfer 動作 / credit_card 帳戶 / 其餘 cash）
+- 🪪 **現金錢包自動 seed**：auth.users trigger 為每個新會員 inline INSERT `accounts(type='cash')`，零配置就有「現金錢包」可記
+- 🎚️ **Quick Add Segmented Control**：`💵 現金 / 💳 刷卡 / 🏦 轉帳` 三段選擇器，跟扣款帳戶**雙向綁定** — 選 cash 帳戶 → pill 自動切 cash；選 transfer pill → 帳戶自動切 bank
+- 🔖 **明細頁 badge**：金額右側小圓 badge（zinc-400 低飽和不搶分類色）
+- 🤖 **LINE bot 自動判**：見前面 7 階 fallback chain — 關鍵字優先、帳戶 type 暗示、預設 cash，LINE 回覆帶 emoji 即時驗證大腦判斷
 
 ---
 
@@ -225,6 +265,66 @@ body[data-privacy="on"] [data-money]::selection {
 
 ---
 
+### 🪟 邊緣懸停可摺疊側邊欄（Hover-to-Reveal）
+
+桌面 sidebar `w-64 ↔ w-20` 可摺疊釋放圖表寬度，全套設計細節對齊 Notion / Linear / VSCode 的水準：
+
+- 🎚️ **localStorage 持久化** — `SidebarCollapsedProvider` 仿 `PrivacyProvider` pattern，整支 Context + mounted guard 防 SSR hydration mismatch
+- 🔄 **主內容連動** — `<MainPad>` 讀 collapsed state，`md:pl-20 ↔ md:pl-64` 跟著 300ms ease-in-out 滑動，圖表/表格真的向左外推變更寬
+- 🫥 **三層觸發 Hover-to-Reveal toggle** — 預設 `opacity-0 scale-95 pointer-events-none` 完全隱藏。觸發點：
+  - `group-hover` → 滑鼠移到 sidebar 任何位置
+  - `group-focus-within` → 鍵盤 tab 進 sidebar 內任何 nav item（不犧牲 a11y）
+  - `focus-visible` → 鍵盤直接 focus 到按鈕本身（自我喚醒 + ring）
+- ✨ **邊框微光** — 滑鼠 hover 時右邊框從 `zinc-900` 升到 `zinc-800`，給 moody dark edge 回饋
+- 🏷️ **摺疊時 Tooltip 補位** — 每個 nav item 用 base-ui Tooltip(side="right") 顯示中文標籤；展開時 pass-through 不包，避免雙重 label
+- 🍃 **3 個 toggle 元件** — PrivacyToggle / ThemeToggle / SignOutButton 加 `collapsed?: boolean` prop，文字 span 套 `w-0 opacity-0 overflow-hidden transition-all` 平滑淡出
+
+```tsx
+// Sidebar group + 三層觸發點全部 declarative
+<aside className="group border-r border-zinc-900 hover:border-zinc-800 focus-within:border-zinc-800">
+  ...
+  <button className="
+    absolute top-12 -right-3 z-50
+    opacity-0 scale-95 pointer-events-none transition-all duration-200
+    group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto
+    group-focus-within:opacity-100 focus-visible:opacity-100
+  ">
+    {collapsed ? <ChevronRight /> : <ChevronLeft />}
+  </button>
+</aside>
+```
+
+---
+
+### ⚡ Demo 模式 — Open-Source 開箱即用
+
+為 fork repo 嘗鮮 / 面試展示量身打造的「一鍵長出 6 個月精美理財資料」按鈕，讓新使用者進來不再對著空儀表板乾瞪眼。
+
+- 🔐 **雙閘 env gate** — `NODE_ENV='development'` 或 `NEXT_PUBLIC_ENABLE_DEMO_SEED='true'` 二擇一才放行，正式環境預設**按鈕完全不渲染**
+- 📦 **6 個月 × 7 樣板 = ~36 筆 [DEMO] 交易** — 固定 3 筆（房貸 25k / 托育 18k / 保險 4.5k 走 transfer）+ 浮動 4 筆（餐飲 / 加油 walk cash/credit_card 輪替），amount ±15% jitter 自然抖動
+- 📈 **6 筆月底 wealth_snapshots** — 100 萬 → 125 萬漸層 + 三大資產分類 details JSONB；UPSERT 處理 `(user_id, recorded_at)` UNIQUE 重複按鈕安全
+- 🧹 **[DEMO] 前綴清理友好** — 所有 demo 交易 description 帶 `[DEMO]` 標記；到 `/transactions` 搜 `[DEMO]` 批次找到刪
+- 🌈 **發光漸層按鈕** — `from-indigo-500 via-purple-500 to-pink-500` + confirm dialog 強制讀完 4 條警告（資料規模 / 標記 / 清理 / 重複疊加）才放行
+
+```ts
+// 雙閘判定 — server action 與 client 按鈕共用同一條件
+const allowed =
+  process.env.NODE_ENV === "development" ||
+  process.env.NEXT_PUBLIC_ENABLE_DEMO_SEED === "true";
+```
+
+> 💡 fork 部署到 Vercel 想對外展示？只要設 `NEXT_PUBLIC_ENABLE_DEMO_SEED=true`，按鈕就在 `/settings` 底部現身。原始作者 production 預設不啟用，零誤觸風險。
+
+### 📊 圖表空白狀態防護
+
+剛 clone repo 第一次跑、或 demo 模式還沒啟動前，所有 Recharts 圖表都有共用 `ChartEmptyState` 元件接管 — **不會崩潰、不會空白、不會顯示誤導性的 mock 假資料**：
+
+- 🎨 半透明 mock 圖（`opacity-[0.12]`）當背景預告即將出現的視覺
+- 🪧 前景疊 Lucide `BarChart3` icon + 引導文字「📊 戰情室正在等待數據，試著新增您的第一筆帳務吧！」
+- 🎭 `currentColor` 自動跟 dark/light 主題走，無需寫死配色
+
+---
+
 ## 🛠️ 技術棧
 
 ### Front-end
@@ -287,7 +387,7 @@ body[data-privacy="on"] [data-money]::selection {
 
 ### 資料庫亮點
 
-- **9+ 張表 / 30+ RLS policy / 11 個 migration**：所有資料以 `auth.uid() = user_id` 強制多租戶隔離
+- **9+ 張表 / 30+ RLS policy / 13 個 migration**：所有資料以 `auth.uid() = user_id` 強制多租戶隔離
 - **DB 端 invariant**：`wealth_snapshots.net_worth` GENERATED STORED；`transactions.user_id` DEFAULT `auth.uid()` — 應用層連碰都碰不到，零繞過可能
 - **BEFORE INSERT trigger** 自動 backfill：`categories.is_fixed` 依 code、`dashboard_plates` 依 user 自動 seed 3 條預設
 - **`(user_id, recorded_at)` UNIQUE** + ON CONFLICT — 同日重複拍快照走 UPSERT 覆蓋，避免汙染趨勢線
@@ -385,11 +485,14 @@ GEMINI_API_KEY=<>     # 分類 fallback
 
 # Vercel Cron 自驗
 CRON_SECRET=<random-long-string>
+
+# Demo 模式（fork 部署想對外展示就 true；本機 dev 不設也預設開啟）
+NEXT_PUBLIC_ENABLE_DEMO_SEED=false
 ```
 
 ### 3. 跑 Migration
 
-把 `supabase/migrations/` 11 個 `.sql` 依序貼到 **Supabase Dashboard → SQL Editor** 執行：
+把 `supabase/migrations/` 13 個 `.sql` 依序貼到 **Supabase Dashboard → SQL Editor** 執行：
 
 | Migration | 內容 |
 |---|---|
@@ -404,6 +507,8 @@ CRON_SECRET=<random-long-string>
 | `0009` | profiles.has_completed_onboarding（Onboarding wizard flag，老用戶 backfill 為 true）|
 | `0010` | profiles 個人設定 3 欄位（display_name / avatar_url / target_savings_rate）+ update RLS |
 | `0011` | categories.default_account_id + profiles.default_account_id（LINE 帳戶 fallback chain 鋪路）|
+| `0012` | transactions.payment_method 維度（cash / credit_card / transfer）+ accounts_type_check 擴 'cash' + auth.users trigger 自動 seed 現金錢包 |
+| `0013` | dashboard_plates 從 1:1 升級 N:1：`linked_account_id` → `linked_account_ids TEXT[]` + backfill + DROP 舊欄 |
 
 ### 4. 啟動
 
@@ -460,7 +565,9 @@ src/
 
 ## 🗺️ 路線圖
 
-- [ ] 1:N plate-account mapping（一個板塊綁多帳戶）
+- [x] ~~1:N plate-account mapping~~ — 0013 落地，板塊已支援多帳戶綁定
+- [x] ~~LINE bot payment_method 智慧判定~~ — 0012 + LLM prompt 升級已落地
+- [x] ~~Demo 模式（一鍵 seed 展示資料）~~ — open-source 開箱即用
 - [ ] 自訂 emoji + 拖拉排序 plates
 - [ ] 預算超標 LINE push 警報
 - [ ] 收入分類（薪資 / 副業 / 投資配息）
