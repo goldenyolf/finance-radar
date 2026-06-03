@@ -207,34 +207,42 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
               本板塊 {accounts.length} 個帳戶當前餘額加總
             </p>
 
-            <div className="my-3 border-t border-foreground/10" />
-
-            <ul className="flex flex-col gap-1.5">
-              {accounts.map((a) => {
-                const Icon = ACCOUNT_TYPE_ICON[a.type] ?? Wallet;
-                const balance = num(a.balance);
-                return (
-                  <li
-                    key={a.id}
-                    className="flex items-center justify-between gap-3 text-xs"
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                      <Icon className="size-3 shrink-0" aria-hidden />
-                      <span className="truncate">{a.name}</span>
-                    </span>
-                    <span
-                      className={`shrink-0 font-medium tabular-nums ${
-                        balance < 0
-                          ? "text-rose-600 dark:text-rose-400"
-                          : "text-foreground"
-                      }`}
+            {/*
+              divider + 子帳戶 list 合成單一 wrapper：border-t 當分割線、
+              my-3 給上下板塊呼吸、pt-3 給線跟首行之間留位。比兩個兄弟元素
+              （自關閉 divider + ul）DOM 更乾淨、邊距更可預測。
+              金額一律走 <Money> → privacy CSS 自動套 filter: blur(6px)，
+              無需在 element 加任何 blur-* class（per globals.css [data-money] rule）。
+            */}
+            <div className="my-3 border-t border-zinc-800/40 pt-3">
+              <ul className="flex flex-col">
+                {accounts.map((a) => {
+                  const Icon = ACCOUNT_TYPE_ICON[a.type] ?? Wallet;
+                  const balance = num(a.balance);
+                  const isNegative = balance < 0;
+                  return (
+                    <li
+                      key={a.id}
+                      className="flex items-center justify-between py-1 text-xs"
                     >
-                      <Money value={balance} />
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+                      <span className="flex min-w-0 items-center gap-1.5 text-zinc-500">
+                        <Icon className="size-3 shrink-0" aria-hidden />
+                        <span className="truncate">{a.name}</span>
+                      </span>
+                      <span
+                        className={`shrink-0 tabular-nums ${
+                          isNegative
+                            ? "text-rose-500 dark:text-rose-400"
+                            : "text-zinc-400"
+                        }`}
+                      >
+                        <Money value={balance} />
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </section>
         )}
 
