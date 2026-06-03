@@ -12,7 +12,7 @@ import {
   type CategoryLookup,
   type CategoryRow,
 } from "@/lib/categories";
-import { formatCurrency } from "@/lib/dashboard";
+import { formatCurrency, type AccountType, type PaymentMethod } from "@/lib/dashboard";
 import {
   classifyByKeyword,
   EXPENSE_CATEGORY_LABEL,
@@ -279,7 +279,7 @@ async function loadUserCategories(userId: string): Promise<CategoryRow[]> {
 async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
   const { data, error } = await db()
     .from("accounts")
-    .select("id, name")
+    .select("id, name, type")
     .eq("user_id", userId)
     .order("id", { ascending: true });
   if (error) {
@@ -289,20 +289,29 @@ async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
   return (data ?? []).map((r) => ({
     id: r.id as string,
     name: r.name as string,
+    type: r.type as AccountType,
   }));
 }
 
 /**
- * Fallback chain — 把 LLM 抽到的 override + category 投射到實際 account_id。
- * 純 in-memory（profileDefault 由 caller 一次撈起來傳入），避免每筆訊息打 DB。
+ * Fallback chain — 把 LLM 抽到的 override + paymentMethod + category 投射到
+ * 實際 account_id。純 in-memory（profileDefault 由 caller 一次撈起來傳入），
+ * 避免每筆訊息打 DB。
  *
- *   (A) override：LLM 已 fuzzy match 完
- *   (B) category.default_account_id：分類層偏好（如「水電」永遠走台新）
- *   (C) profile.default_account_id：帳號層主要帳戶 singleton
- *   (D) accounts id 字典序第一筆：保底（避免 new user 還沒設 default 時崩潰）
+ *   (A) override：LLM 已 fuzzy match 完，user 明示帳戶最強
+ *   (B) paymentMethod=cash → 第一個 type='cash' 帳戶（per 0012 trigger seed
+ *       保證每個 user 都有一個現金錢包）
+ *   (C) paymentMethod=credit_card → 第一個 type='credit_card' 帳戶；沒有就
+ *       繼續降級到 category/profile（避免硬塞錯帳戶）
+ *   (D) paymentMethod=transfer 不在這層綁 type — 任何 bank 帳戶都能轉帳，
+ *       讓 category/profile 自然指向 user 設定的轉帳預設戶
+ *   (E) category.default_account_id：分類層偏好（如「水電」永遠走台新）
+ *   (F) profile.default_account_id：帳號層主要帳戶 singleton
+ *   (G) accounts id 字典序第一筆：保底（避免 new user 還沒設 default 時崩潰）
  */
 function resolveTargetAccount(args: {
   overrideAccountId: string | null;
+  paymentMethod: PaymentMethod | null;
   category: ExpenseCategory | null;
   accounts: LineAccountContext[];
   profileDefaultAccountId: string | null;
@@ -310,6 +319,7 @@ function resolveTargetAccount(args: {
 }): { id: string; label: string } | null {
   const {
     overrideAccountId,
+    paymentMethod,
     category,
     accounts,
     profileDefaultAccountId,
@@ -320,6 +330,14 @@ function resolveTargetAccount(args: {
 
   const override = findAcc(overrideAccountId);
   if (override) return { id: override.id, label: override.name };
+
+  if (paymentMethod === "cash") {
+    const cashAcc = accounts.find((a) => a.type === "cash");
+    if (cashAcc) return { id: cashAcc.id, label: cashAcc.name };
+  } else if (paymentMethod === "credit_card") {
+    const ccAcc = accounts.find((a) => a.type === "credit_card");
+    if (ccAcc) return { id: ccAcc.id, label: ccAcc.name };
+  }
 
   if (category) {
     const cat = categoryLookup.byCode.get(category);
@@ -335,6 +353,13 @@ function resolveTargetAccount(args: {
   }
   return null;
 }
+
+/** payment_method 對應的 emoji，用在 LINE reply 讓使用者一眼看出大腦判斷。 */
+const PAYMENT_METHOD_EMOJI: Record<PaymentMethod, string> = {
+  cash: "💵",
+  credit_card: "💳",
+  transfer: "🏦",
+};
 
 function todayInTaipei(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -535,12 +560,14 @@ async function handleTextMessage(
   let amount: number;
   let overrideAccountId: string | null;
   let llmCategory: ExpenseCategory | null;
+  let llmPaymentMethod: PaymentMethod | null;
 
   if (llmResult) {
     item = llmResult.item;
     amount = llmResult.amount;
     overrideAccountId = llmResult.accountId;
     llmCategory = llmResult.category;
+    llmPaymentMethod = llmResult.paymentMethod;
   } else {
     // 4. Fallback：regex 純抽 amount+title
     const regex = parseExpenseMessage(text);
@@ -556,6 +583,7 @@ async function handleTextMessage(
     amount = regex.amount;
     overrideAccountId = null;
     llmCategory = null;
+    llmPaymentMethod = null;
   }
 
   // expense 才需要 category；income 直接 null
@@ -564,9 +592,14 @@ async function handleTextMessage(
       ? (llmCategory ?? (await classifyExpense(item, userCategories)))
       : null;
 
-  // 5. Fallback chain → 真正的 account_id
+  // payment_method：LLM 沒給時走 spec 規定的 fallback — expense/income 一律
+  // 預設 cash（spec：「吃午餐 100」未提及付款方式時優先判 cash + 現金錢包）。
+  const paymentMethod: PaymentMethod = llmPaymentMethod ?? "cash";
+
+  // 5. Fallback chain → 真正的 account_id（paymentMethod 也參與決策）
   const target = resolveTargetAccount({
     overrideAccountId,
+    paymentMethod,
     category,
     accounts: userAccounts,
     profileDefaultAccountId,
@@ -591,6 +624,7 @@ async function handleTextMessage(
         type: "income",
         priority: "non_essential", // income 此欄無意義，給預設值避免 NOT NULL
         category: null,
+        payment_method: paymentMethod,
         status: "completed",
         date: todayInTaipei(),
       });
@@ -606,7 +640,7 @@ async function handleTextMessage(
       await replyText(
         client,
         replyToken,
-        `${replyPrefix}💰 已記錄收入：${item} +$${amount}（${target.label}）`
+        `${replyPrefix}💰 已記錄收入：${item} +$${amount} ${PAYMENT_METHOD_EMOJI[paymentMethod]}（${target.label}）`
       );
     } catch (err) {
       console.error("[LINE webhook] income unexpected error:", err);
@@ -632,6 +666,7 @@ async function handleTextMessage(
       type: "expense",
       priority: "non_essential",
       category: safeCategory,
+      payment_method: paymentMethod,
       status: "completed",
       date: todayInTaipei(),
     });
@@ -649,7 +684,7 @@ async function handleTextMessage(
     await replyText(
       client,
       replyToken,
-      `${replyPrefix}✅ 已成功記帳：[${categoryLabel}] ${item} $${amount}（${target.label}）${warning}`
+      `${replyPrefix}✅ 已成功記帳：[${categoryLabel}] ${item} $${amount} ${PAYMENT_METHOD_EMOJI[paymentMethod]}（${target.label}）${warning}`
     );
   } catch (err) {
     console.error("[LINE webhook] Unexpected error:", err);
@@ -785,11 +820,13 @@ async function handleImageMessage(
 
   const lookup = buildCategoryLookup(userCategories);
 
-  // 每筆 item 走一次 in-memory fallback chain（沒 override，純走 category→profile→first）
+  // 每筆 item 走一次 in-memory fallback chain（沒 override，paymentMethod 也
+  // 不明 — 發票上下文 user 無法直接告知，留 null 讓 chain 走 category→profile→first）
   const resolved = items.map((item) => ({
     item,
     target: resolveTargetAccount({
       overrideAccountId: null,
+      paymentMethod: null,
       category: item.category,
       accounts: userAccounts,
       profileDefaultAccountId,

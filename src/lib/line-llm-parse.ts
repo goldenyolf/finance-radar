@@ -12,6 +12,7 @@
  */
 
 import type { CategoryRow } from "@/lib/categories";
+import type { AccountType, PaymentMethod } from "@/lib/dashboard";
 import {
   EXPENSE_CATEGORY_LABEL,
   type ExpenseCategory,
@@ -20,6 +21,8 @@ import {
 export interface LineAccountContext {
   id: string;
   name: string;
+  /** 帳戶 type（per 0012 migration），LLM prompt 用來提示「現金錢包」應走 cash payment。 */
+  type: AccountType;
 }
 
 export interface LineLlmParseResult {
@@ -31,10 +34,24 @@ export interface LineLlmParseResult {
   accountLabel: string | null;
   /** LLM 推測的分類；不可信時 null，caller 自行走 keyword classifier。 */
   category: ExpenseCategory | null;
+  /** 付款方式：LLM 必填三值之一（per Phase 3 prompt）。fallback 視 caller 決定。 */
+  paymentMethod: PaymentMethod | null;
 }
 
 const CATEGORY_CODES = Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[];
 const CATEGORY_CODE_SET = new Set<string>(CATEGORY_CODES);
+const PAYMENT_METHOD_SET = new Set<string>([
+  "cash",
+  "credit_card",
+  "transfer",
+] satisfies PaymentMethod[]);
+
+/** 帳戶 type → 中文標籤，用在 prompt 帳戶清單後綴。 */
+const ACCOUNT_TYPE_HINT: Record<AccountType, string> = {
+  cash: "現金錢包",
+  credit_card: "信用卡",
+  bank: "銀行帳戶（網銀/匯款）",
+};
 
 /* ─────────────────────── Prompt 組裝 ─────────────────────── */
 
@@ -57,7 +74,9 @@ export function buildLineParsePrompt(
 
   const accountList =
     accounts.length > 0
-      ? accounts.map((a) => `  - "${a.name}"`).join("\n")
+      ? accounts
+          .map((a) => `  - "${a.name}" → ${ACCOUNT_TYPE_HINT[a.type]}`)
+          .join("\n")
       : "  （該使用者尚未建立任何帳戶）";
 
   const categoryList =
@@ -77,10 +96,11 @@ ${categoryList}
 
 【輸出規格】嚴格 JSON，**禁止** markdown code fence、**禁止**任何解釋文字。Schema：
 {
-  "item": string,                      // 消費項目（去掉金額與帳戶關鍵字後的核心描述）
-  "amount": number,                    // 純數字，不含貨幣符號或單位
-  "account_override": string | null,   // 訊息中**明確提到**的帳戶關鍵字原文，例如「台新」「中信」「郵局」；若未提及一律 null
-  "category": string | null            // 上列分類 code 之一；判斷不出來填 null
+  "item": string,                          // 消費項目（去掉金額與帳戶關鍵字後的核心描述）
+  "amount": number,                        // 純數字，不含貨幣符號或單位
+  "account_override": string | null,       // 訊息中**明確提到**的帳戶關鍵字原文，例如「台新」「中信」「郵局」；若未提及一律 null
+  "category": string | null,               // 上列分類 code 之一；判斷不出來填 null
+  "payment_method": "cash" | "credit_card" | "transfer"  // 必填三選一，依下方規則判斷
 }
 
 【判斷原則】
@@ -92,21 +112,44 @@ ${categoryList}
 5. 「請 X 喝/吃」「給 X 買」這類修飾語**不改變分類本質** — 仍依消費物品本身判斷。例：「請家人喝咖啡」「買便當給同事」都是 food_dining，不是 other。
 6. 咖啡 / 茶 / 手搖 / 麵包 / 蛋糕 / 飲料 / Cama / 星巴克 / 路易莎 等飲食店家或品項一律 food_dining。
 
+【payment_method 判定流程】（依序檢查，命中即定）
+A. 出現「刷 / 卡 / 信用卡 / 信」這類字 → "credit_card"
+B. 出現「轉 / 匯 / 網銀 / 匯款 / ATM」這類字 → "transfer"
+C. 項目本身是高額固定支出（房貸 / 房租 / 學費 / 保費 / 水電 / 瓦斯 / 電費）→ "transfer"（這類在台灣 99% 走銀行轉帳或扣繳）
+D. 出現「現 / 現金」這類字 → "cash"
+E. 若 account_override 明確指向某帳戶，依該帳戶 type 對應：現金錢包→cash、信用卡→credit_card、銀行帳戶→transfer
+F. 以上皆無線索 → "cash"（小額日常消費的合理預設）
+
 【範例】
 輸入：「晚餐 500 台新」
-輸出：{"item":"晚餐","amount":500,"account_override":"台新","category":"food_dining"}
+輸出：{"item":"晚餐","amount":500,"account_override":"台新","category":"food_dining","payment_method":"transfer"}
 
 輸入：「午餐 120」
-輸出：{"item":"午餐","amount":120,"account_override":null,"category":"food_dining"}
+輸出：{"item":"午餐","amount":120,"account_override":null,"category":"food_dining","payment_method":"cash"}
 
-輸入：「台新 Cama 咖啡（請家人喝）542」
-輸出：{"item":"Cama 咖啡（請家人喝）","amount":542,"account_override":"台新","category":"food_dining"}
+輸入：「吃午餐 100」
+輸出：{"item":"吃午餐","amount":100,"account_override":null,"category":"food_dining","payment_method":"cash"}
 
-輸入：「（郵局）幼兒園學費 8500」
-輸出：{"item":"幼兒園學費","amount":8500,"account_override":"郵局","category":"childcare_education"}
+輸入：「繳房貸 25000」
+輸出：{"item":"繳房貸","amount":25000,"account_override":null,"category":"home_living","payment_method":"transfer"}
+
+輸入：「刷卡買鞋 1980」
+輸出：{"item":"買鞋","amount":1980,"account_override":null,"category":"other","payment_method":"credit_card"}
 
 輸入：「中信 加油 1200」
-輸出：{"item":"加油","amount":1200,"account_override":"中信","category":"transport"}`;
+輸出：{"item":"加油","amount":1200,"account_override":"中信","category":"transport","payment_method":"transfer"}
+
+輸入：「現金 早餐 60」
+輸出：{"item":"早餐","amount":60,"account_override":null,"category":"food_dining","payment_method":"cash"}
+
+輸入：「網銀繳電費 1850」
+輸出：{"item":"繳電費","amount":1850,"account_override":null,"category":"home_living","payment_method":"transfer"}
+
+輸入：「台新 Cama 咖啡（請家人喝）542」
+輸出：{"item":"Cama 咖啡（請家人喝）","amount":542,"account_override":"台新","category":"food_dining","payment_method":"transfer"}
+
+輸入：「（郵局）幼兒園學費 8500」
+輸出：{"item":"幼兒園學費","amount":8500,"account_override":"郵局","category":"childcare_education","payment_method":"transfer"}`;
 }
 
 /* ─────────────────────── LLM 呼叫 ─────────────────────── */
@@ -122,6 +165,7 @@ interface LlmRawJson {
   amount?: unknown;
   account_override?: unknown;
   category?: unknown;
+  payment_method?: unknown;
 }
 
 /**
@@ -216,12 +260,22 @@ function normalizeLlmOutput(
       ? (catRaw as ExpenseCategory)
       : null;
 
+  // payment_method：prompt 要求必填三值之一，但 LLM 偶爾還是會漂；
+  // 守備：不在 enum 集合內一律 null，交給 webhook fallback 處理。
+  const pmRaw =
+    typeof raw.payment_method === "string"
+      ? raw.payment_method.trim().toLowerCase()
+      : "";
+  const paymentMethod =
+    pmRaw && PAYMENT_METHOD_SET.has(pmRaw) ? (pmRaw as PaymentMethod) : null;
+
   return {
     item,
     amount: amountNum,
     accountId: matched?.id ?? null,
     accountLabel: matched?.name ?? null,
     category,
+    paymentMethod,
   };
 }
 
