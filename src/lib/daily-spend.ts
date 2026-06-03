@@ -185,6 +185,34 @@ export function findDefaultSelectedDate(
   return null;
 }
 
+/* ─────────────────── 預算熔斷 baseline ─────────────────── */
+
+/**
+ * 每日基準預算 = 該月所有 expense 類 categories.budget_monthly 加總 ÷ 該月天數。
+ *
+ * 設計重點：
+ *   - 用「按月攤平」而非「rolling 30 天」— 跟其他預算邏輯（月度消耗條 / 跨月趨勢）
+ *     對齊心智模型，避免「每天看到的 baseline 都不一樣」的混亂。
+ *   - 沒設預算（sum = 0）回 0 — caller 端用 baseline === 0 判斷該不該渲染 burn rate。
+ *   - 只算 expense 類 — income / transfer 不算「花錢預算」，避免污染基準。
+ */
+export function computeDailyBaseline(
+  categories: CategoryRow[],
+  monthDate: Date
+): number {
+  const totalBudget = categories
+    .filter((c) => c.type === "expense")
+    .reduce((sum, c) => sum + (c.budget_monthly ?? 0), 0);
+  if (totalBudget <= 0) return 0;
+
+  const daysInMonth = new Date(
+    monthDate.getFullYear(),
+    monthDate.getMonth() + 1,
+    0
+  ).getDate();
+  return totalBudget / daysInMonth;
+}
+
 /* ─────────────────── Drill-down 鑽取 ─────────────────── */
 
 export interface DailyDetailItem {
@@ -192,6 +220,8 @@ export interface DailyDetailItem {
   title: string;
   amount: number;
   accountName: string;
+  /** ISO 8601 — 給時間軸排序 + 時段 bucket。沒 created_at 時 fallback 中午 */
+  createdAt: string;
 }
 
 export interface DailyDetailGroup {
@@ -264,6 +294,8 @@ export function buildDailyDetail(
       title: t.description?.trim() || "（無說明）",
       amount,
       accountName: accName,
+      // 沒 created_at（極舊資料）→ fallback 中午 12:00 — 時段 bucket 走「午間」中性歸位
+      createdAt: t.created_at ?? `${isoDate}T12:00:00+08:00`,
     };
 
     let g = groupMap.get(name);

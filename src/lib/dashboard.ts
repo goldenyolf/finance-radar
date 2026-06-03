@@ -94,6 +94,8 @@ export interface TransactionRow {
   transfer_group_id?: string | null;
   transfer_direction?: TransferDirection | null;
   payment_method?: PaymentMethod | null;
+  /** ISO 8601 timestamp — DB DEFAULT now()，給單日時間軸 / 排序用。 */
+  created_at?: string;
 }
 
 export interface RecurringRow {
