@@ -30,6 +30,7 @@ import { getAccountLabel } from "@/lib/account-display";
 import type { CategoryRow } from "@/lib/categories";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { aggregateMonthlyByCategory } from "@/lib/expense-categories";
+import { triggerHaptic } from "@/lib/haptics";
 import { aggregateMonthlyByIncomeCategory } from "@/lib/income-categories";
 import { cn } from "@/lib/utils";
 
@@ -219,7 +220,13 @@ function ModeSegmentedControl({
             type="button"
             role="radio"
             aria-checked={isActive}
-            onClick={() => onChange(t.value)}
+            onClick={() => {
+              if (isActive) return; // 已選中再點不重複觸發
+              onChange(t.value);
+              // 延遲 200ms 跟 spring 380/30 的落點吸附同步 — 仿 iOS
+              // segmented control「滑塊咬住」那瞬間的觸感
+              triggerHaptic("select", { delayMs: 200 });
+            }}
             className="relative isolate min-w-[5.5rem] rounded-full px-4 py-1.5 text-sm font-medium"
           >
             {/* 滑塊背景 — 只在 active 時 render，靠 layoutId 在兩格之間插值 */}

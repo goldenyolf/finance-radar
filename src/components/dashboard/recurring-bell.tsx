@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/popover";
 import { updateTransaction } from "@/lib/actions/transactions";
 import { formatCurrency } from "@/lib/dashboard";
+import { triggerHaptic } from "@/lib/haptics";
 import type { PlaceholderTransaction } from "@/lib/load-placeholders";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +62,8 @@ export function RecurringBell({ placeholders }: Props) {
       toast.error("金額必須為大於 0 的數字");
       return;
     }
+    // 沉穩成功觸感 — 點下 ✓ 立即震動 20ms，給「動作已被系統接收」的物理回饋
+    triggerHaptic("success");
     // 樂觀更新：先把 id 加進 confirmedIds 觸發 slide-out 動畫，
     // server 失敗時再從 set 拿掉並 toast 錯誤回滾視覺。
     setConfirmedIds((prev) => new Set(prev).add(p.id));
