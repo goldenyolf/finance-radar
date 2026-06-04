@@ -36,8 +36,17 @@ export const metadata: Metadata = {
     title: "Money Radar",
     statusBarStyle: "black-translucent",
   },
-  /** PWA 圖示路徑 — 待補實際 icon 檔到 public/ 才會生效 */
+  /**
+   * 全套 icon 來自 realfavicongenerator，放在 public/。
+   * icon 陣列順序：先 PNG（佔位小 + 一般 DPI 用）後 SVG（高 DPI 用）；
+   * shortcut 是 IE/legacy 用的 .ico；apple 是 iOS 主畫面那張。
+   */
   icons: {
+    icon: [
+      { url: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: ["/favicon.ico"],
     apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
