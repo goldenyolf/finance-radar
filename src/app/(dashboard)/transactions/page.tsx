@@ -1,5 +1,6 @@
 import { ScrollText } from "lucide-react";
 
+import { CsvImportZone } from "@/components/dashboard/csv-import-zone";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { TransactionsView } from "@/components/dashboard/transactions-view";
 import { loadCategories } from "@/lib/load-categories";
@@ -33,6 +34,13 @@ export default async function TransactionsPage() {
           預設顯示最近 200 筆紀錄；輸入關鍵字可跨月份模糊搜尋並自動加總符合的支出。
         </p>
       </header>
+
+      {/*
+        🆕 CSV 智慧匯入區 — 信用卡明細拖檔即解析 + dedup + 預覽 dialog。
+        放 TransactionsView 上方因為使用者匯入流程 = 「拖檔 → 確認 → 結果
+        在下方列表立刻可見」，動作 / 結果同一視野最直覺。
+      */}
+      <CsvImportZone accounts={accounts} categories={categories} />
 
       <TransactionsView
         accounts={accounts}
