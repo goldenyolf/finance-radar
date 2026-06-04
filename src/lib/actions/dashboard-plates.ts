@@ -114,3 +114,57 @@ export async function deleteDashboardPlate(
   revalidatePath("/");
   return { ok: true };
 }
+
+/**
+ * 拖拉排序持久化 — 接收使用者拖完後的 plateId 陣列，逐筆 UPDATE sort_order。
+ *
+ * 為什麼不用一條 SQL upsert + array_position：
+ *   - PostgREST update with case 寫法複雜且 Supabase JS client 不直接支援
+ *   - 板塊上限 4 個，N 條 UPDATE 也才 4 次 round-trip，可接受
+ *   - RLS 自動 scope 到 auth.uid()，不會跨租戶
+ *
+ * 容錯：任一筆失敗就回 error；前端會看到失敗訊息並 router.refresh()
+ * 把畫面 sync 回真實的 DB 狀態，不會有半完成的鬼順序。
+ */
+export async function reorderDashboardPlates(
+  orderedIds: string[]
+): Promise<MutationResult> {
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return { ok: false, error: "缺少排序陣列" };
+  }
+
+  const supabase = await createClient();
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await supabase
+      .from("dashboard_plates")
+      .update({ sort_order: i })
+      .eq("id", orderedIds[i]);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath("/");
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/**
+ * 自訂 emoji 持久化 — 點 Popover 內某個 emoji 即觸發。
+ * 空字串 / null → 寫 null 讓 UI 回退 derivePlateEmoji(name) fallback。
+ */
+export async function updateDashboardPlateEmoji(
+  id: string,
+  emoji: string | null
+): Promise<MutationResult> {
+  if (!id) return { ok: false, error: "缺少板塊 ID" };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("dashboard_plates")
+    .update({ emoji: emoji && emoji.trim() ? emoji.trim() : null })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/");
+  revalidatePath("/settings");
+  return { ok: true };
+}

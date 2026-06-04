@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Banknote, CreditCard, Landmark, Settings, Wallet } from "lucide-react";
+import { useState } from "react";
+import { Banknote, CreditCard, Landmark, Pencil, Settings, Wallet } from "lucide-react";
 
 import {
   Card,
@@ -9,6 +10,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
@@ -30,7 +36,19 @@ interface Props {
   allAccounts: AccountRow[];
   /** 動態 categories — 編輯帳目的分類下拉用。 */
   categories?: CategoryRow[];
+  /** 編輯排版模式（由 PlateEditableGrid 控制）— 顯示 emoji 編輯筆刷 */
+  isEditMode?: boolean;
+  /** 編輯模式下使用者選了新 emoji 時觸發 */
+  onEmojiChange?: (emoji: string) => void;
 }
+
+/** 編輯模式 Popover 提供的 20 個精選 emoji — 涵蓋家庭 / 投資 / 生活情境。 */
+const EMOJI_PICKER_OPTIONS = [
+  "🏠", "👦", "💰", "🛡️", "📈",
+  "☕", "👨‍💼", "🐷", "🎯", "🏥",
+  "🎓", "🧓", "🚗", "🍱", "✈️",
+  "💎", "🎮", "🎁", "❤️", "📚",
+];
 
 const CATEGORY_STYLE: Record<DetailCategory, string> = {
   固定收入:
@@ -87,9 +105,10 @@ function amountToneClass(item: BoardDetailItem) {
   return "text-foreground";
 }
 
-export function BoardCard({ data, allAccounts, categories }: Props) {
+export function BoardCard({ data, allAccounts, categories, isEditMode, onEmojiChange }: Props) {
   const { meta, accounts, metrics, items, hasAccounts, hasRecurringIncome, isUnlinked } = data;
   const remainingPositive = metrics.remaining >= 0;
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
   // 資產整合看板 — 板塊所綁定的全部 cash flow accounts 餘額加總。
   // 信用卡 balance 偶為負（欠款），加總會自然抵消，跟「淨資產」語意一致。
@@ -137,12 +156,59 @@ export function BoardCard({ data, allAccounts, categories }: Props) {
     <Card className="flex flex-col gap-0 overflow-hidden">
       <CardHeader className="gap-2">
         <div className="flex items-start gap-3">
-          <span
-            aria-hidden
-            className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-2xl leading-none"
-          >
-            {meta.emoji}
-          </span>
+          {/*
+            Emoji 區 — 編輯模式時用 Popover 包起來、旁邊浮一個筆刷小 icon。
+            非編輯模式維持原本純展示的 <span> 結構不變。
+          */}
+          {isEditMode ? (
+            <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+              <PopoverTrigger
+                type="button"
+                aria-label="變更板塊 emoji"
+                className="relative grid size-10 shrink-0 place-items-center rounded-full bg-muted text-2xl leading-none ring-2 ring-emerald-500/40 transition-shadow hover:ring-emerald-500/60"
+              >
+                {meta.emoji}
+                <span
+                  aria-hidden
+                  className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-emerald-500 text-white shadow-md"
+                >
+                  <Pencil className="size-2.5" strokeWidth={3} />
+                </span>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="start" sideOffset={8} className="w-auto p-3">
+                <p className="mb-2 text-[11px] font-medium tracking-wider text-zinc-400 uppercase">
+                  選一個 Emoji
+                </p>
+                <div className="grid grid-cols-5 gap-1">
+                  {EMOJI_PICKER_OPTIONS.map((e) => {
+                    const isCurrent = e === meta.emoji;
+                    return (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => {
+                          onEmojiChange?.(e);
+                          setEmojiPickerOpen(false);
+                        }}
+                        className={`grid size-10 place-items-center rounded-md text-xl transition-colors hover:bg-zinc-800 ${
+                          isCurrent ? "bg-emerald-500/10 ring-1 ring-emerald-500/40" : ""
+                        }`}
+                      >
+                        {e}
+                      </button>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : (
+            <span
+              aria-hidden
+              className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-2xl leading-none"
+            >
+              {meta.emoji}
+            </span>
+          )}
           <div className="min-w-0 flex-1">
             <CardTitle className="text-base font-semibold">
               {meta.name}

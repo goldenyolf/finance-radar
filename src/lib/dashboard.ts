@@ -594,7 +594,7 @@ function transactionStatusLabel(
  * 時間感知：跟舊版相同 — completed 嚴格本月、upcoming 過期視為 completed。
  */
 export function buildBoardData(opts: {
-  plates: { id: string; name: string; description: string; linked_account_ids: string[]; sort_order: number }[];
+  plates: { id: string; name: string; description: string; linked_account_ids: string[]; sort_order: number; emoji?: string | null }[];
   accounts: AccountRow[];
   recurring: RecurringRow[];
   transactions: TransactionRow[];
@@ -619,7 +619,8 @@ export function buildBoardData(opts: {
       plateId: plate.id,
       name: plate.name,
       description: plate.description,
-      emoji: derivePlateEmoji(plate.name),
+      // 使用者自訂 emoji 優先，沒設走 name 推導的 fallback
+      emoji: plate.emoji ?? derivePlateEmoji(plate.name),
       shortLabel: derivePlateShortLabel(plate.name),
     };
 

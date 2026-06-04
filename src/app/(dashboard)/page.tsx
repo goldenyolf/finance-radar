@@ -10,6 +10,7 @@ import { GoalSummaryLink } from "@/components/dashboard/goal-summary-link";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { OnboardingDialog } from "@/components/dashboard/onboarding-dialog";
 import { PageTransition } from "@/components/dashboard/page-transition";
+import { PlateEditableGrid } from "@/components/dashboard/plate-editable-grid";
 import { QuickAddTransaction } from "@/components/dashboard/quick-add-transaction";
 import { SubscriptionAlertWidget } from "@/components/dashboard/subscription-alert-widget";
 import { TodayBadge } from "@/components/dashboard/today-badge";
@@ -239,28 +240,15 @@ export default async function HomePage({ searchParams }: PageProps) {
       ) : (
         <>
           {/*
-            Desktop grid：1 個一欄、2 個兩欄、3+ 個三欄（4 個就 3+1 wrap）。
-            動態 className 但只用有限集合（1/2/3），Tailwind 編譯期會保留全部。
+            Desktop grid 走 PlateEditableGrid client wrapper —
+            支援長按 / 編輯按鈕進入編輯模式 → 拖拉排序 + emoji 自訂。
+            內部本身已帶 hidden md:block，server 端不必加。
           */}
-          <section
-            aria-label="財務板塊"
-            className={`hidden gap-4 md:grid ${
-              boardData.length === 1
-                ? "grid-cols-1"
-                : boardData.length === 2
-                  ? "grid-cols-2"
-                  : "grid-cols-1 lg:grid-cols-3"
-            }`}
-          >
-            {boardData.map((b) => (
-              <BoardCard
-                key={b.meta.plateId}
-                data={b}
-                allAccounts={accounts}
-                categories={categories}
-              />
-            ))}
-          </section>
+          <PlateEditableGrid
+            data={boardData}
+            allAccounts={accounts}
+            categories={categories}
+          />
 
           {/* Mobile Tabs：每塊一個 tab；TabsList 動態 grid-cols 1-4 */}
           <section aria-label="財務板塊（手機版）" className="md:hidden">

@@ -18,6 +18,8 @@ export interface DashboardPlateRow {
   /** 綁定的 cash flow accounts.id 陣列；空陣列 = 未綁定 (per 0013 migration) */
   linked_account_ids: string[];
   sort_order: number;
+  /** 使用者自訂的 emoji；null = 走 derivePlateEmoji(name) fallback (per 0018) */
+  emoji?: string | null;
   created_at?: string;
   updated_at?: string;
 }
