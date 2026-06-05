@@ -1,21 +1,15 @@
 /**
- * 帳戶顯示文字字典：強制覆蓋 DB 撈出來的 name 值。
+ * 帳戶顯示文字字典：少數特殊 key 的強制覆蓋。
  *
- * 為什麼不用 DB 的 accounts.name？因為 seed 期間 DB 內的 name 欄位可能還
- * 殘留 raw ID（acc-001 之類），讓下拉選單對使用者極不友善。前端用這個
- * map 做最後一道強制覆蓋，DB content drift 不影響 UX。
+ * 早期 acc-001 / acc-taishin / acc-post 等 legacy ID 的 hardcoded label
+ * 已隨 0023 dedupe migration 移除（legacy 帳戶就地改名為 family_pool 等
+ * 池子名稱，DB name 已對齊，不再需要這裡覆蓋）。
  *
- * 同時放 acc-joint 與 acc-taishin 兩個 key 指向同一個 label（一個是設計
- * 階段命名、一個是早期 seed 命名），map 兩邊都認避免漏網。
+ * 唯一保留 `__none__` 給 transactions.account_id IS NULL 的場景顯示。
  *
- * 維護：新增帳戶請在這裡補一筆；不在 map 裡的 ID 會 fallback 到 acc.name，
- * 再 fallback 到 acc.id。Fork 後可依自己銀行替換 Bank A/B/C 標籤。
+ * 新帳戶不需要在此補 — 寫得進 DB 的 name 都會自動透過 fallback chain 顯示。
  */
 export const ACCOUNT_MAP: Record<string, string> = {
-  "acc-001": "個人主帳戶 (Bank A)",
-  "acc-post": "補助與投資專戶 (Bank C)",
-  "acc-joint": "家庭共同帳戶 (Bank B)",
-  "acc-taishin": "家庭共同帳戶 (Bank B)",
   __none__: "不指定 / 無關聯",
 };
 
