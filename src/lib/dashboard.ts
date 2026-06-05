@@ -79,6 +79,17 @@ export interface DebtRow {
   balance: number | string;
 }
 
+/**
+ * 4 大水庫 code（per 0020 母子水庫制）。
+ * 既有 / 自訂帳戶 code = null；只有 trigger seed 的池子有 code。
+ * 用 string literal union 而非 enum 對齊既有 AccountType 慣例。
+ */
+export type AccountCode =
+  | "family_pool"
+  | "personal_pool"
+  | "post_office"
+  | "cash_wallet";
+
 export interface AccountRow {
   id: string;
   user_id: string;
@@ -91,6 +102,12 @@ export interface AccountRow {
    * DB 端 NOT NULL DEFAULT '{}'，所以一律當 string[] 用，不必判 null。
    */
   keywords: string[];
+  /**
+   * 水庫池子 code（per 0020）。null = 自訂 / legacy 帳戶。
+   * UI 端用來判定「這是不是預設池」、未來 settings 也用 code 做引用標的，
+   * 而不是 name（name 使用者可改）。
+   */
+  code: AccountCode | null;
 }
 
 export interface TransactionRow {

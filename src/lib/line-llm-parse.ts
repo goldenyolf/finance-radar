@@ -13,6 +13,7 @@
 
 import type { CategoryRow } from "@/lib/categories";
 import type {
+  AccountCode,
   AccountType,
   IncomeCategory,
   PaymentMethod,
@@ -32,6 +33,11 @@ export interface LineAccountContext {
    * 它是給 LLM **之前**的 interceptAccountKeywords() 用的，命中即鎖 id。
    */
   keywords: string[];
+  /**
+   * 水庫池子 code（per 0020）。LLM 也看不到 — code 是後端路由語意，
+   * UI/log/debug 用得到，例如除錯時想知道命中是 cash_wallet 還是 personal_pool。
+   */
+  code: AccountCode | null;
 }
 
 export interface LineLlmParseResult {
@@ -117,7 +123,7 @@ ${categoryList}
   "amount": number,                        // 純數字，不含貨幣符號或單位
   "account_override": string | null,       // 訊息中**明確提到**的帳戶關鍵字原文，例如「台新」「中信」「郵局」；若未提及一律 null
   "category": string | null,               // 上列支出分類 code 之一；判斷不出來填 null。**只有 expense 訊息才填**，income 一律 null
-  "payment_method": "cash" | "credit_card" | "transfer",  // 必填三選一，依下方規則判斷
+  "payment_method": "cash" | "credit_card" | "transfer" | null,  // 三選一或 null（無線索）— 依下方規則
   "income_category": "salary" | "side_hustle" | "investment" | "other" | null  // **判定為收入時必填四選一**；非收入訊息一律 null
 }
 
@@ -150,17 +156,17 @@ B. 出現「轉 / 匯 / 網銀 / 匯款 / ATM」這類字 → "transfer"
 C. 項目本身是高額固定支出（房貸 / 房租 / 學費 / 保費 / 水電 / 瓦斯 / 電費）→ "transfer"（這類在台灣 99% 走銀行轉帳或扣繳）
 D. 出現「現 / 現金」這類字 → "cash"
 E. 若 account_override 明確指向某帳戶，依該帳戶 type 對應：現金錢包→cash、信用卡→credit_card、銀行帳戶→transfer
-F. 以上皆無線索 → "cash"（小額日常消費的合理預設）
+F. 以上皆無線索 → null（不要硬猜「cash 預設」，回 null 讓系統依分類自動路由到對應水庫）
 
 【範例】
 輸入：「晚餐 500 台新」
 輸出：{"item":"晚餐","amount":500,"account_override":"台新","category":"food_dining","payment_method":"transfer"}
 
 輸入：「午餐 120」
-輸出：{"item":"午餐","amount":120,"account_override":null,"category":"food_dining","payment_method":"cash"}
+輸出：{"item":"午餐","amount":120,"account_override":null,"category":"food_dining","payment_method":null}
 
 輸入：「吃午餐 100」
-輸出：{"item":"吃午餐","amount":100,"account_override":null,"category":"food_dining","payment_method":"cash"}
+輸出：{"item":"吃午餐","amount":100,"account_override":null,"category":"food_dining","payment_method":null}
 
 輸入：「繳房貸 25000」
 輸出：{"item":"繳房貸","amount":25000,"account_override":null,"category":"home_living","payment_method":"transfer"}

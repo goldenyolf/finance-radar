@@ -283,7 +283,7 @@ async function loadUserCategories(userId: string): Promise<CategoryRow[]> {
 async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
   const { data, error } = await db()
     .from("accounts")
-    .select("id, name, type, keywords")
+    .select("id, name, type, keywords, code")
     .eq("user_id", userId)
     .order("id", { ascending: true });
   if (error) {
@@ -297,6 +297,7 @@ async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
     // DB 端 NOT NULL DEFAULT '{}' (per 0019)，但保留 ?? [] 防御舊環境沒跑 migration 時
     // service client 拿到 undefined 直接讓 interceptor 噴 — 早 fail 早診斷。
     keywords: (r.keywords as string[] | null) ?? [],
+    code: (r.code as import("@/lib/dashboard").AccountCode | null) ?? null,
   }));
 }
 
@@ -704,22 +705,26 @@ async function handleTextMessage(
       ? (llmCategory ?? (await classifyExpense(item, userCategories)))
       : null;
 
-  // payment_method 決策 — 攔截命中 vs 沒命中 走兩條不同路：
+  // payment_method 拆兩階段（per 0022 修補 UAT bug A）：
   //
-  // (a) 攔截器命中 → 用 intercepted.lockedPaymentMethod **鎖死**，LLM 沒投票權。
-  //     spec 原文：「鎖定這筆交易的 account_id 與 payment_method」。
-  //     既然 account 已被硬規則鎖死，payment_method 必須跟著鎖死才邏輯一致 —
-  //     否則出現「account=台新信用卡 + payment_method=cash」這種髒資料。
+  // 階段 1：account 解析前 — 只傳 hint，不 eager default 'cash'。
+  //   原本 `?? "cash"` 在解析前就把 null 抹平成 cash → resolveTargetAccount
+  //   的 cash 短路觸發 → 任何沒明說付款方式的訊息全進 cash_wallet，繞過
+  //   category default 路由。pool architecture 下這是嚴重 bug：
+  //   「家庭買菜 500」「水電費 1850」都該走 family_pool，結果全進現金。
   //
-  // (b) 沒命中 → LLM 優先，沒推出來預設 cash（保留原 spec 行為：
-  //     「吃午餐 100」未提及付款方式時優先判 cash + 現金錢包）。
-  const paymentMethod: PaymentMethod =
-    intercepted.lockedPaymentMethod ?? llmPaymentMethod ?? "cash";
+  //   修法：把 hint 保持 nullable，pm=null 時 resolveTargetAccount cash 短路
+  //   自然不觸發，會 fall through 到 category default → 正確水庫。
+  //
+  //   攔截器命中時 lockedPaymentMethod 為 non-null（per 0019 spec）— 那段
+  //   鎖死語意保留：account 跟 payment_method 一起鎖。
+  const paymentMethodHint: PaymentMethod | null =
+    intercepted.lockedPaymentMethod ?? llmPaymentMethod ?? null;
 
-  // 5. Fallback chain → 真正的 account_id（paymentMethod 也參與決策）
+  // 5. Fallback chain → 真正的 account_id（paymentMethodHint 也參與決策）
   const target = resolveTargetAccount({
     overrideAccountId,
-    paymentMethod,
+    paymentMethod: paymentMethodHint,
     category,
     accounts: userAccounts,
     profileDefaultAccountId,
@@ -733,6 +738,10 @@ async function handleTextMessage(
     );
     return;
   }
+
+  // 階段 2：account 已解析完 → 補 INSERT 用的最終 paymentMethod。
+  // 仍 null 就預設 'cash'（DB CHECK 允許 null 但 UI emoji 會空，保守 default）。
+  const paymentMethod: PaymentMethod = paymentMethodHint ?? "cash";
 
   if (txType === "income") {
     try {
