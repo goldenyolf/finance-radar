@@ -85,6 +85,12 @@ export interface AccountRow {
   name: string;
   type: AccountType;
   balance: number | string;
+  /**
+   * LINE bot 硬規則攔截器使用的關鍵字別名（per 0019）。
+   * 例：台新信用卡 = ['台新信用卡', '台新刷卡', '台新']。
+   * DB 端 NOT NULL DEFAULT '{}'，所以一律當 string[] 用，不必判 null。
+   */
+  keywords: string[];
 }
 
 export interface TransactionRow {

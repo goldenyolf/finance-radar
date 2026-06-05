@@ -27,6 +27,11 @@ export interface LineAccountContext {
   name: string;
   /** 帳戶 type（per 0012 migration），LLM prompt 用來提示「現金錢包」應走 cash payment。 */
   type: AccountType;
+  /**
+   * 硬規則攔截器用的關鍵字別名（per 0019）。LLM 看不到這個欄位 —
+   * 它是給 LLM **之前**的 interceptAccountKeywords() 用的，命中即鎖 id。
+   */
+  keywords: string[];
 }
 
 export interface LineLlmParseResult {

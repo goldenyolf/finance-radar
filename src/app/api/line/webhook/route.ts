@@ -19,6 +19,7 @@ import {
   EXPENSE_CATEGORY_LABEL,
   type ExpenseCategory,
 } from "@/lib/expense-categories";
+import { interceptAccountKeywords } from "@/lib/line-account-keyword-interceptor";
 import {
   normalizeForMatch,
   parseLineMessageWithLlm,
@@ -282,7 +283,7 @@ async function loadUserCategories(userId: string): Promise<CategoryRow[]> {
 async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
   const { data, error } = await db()
     .from("accounts")
-    .select("id, name, type")
+    .select("id, name, type, keywords")
     .eq("user_id", userId)
     .order("id", { ascending: true });
   if (error) {
@@ -293,6 +294,9 @@ async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
     id: r.id as string,
     name: r.name as string,
     type: r.type as AccountType,
+    // DB 端 NOT NULL DEFAULT '{}' (per 0019)，但保留 ?? [] 防御舊環境沒跑 migration 時
+    // service client 拿到 undefined 直接讓 interceptor 噴 — 早 fail 早診斷。
+    keywords: (r.keywords as string[] | null) ?? [],
   }));
 }
 
@@ -642,9 +646,16 @@ async function handleTextMessage(
   const txType = detectTransactionType(text);
   const lookup = buildCategoryLookup(userCategories);
 
+  // 2.5. 硬規則攔截器（per 0019 + spec 方案一）—— LLM 之前的「絕對精準度」防線。
+  //   命中即在記憶體鎖定 account_id，並把該帳戶所有 keywords 從原文挖掉，再
+  //   把清洗後的文字丟給 LLM。徹底終結「台新信用卡」被 LLM 誤判成 description、
+  //   fallback chain 兜底到現金錢包的 bug。沒命中 → 行為跟原本一樣。
+  const intercepted = interceptAccountKeywords(text, userAccounts);
+  const llmInputText = intercepted.matchedAccount ? intercepted.cleanedText : text;
+
   // 3. LLM 主路徑（注入 accounts + categories 上下文）
   const llmResult = await parseLineMessageWithLlm({
-    text,
+    text: llmInputText,
     accounts: userAccounts,
     categories: userCategories,
   });
@@ -664,8 +675,9 @@ async function handleTextMessage(
     llmPaymentMethod = llmResult.paymentMethod;
     llmIncomeCategory = llmResult.incomeCategory;
   } else {
-    // 4. Fallback：regex 純抽 amount+title
-    const regex = parseExpenseMessage(text);
+    // 4. Fallback：regex 純抽 amount+title（regex 也吃清洗後文字 — 命中關鍵字
+    //    挖掉之後 amount + title 抽取一樣正確）
+    const regex = parseExpenseMessage(llmInputText);
     if (!regex) {
       await replyText(
         client,
@@ -681,15 +693,28 @@ async function handleTextMessage(
     llmPaymentMethod = null;
   }
 
+  // 硬規則命中 → 鎖死 overrideAccountId（覆寫 LLM 抽到的任何 override）
+  if (intercepted.matchedAccount) {
+    overrideAccountId = intercepted.matchedAccount.id;
+  }
+
   // expense 才需要 category；income 直接 null
   const category: ExpenseCategory | null =
     txType === "expense"
       ? (llmCategory ?? (await classifyExpense(item, userCategories)))
       : null;
 
-  // payment_method：LLM 沒給時走 spec 規定的 fallback — expense/income 一律
-  // 預設 cash（spec：「吃午餐 100」未提及付款方式時優先判 cash + 現金錢包）。
-  const paymentMethod: PaymentMethod = llmPaymentMethod ?? "cash";
+  // payment_method 決策 — 攔截命中 vs 沒命中 走兩條不同路：
+  //
+  // (a) 攔截器命中 → 用 intercepted.lockedPaymentMethod **鎖死**，LLM 沒投票權。
+  //     spec 原文：「鎖定這筆交易的 account_id 與 payment_method」。
+  //     既然 account 已被硬規則鎖死，payment_method 必須跟著鎖死才邏輯一致 —
+  //     否則出現「account=台新信用卡 + payment_method=cash」這種髒資料。
+  //
+  // (b) 沒命中 → LLM 優先，沒推出來預設 cash（保留原 spec 行為：
+  //     「吃午餐 100」未提及付款方式時優先判 cash + 現金錢包）。
+  const paymentMethod: PaymentMethod =
+    intercepted.lockedPaymentMethod ?? llmPaymentMethod ?? "cash";
 
   // 5. Fallback chain → 真正的 account_id（paymentMethod 也參與決策）
   const target = resolveTargetAccount({
