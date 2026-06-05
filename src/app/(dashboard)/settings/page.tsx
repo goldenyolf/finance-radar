@@ -1,5 +1,6 @@
 import { Settings } from "lucide-react";
 
+import { AccountsCard } from "@/components/dashboard/accounts-card";
 import { CategoriesCard } from "@/components/dashboard/categories-card";
 import { DashboardPlatesCard } from "@/components/dashboard/dashboard-plates-card";
 import { LineBindingCard } from "@/components/dashboard/line-binding-card";
@@ -73,8 +74,11 @@ export default async function SettingsPage() {
         {/* 🧱 戰情室板塊配置 — 取代寫死的 BoardKey enum；首頁未來會吃這份 */}
         <DashboardPlatesCard plates={plates} accounts={accounts} />
 
+        {/* 💼 帳戶管理中樞 — CRUD + 資產校正水位（per spec：首頁移除鉛筆鈕後的家） */}
+        <AccountsCard accounts={accounts} />
+
         {/* 🎨 分類管理 — 動態取代靜態 EXPENSE_CATEGORY_*；改顏色 / 名稱會即時連動圖表 */}
-        <CategoriesCard categories={categories} accounts={accounts} />
+        <CategoriesCard categories={categories} accounts={accounts} plates={plates} />
 
         {/* LINE 綁定區塊 — 多租戶版才有，把 LINE userId 寫進 profiles */}
         <LineBindingCard currentLineUserId={lineUserId} />

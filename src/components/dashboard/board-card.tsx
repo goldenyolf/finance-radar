@@ -20,7 +20,6 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
-import { CalibrateBalanceButton } from "@/components/dashboard/calibrate-balance-button";
 import type { CategoryRow } from "@/lib/categories";
 import {
   formatCurrency,
@@ -285,31 +284,20 @@ export function BoardCard({ data, allAccounts, categories, isEditMode, onEmojiCh
                   return (
                     <li
                       key={a.id}
-                      className="group flex items-center justify-between gap-2 py-1 text-xs"
+                      className="flex items-center justify-between py-1 text-xs"
                     >
                       <span className="flex min-w-0 items-center gap-1.5 text-zinc-500">
                         <Icon className="size-3 shrink-0" aria-hidden />
                         <span className="truncate">{a.name}</span>
                       </span>
-                      <span className="flex shrink-0 items-center gap-1">
-                        {/*
-                          資產校正儀觸發鈕 — 桌面 hover-revealed (group-hover)、
-                          行動端永遠可點。純 UPDATE balance 不污染圖表。
-                        */}
-                        <CalibrateBalanceButton
-                          accountId={a.id}
-                          accountName={a.name}
-                          currentBalance={balance}
-                        />
-                        <span
-                          className={`tabular-nums ${
-                            isNegative
-                              ? "text-rose-500 dark:text-rose-400"
-                              : "text-zinc-400"
-                          }`}
-                        >
-                          <Money value={balance} />
-                        </span>
+                      <span
+                        className={`shrink-0 tabular-nums ${
+                          isNegative
+                            ? "text-rose-500 dark:text-rose-400"
+                            : "text-zinc-400"
+                        }`}
+                      >
+                        <Money value={balance} />
                       </span>
                     </li>
                   );

@@ -45,13 +45,17 @@ import {
 } from "@/lib/actions/categories";
 import type { CategoryRow, CategoryType } from "@/lib/categories";
 import type { AccountRow } from "@/lib/dashboard";
+import type { DashboardPlateRow } from "@/lib/dashboard-plates";
 
 /** Select 不收 null — 用哨兵字串代表「不指定」，submit 時轉回 null。 */
 const ACCOUNT_NONE = "__none__";
+const PLATE_NONE = "__none__";
 
 interface Props {
   categories: CategoryRow[];
   accounts: AccountRow[];
+  /** per 0026 動態板塊路由 — edit dialog 提供 plate 下拉 */
+  plates: DashboardPlateRow[];
 }
 
 interface DraftState {
@@ -64,6 +68,8 @@ interface DraftState {
   budgetMonthly: string;
   /** ACCOUNT_NONE = 不指定；其他為 accounts.id */
   defaultAccountId: string;
+  /** PLATE_NONE = 不走板塊路由；其他為 dashboard_plates.id (per 0026) */
+  plateId: string;
 }
 
 const BLANK_DRAFT: DraftState = {
@@ -73,6 +79,7 @@ const BLANK_DRAFT: DraftState = {
   keywords: "",
   budgetMonthly: "",
   defaultAccountId: ACCOUNT_NONE,
+  plateId: PLATE_NONE,
 };
 
 const PRESET_COLORS = [
@@ -88,7 +95,7 @@ const PRESET_COLORS = [
   "#94A3B8", // slate
 ];
 
-export function CategoriesCard({ categories, accounts }: Props) {
+export function CategoriesCard({ categories, accounts, plates }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -123,6 +130,7 @@ export function CategoriesCard({ categories, accounts }: Props) {
       keywords: row.keywords,
       budgetMonthly: row.budget_monthly > 0 ? String(row.budget_monthly) : "",
       defaultAccountId: row.default_account_id ?? ACCOUNT_NONE,
+      plateId: row.plate_id ?? PLATE_NONE,
     });
     setDialogOpen(true);
   }
@@ -142,6 +150,7 @@ export function CategoriesCard({ categories, accounts }: Props) {
         draft.defaultAccountId === ACCOUNT_NONE
           ? null
           : draft.defaultAccountId,
+      plate_id: draft.plateId === PLATE_NONE ? null : draft.plateId,
     };
     startTransition(async () => {
       const result = draft.id
@@ -240,6 +249,7 @@ export function CategoriesCard({ categories, accounts }: Props) {
         onSubmit={handleSubmit}
         isEdit={!!draft.id}
         accounts={accounts}
+        plates={plates}
       />
     </Card>
   );
@@ -374,6 +384,7 @@ interface DialogProps {
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   isEdit: boolean;
   accounts: AccountRow[];
+  plates: DashboardPlateRow[];
 }
 
 function CategoryDialog({
@@ -385,6 +396,7 @@ function CategoryDialog({
   onSubmit,
   isEdit,
   accounts,
+  plates,
 }: DialogProps) {
   const nameId = useId();
   const typeId = useId();
@@ -392,6 +404,7 @@ function CategoryDialog({
   const keywordsId = useId();
   const budgetId = useId();
   const defaultAccountId = useId();
+  const plateSelectId = useId();
   const isExpense = draft.type === "expense";
 
   return (
@@ -521,11 +534,51 @@ function CategoryDialog({
           )}
 
           {/*
-            LINE bot fallback chain (B) — 分類層預設帳戶。例：「水電」綁台新後，
-            user 在 LINE 打「水電 1200」沒帶帳戶名 → 系統會自動記到台新。
+            真.動態板塊路由 (per 0026) — 把分類綁到一個 plate（家庭 / 個人 / 現金…），
+            LINE 路由會自動取該 plate 的第一個 linked account。**user 後續改板塊
+            綁定，category 路由自動跟著變**，無需手動編輯每個 category。
+            這比下方的「預設帳戶」(靜態快照) 更動態 — 兩個欄位並存，plate 優先。
           */}
           <div className="grid gap-1.5">
-            <Label htmlFor={defaultAccountId}>預設帳戶（LINE 記帳用）</Label>
+            <Label htmlFor={plateSelectId}>動態板塊（LINE 路由主路徑）</Label>
+            <Select
+              value={draft.plateId}
+              onValueChange={(v) =>
+                setDraft({ ...draft, plateId: v ?? PLATE_NONE })
+              }
+            >
+              <SelectTrigger id={plateSelectId} className="w-full">
+                <SelectValue>
+                  {(v) => {
+                    if (v === PLATE_NONE || !v) return "不指定（走下方預設帳戶）";
+                    const plate = plates.find((p) => p.id === v);
+                    return plate?.name ?? String(v);
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={PLATE_NONE}>不指定（走下方預設帳戶）</SelectItem>
+                {plates.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                    {p.linked_account_ids.length === 0 && "（無綁定帳戶）"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              選了 plate 之後，LINE 訊息會自動路由到該 plate 綁定的**第一個**帳戶；
+              你之後改 plate 的綁定，路由跟著動 — 不用回來重綁分類。
+            </p>
+          </div>
+
+          {/*
+            Legacy fallback (E) — 分類層靜態預設帳戶。例：「水電」綁台新後，
+            user 在 LINE 打「水電 1200」沒帶帳戶名 → 系統會自動記到台新。
+            **plate_id 為空時才用此欄**，所以平常如果走 plate 路由可不必管。
+          */}
+          <div className="grid gap-1.5">
+            <Label htmlFor={defaultAccountId}>預設帳戶（plate 為空時的 fallback）</Label>
             <Select
               value={draft.defaultAccountId}
               onValueChange={(v) =>

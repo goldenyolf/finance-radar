@@ -38,8 +38,18 @@ export interface CategoryRow {
    * 若使用者沒在訊息中明確指定帳戶（無 account_override），就照分類綁定的
    * 帳戶寫入；仍為 null → 退到 profiles.default_account_id → 最早建立的帳戶。
    * UI 預設未綁定（null），由使用者在 /settings 自行設定。
+   *
+   * **Phase 動態板塊路由（per 0026）之後 plate_id 為 routing 主路徑**，
+   * default_account_id 降級成 fallback（plate_id null 或 plate 找不到時用）。
    */
   default_account_id: string | null;
+  /**
+   * 動態板塊路由（per 0026）— 指向 dashboard_plates.id。
+   * webhook routing 看到此欄非 null → 抓 plate.linked_account_ids[0] 當目標帳戶。
+   * Spec：「家庭分類自動進家庭板塊的綁定帳戶」— 之後 user 改板塊綁定，category
+   * 路由自動跟著變，不必手動更新 default_account_id。
+   */
+  plate_id: string | null;
   created_at?: string;
 }
 

@@ -302,20 +302,39 @@ async function loadUserAccounts(userId: string): Promise<LineAccountContext[]> {
 }
 
 /**
+ * 撈該 user 的所有 dashboard_plates — 給 plate-first routing (per 0026) 用。
+ * 失敗回空陣列；webhook 仍可走 default_account_id legacy chain 不會崩。
+ */
+async function loadUserPlates(
+  userId: string
+): Promise<Array<{ id: string; linked_account_ids: string[] }>> {
+  const { data, error } = await db()
+    .from("dashboard_plates")
+    .select("id, linked_account_ids")
+    .eq("user_id", userId);
+  if (error) {
+    console.error("[LINE webhook] plates fetch failed:", error);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    linked_account_ids: (r.linked_account_ids as string[] | null) ?? [],
+  }));
+}
+
+/**
  * Fallback chain — 把 LLM 抽到的 override + paymentMethod + category 投射到
- * 實際 account_id。純 in-memory（profileDefault 由 caller 一次撈起來傳入），
- * 避免每筆訊息打 DB。
+ * 實際 account_id。純 in-memory，避免每筆訊息打 DB。
  *
- *   (A) override：LLM 已 fuzzy match 完，user 明示帳戶最強
- *   (B) paymentMethod=cash → 第一個 type='cash' 帳戶（per 0012 trigger seed
- *       保證每個 user 都有一個現金錢包）
- *   (C) paymentMethod=credit_card → 第一個 type='credit_card' 帳戶；沒有就
- *       繼續降級到 category/profile（避免硬塞錯帳戶）
- *   (D) paymentMethod=transfer 不在這層綁 type — 任何 bank 帳戶都能轉帳，
- *       讓 category/profile 自然指向 user 設定的轉帳預設戶
- *   (E) category.default_account_id：分類層偏好（如「水電」永遠走台新）
+ *   (A) override：interceptor / LLM 明示帳戶最強
+ *   (B) paymentMethod=cash → 第一個 type='cash' 帳戶
+ *   (C) paymentMethod=credit_card → 第一個 type='credit_card' 帳戶；
+ *       沒有就繼續降級（避免硬塞錯帳戶）
+ *   (D) **NEW (per 0026): category.plate_id → plate.linked_account_ids[0]**
+ *       真.動態板塊路由 — user 改板塊綁定，routing 自動跟著變
+ *   (E) category.default_account_id：legacy 分類層偏好（plate_id 為 null 時用）
  *   (F) profile.default_account_id：帳號層主要帳戶 singleton
- *   (G) accounts id 字典序第一筆：保底（避免 new user 還沒設 default 時崩潰）
+ *   (G) accounts id 字典序第一筆：保底
  */
 function resolveTargetAccount(args: {
   overrideAccountId: string | null;
@@ -324,6 +343,8 @@ function resolveTargetAccount(args: {
   accounts: LineAccountContext[];
   profileDefaultAccountId: string | null;
   categoryLookup: CategoryLookup;
+  /** per 0026: 板塊 routing 需要 plates linked_account_ids 查表 */
+  plates: Array<{ id: string; linked_account_ids: string[] }>;
 }): { id: string; label: string } | null {
   const {
     overrideAccountId,
@@ -332,6 +353,7 @@ function resolveTargetAccount(args: {
     accounts,
     profileDefaultAccountId,
     categoryLookup,
+    plates,
   } = args;
   const findAcc = (id: string | null | undefined) =>
     id ? accounts.find((a) => a.id === id) : undefined;
@@ -349,6 +371,17 @@ function resolveTargetAccount(args: {
 
   if (category) {
     const cat = categoryLookup.byCode.get(category);
+
+    // (D) 真.動態板塊路由 — plate_id 為主路徑
+    if (cat?.plate_id) {
+      const plate = plates.find((p) => p.id === cat.plate_id);
+      const firstAccId = plate?.linked_account_ids[0];
+      const platedAcc = findAcc(firstAccId);
+      if (platedAcc) return { id: platedAcc.id, label: platedAcc.name };
+      // plate 找不到 / 為空陣列 → fall through to (E) 不直接 return
+    }
+
+    // (E) Legacy fallback：category.default_account_id 靜態指向
     const hit = findAcc(cat?.default_account_id);
     if (hit) return { id: hit.id, label: hit.name };
   }
@@ -548,17 +581,20 @@ async function handleEvent(
     const profileDefaultAccountId =
       (profile.default_account_id as string | null | undefined) ?? null;
 
-    // 撈一次 categories + accounts — text / audio / image 三條 pipeline 共用，
-    // 避免每條都自己撈。accounts 還會被 buildLineParsePrompt 注入 LLM。
-    const [userCategories, userAccounts] = await Promise.all([
+    // 撈一次 categories + accounts + plates — text / audio / image 三條 pipeline 共用，
+    // 避免每條都自己撈。accounts 還會被 buildLineParsePrompt 注入 LLM；
+    // plates 給 resolveTargetAccount 走真.動態板塊路由 (per 0026)。
+    const [userCategories, userAccounts, userPlates] = await Promise.all([
       loadUserCategories(userId),
       loadUserAccounts(userId),
+      loadUserPlates(userId),
     ]);
 
     const ctx: HandlerContext = {
       userId,
       userCategories,
       userAccounts,
+      userPlates,
       profileDefaultAccountId,
     };
 
@@ -614,6 +650,7 @@ interface HandlerContext {
   userId: string;
   userCategories: CategoryRow[];
   userAccounts: LineAccountContext[];
+  userPlates: Array<{ id: string; linked_account_ids: string[] }>;
   profileDefaultAccountId: string | null;
 }
 
@@ -637,7 +674,7 @@ async function handleTextMessage(
   replyToken: string,
   replyPrefix: string = ""
 ): Promise<void> {
-  const { userId, userCategories, userAccounts, profileDefaultAccountId } = ctx;
+  const { userId, userCategories, userAccounts, userPlates, profileDefaultAccountId } = ctx;
 
   // 1. 先試夢想基金提撥
   const goalHandled = await tryGoalDeposit(text, userId, client, replyToken, replyPrefix);
@@ -729,6 +766,7 @@ async function handleTextMessage(
     accounts: userAccounts,
     profileDefaultAccountId,
     categoryLookup: lookup,
+    plates: userPlates,
   });
   if (!target) {
     await replyText(
@@ -937,7 +975,7 @@ async function handleImageMessage(
   client: messagingApi.MessagingApiClient,
   replyToken: string
 ): Promise<void> {
-  const { userId, userCategories, userAccounts, profileDefaultAccountId } = ctx;
+  const { userId, userCategories, userAccounts, userPlates, profileDefaultAccountId } = ctx;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     await replyText(
@@ -992,6 +1030,7 @@ async function handleImageMessage(
       accounts: userAccounts,
       profileDefaultAccountId,
       categoryLookup: lookup,
+      plates: userPlates,
     }),
   }));
 
