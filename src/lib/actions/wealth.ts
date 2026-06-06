@@ -240,11 +240,26 @@ export async function updateWealthAccount(
 }
 
 /**
- * 刪除 wealth_account。
+ * 刪除 wealth_account，並重算今日 snapshot 排除該戶（保歷史不擦）。
  *
- * 歷史 snapshots 的 details JSONB 不動 — 那是不可變的時點紀錄，刪戶不該回頭
- * 改寫歷史（否則趨勢圖會因為歷史數值改變而失真）。UI 端 dialog 已警告 user
- * 「歷史快照中的數據仍會保留為紀錄，但今後不會再出現」。
+ * 為什麼要重算今日 snapshot:
+ *   NetWorthCards 的「總資產 / 淨資產」大字讀的是 latest snapshot 的
+ *   total_assets / total_liabilities (已落地 column，不是即時 sum)。如果
+ *   只 DELETE wealth_accounts 不動 snapshot → 刪戶後總額不變、user 感覺
+ *   到 bug。
+ *
+ *   解法：DELETE 完跟 updateWealthAccount 同款的 snapshot upsert pattern —
+ *   重撈 *剩下的* wealth_accounts、從上一張 snapshot 拿 prev values，建
+ *   新 details + 算新 totals、UPSERT 今日。今日存在則覆蓋；不存在則新建。
+ *
+ * 歷史不動原則:
+ *   只動「今日」這張 snapshot；昨天以前的歷史保持原樣（包含已刪戶的值），
+ *   趨勢圖過去段不會因刪戶被回頭改寫。UI dialog 已 warning 點明這點。
+ *
+ * 邊界:
+ *   - 全 user 沒任何 snapshot 過 → UPSERT 後創第一張，所有剩下的 account
+ *     value=0；user 之後拍新 snapshot 才有真實數字（這也是合理初始狀態）
+ *   - 全 user 沒任何 account（剛刪光）→ snapshot 變 0/0/[]，趨勢線從這天歸零
  *
  * RLS DELETE policy + 顯式 .eq user_id 雙保險。
  */
@@ -254,15 +269,77 @@ export async function deleteWealthAccount(id: string): Promise<MutationResult> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { ok: false, error: "尚未登入" };
+  const uid = userData.user.id;
 
+  // (1) DELETE wealth_account
   const { error, count } = await supabase
     .from("wealth_accounts")
     .delete({ count: "exact" })
     .eq("id", id)
-    .eq("user_id", userData.user.id);
+    .eq("user_id", uid);
 
   if (error) return { ok: false, error: error.message };
   if (!count) return { ok: false, error: "找不到該帳戶（或不屬於你）" };
+
+  // (2) 重撈剩下的 accounts + latest snapshot (剛 DELETE 完，這次 SELECT 已不含被刪戶)
+  const [{ data: accountsData, error: accErr }, { data: latestData, error: latestErr }] =
+    await Promise.all([
+      supabase
+        .from("wealth_accounts")
+        .select("id, name, type")
+        .eq("user_id", uid),
+      supabase
+        .from("wealth_snapshots")
+        .select("details")
+        .eq("user_id", uid)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+  if (accErr) return { ok: false, error: accErr.message };
+  if (latestErr) return { ok: false, error: latestErr.message };
+
+  // (3) 沒任何 snapshot 過且沒任何剩下的 account → 完全清零，無需 UPSERT
+  if ((!accountsData || accountsData.length === 0) && !latestData) {
+    revalidatePath("/net-worth");
+    return { ok: true };
+  }
+
+  // 從上一張 snapshot 撈 prev values 給保留下來的 account 承襲
+  const prevDetails: WealthSnapshotItem[] =
+    (latestData?.details as WealthSnapshotItem[] | null) ?? [];
+  const prevValueByAcc = new Map<string, number>();
+  for (const d of prevDetails) prevValueByAcc.set(d.account_id, Number(d.value) || 0);
+
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+  const details: WealthSnapshotItem[] = [];
+  for (const a of accountsData ?? []) {
+    const accType = a.type as WealthAccountType;
+    const accId = a.id as string;
+    const v = prevValueByAcc.get(accId) ?? 0;
+    details.push({
+      account_id: accId,
+      name: a.name as string,
+      type: accType,
+      value: v,
+    });
+    if (accType === "asset") totalAssets += v;
+    else totalLiabilities += v;
+  }
+
+  const today = todayInTaipei();
+  const { error: snapErr } = await supabase.from("wealth_snapshots").upsert(
+    {
+      recorded_at: today,
+      total_assets: totalAssets,
+      total_liabilities: totalLiabilities,
+      details,
+    },
+    { onConflict: "user_id,recorded_at" }
+  );
+  if (snapErr) return { ok: false, error: snapErr.message };
 
   revalidatePath("/net-worth");
   return { ok: true };
