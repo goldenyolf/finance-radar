@@ -113,85 +113,86 @@ export function ExpensePieChart({ data }: Props) {
 
       <ul className="flex w-full flex-col gap-2 text-sm">
         {data.map((slice) => {
-          const budget = slice.budget > 0 ? slice.budget : undefined;
+          // 主 % 緊扣圓餅：永遠 = 該分類佔當月總消費比例（per UAT spec part 2）。
+          // 全分類加總保證 = 100%，跟左側 PieChart 視覺一一對應、不再混入預算進度。
           const totalPct = total > 0 ? (slice.amount / total) * 100 : 0;
+          const budget = slice.budget > 0 ? slice.budget : 0;
+          const hasBudget = budget > 0;
+          const budgetPct = hasBudget ? (slice.amount / budget) * 100 : 0;
+          const tone = budgetTone(budgetPct);
+          const overshoot = hasBudget && budgetPct >= 100;
+          const barWidth = Math.min(100, budgetPct);
 
-          if (budget && budget > 0) {
-            // 有預算 → 顯示 budget-relative 進度條
-            const budgetPct = (slice.amount / budget) * 100;
-            const tone = budgetTone(budgetPct);
-            const overshoot = budgetPct >= 100;
-            const barWidth = Math.min(100, budgetPct);
-            return (
-              <li
-                key={slice.category}
-                className="flex flex-col gap-1 rounded-md px-2 py-1.5 hover:bg-muted/40"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span
-                      aria-hidden
-                      className="inline-block size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: slice.color }}
-                    />
-                    <span className="truncate font-medium">{slice.label}</span>
-                  </span>
-                  <span
-                    className={`shrink-0 text-xs tabular-nums ${tone.text}`}
-                  >
-                    {budgetPct.toFixed(0)}%
-                  </span>
-                </div>
-                <div
-                  className={`h-1.5 w-full overflow-hidden rounded-full ${tone.track}`}
-                  role="progressbar"
-                  aria-valuenow={Math.round(budgetPct)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={`${slice.label} 預算消耗`}
-                >
-                  <div
-                    className={`h-full rounded-full ${tone.bar}`}
-                    style={{ width: `${barWidth}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
-                  <span>
-                    <span className="font-medium text-foreground">
-                      <Money value={slice.amount} format={formatTwd} />
-                    </span>{" "}
-                    / <Money value={budget} format={formatTwd} />
-                  </span>
-                  {overshoot && (
-                    <span className={`font-medium ${tone.text}`}>
-                      超支 <Money value={slice.amount - budget} format={formatTwd} />
-                    </span>
-                  )}
-                </div>
-              </li>
-            );
-          }
-
-          // 沒預算 → 維持原本「金額 · 佔總比」的緊湊呈現
           return (
             <li
               key={slice.category}
-              className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-muted/40"
+              className="flex flex-col gap-1.5 rounded-md px-2 py-1.5 hover:bg-muted/40"
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <span
-                  aria-hidden
-                  className="inline-block size-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: slice.color }}
-                />
-                <span className="truncate">{slice.label}</span>
-              </span>
-              <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  <Money value={slice.amount} format={formatTwd} />
+              {/*
+                Header row — 主結構：左側分類名 + 右側「金額 · 佔總比 %」。
+                這個 % 永遠 = 圓餅圖比例，不再隨預算 toggle 切換。
+              */}
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="inline-block size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: slice.color }}
+                  />
+                  <span className="truncate font-medium">{slice.label}</span>
                 </span>
-                <span className="ml-1">· {totalPct.toFixed(0)}%</span>
-              </span>
+                <span className="shrink-0 text-right text-xs tabular-nums">
+                  <span className="font-medium text-foreground">
+                    <Money value={slice.amount} format={formatTwd} />
+                  </span>
+                  <span className="ml-1.5 text-muted-foreground">
+                    {totalPct.toFixed(0)}%
+                  </span>
+                </span>
+              </div>
+
+              {/*
+                預算進度 — 可選次要資訊，放到下方視覺解耦。
+                標籤改「已用 X%」明示「這是預算用量」，與圓餅圖比例徹底分離。
+                沒設預算的分類整段不渲染。
+              */}
+              {hasBudget && (
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-baseline justify-between text-[10px] leading-none text-muted-foreground/70">
+                    <span>預算進度</span>
+                    <span className={`tabular-nums ${tone.text}`}>
+                      已用 {budgetPct.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div
+                    className={`h-1 w-full overflow-hidden rounded-full ${tone.track}`}
+                    role="progressbar"
+                    aria-valuenow={Math.round(budgetPct)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${slice.label} 預算消耗`}
+                  >
+                    <div
+                      className={`h-full rounded-full ${tone.bar}`}
+                      style={{ width: `${barWidth}%` }}
+                    />
+                  </div>
+                  <div className="flex items-baseline justify-between text-[10px] leading-none text-muted-foreground/60">
+                    <span className="tabular-nums">
+                      / <Money value={budget} format={formatTwd} />
+                    </span>
+                    {overshoot && (
+                      <span className={`font-medium ${tone.text}`}>
+                        超支{" "}
+                        <Money
+                          value={slice.amount - budget}
+                          format={formatTwd}
+                        />
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </li>
           );
         })}

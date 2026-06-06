@@ -191,27 +191,105 @@ export interface CategorySlice {
 }
 
 /**
+ * 描述欄位含這些字串時，視為「系統 / 校正 / 期初」非真實日常消費 — 預設過濾。
+ * 大小寫不敏感，純 includes 比對。新增關鍵字直接擴這陣列。
+ */
+const SYSTEM_DESCRIPTION_MARKERS = [
+  "system_initial",
+  "系統初始",
+  "期初",
+  "校正餘額",
+  "餘額校正",
+  "餘額調整",
+  "資產調度",
+  "資產重新分配",
+  "opening balance",
+  "initial balance",
+];
+
+/**
+ * 單筆 expense 在當月被視為 outlier 的門檻：佔 raw monthly total 超過此比例。
+ * 0.33 = 一筆超過全月 1/3 → 視為「大額調度」非日常 — 過濾掉避免圓餅被吃掉。
+ */
+const OUTLIER_RATIO_THRESHOLD = 0.33;
+
+/**
+ * 判定單筆 transaction 是否屬於「系統 / 大額調度」非日常消費。
+ *
+ * 兩條判定（任一命中即視為 outlier）：
+ *   (a) description 含 SYSTEM_DESCRIPTION_MARKERS 任一字串 — user 自己標
+ *       「系統初始」「校正餘額」這類的記帳
+ *   (b) 單筆金額 / 當月 raw total > 0.33 — 數據驅動，自動抓出「異常大額
+ *       調度」（不靠 hardcoded 金額，能跟著 user 收入規模自適應）
+ *
+ * monthlyTotal 為 0 時略過 (b)，只看 (a) — 避免 division by zero。
+ */
+function isOutlierExpense(
+  tx: TransactionRow,
+  monthlyTotal: number
+): boolean {
+  const desc = (tx.description ?? "").toLowerCase();
+  for (const m of SYSTEM_DESCRIPTION_MARKERS) {
+    if (desc.includes(m.toLowerCase())) return true;
+  }
+  if (monthlyTotal > 0) {
+    const amt = num(tx.amount);
+    if (amt / monthlyTotal > OUTLIER_RATIO_THRESHOLD) return true;
+  }
+  return false;
+}
+
+export interface AggregateOptions {
+  /**
+   * 排除「系統初始 / 校正餘額 / 異常大額調度」非日常消費（per spec）。
+   * - true (建議預設): 圓餅圖回到真實日常消費
+   * - false: 完整 raw view，含所有當月已完成 expense
+   * 不影響 type='transfer' / type='income' 的過濾（那本來就排除）。
+   */
+  excludeOutliers?: boolean;
+}
+
+/**
  * 統計給定 transactions 中「當月已發生」的 expense，按 category 加總。
  * 回傳已過濾零項目、由大到小排序的陣列；只含 amount > 0 的分類。
  *
  * 若提供 `categories`（動態 DB 來源），label/color 會從那邊 byCode 查詢，
  * 讓使用者在 /settings 改色名後即時反映到圖表；否則 fallback 到靜態常數。
+ *
+ * excludeOutliers (per UAT spec)：
+ *   兩段式 aggregation — 先算 raw monthly total 當分母，第二段過濾掉
+ *   「系統 / 大額調度」outliers 後重算分類總額。這樣 outlier 判定是
+ *   data-driven 比例，不靠 hardcoded 金額門檻。
  */
 export function aggregateMonthlyByCategory(
   transactions: TransactionRow[],
   now: Date = new Date(),
-  categories?: CategoryRow[]
+  categories?: CategoryRow[],
+  options?: AggregateOptions
 ): CategorySlice[] {
   const year = now.getFullYear();
   const month = now.getMonth();
-  const totals = new Map<ExpenseCategory, number>();
 
+  // 第一段：撈出當月所有「合格 expense」（type/status/日期過濾後的池子）
+  const monthExpenses: TransactionRow[] = [];
   for (const t of transactions) {
     if (t.type !== "expense") continue;
     if (t.status !== "completed") continue;
     const d = new Date(t.date);
     if (Number.isNaN(d.getTime())) continue;
     if (d.getFullYear() !== year || d.getMonth() !== month) continue;
+    monthExpenses.push(t);
+  }
+
+  // 第二段：若啟用排除，先算 raw total 當門檻分母，再篩掉 outlier
+  let workingSet = monthExpenses;
+  if (options?.excludeOutliers) {
+    const rawTotal = monthExpenses.reduce((s, t) => s + num(t.amount), 0);
+    workingSet = monthExpenses.filter((t) => !isOutlierExpense(t, rawTotal));
+  }
+
+  const totals = new Map<ExpenseCategory, number>();
+  for (const t of workingSet) {
     const key = (t.category ?? "other") as ExpenseCategory;
     totals.set(key, (totals.get(key) ?? 0) + num(t.amount));
   }

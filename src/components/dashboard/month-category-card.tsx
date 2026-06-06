@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Eye,
+  EyeOff,
   Layers,
   PieChart as PieChartIcon,
   TrendingDown,
@@ -54,6 +56,8 @@ export function MonthCategoryCard({
 }: Props) {
   const [selectedAccount, setSelectedAccount] = useState<string>(ALL);
   const [mode, setMode] = useState<CategoryMode>("expense");
+  // 預設 ON — 圓餅圖首次呈現「真實日常消費」不被系統 / 大額調度污染 (per UAT spec)
+  const [excludeOutliers, setExcludeOutliers] = useState<boolean>(true);
 
   // 帳戶 scope 過濾（兩模式共用）
   const scopedTransactions = useMemo(() => {
@@ -63,8 +67,10 @@ export function MonthCategoryCard({
 
   const expenseSlices = useMemo(() => {
     const base = now ?? new Date();
-    return aggregateMonthlyByCategory(scopedTransactions, base, categories);
-  }, [scopedTransactions, now, categories]);
+    return aggregateMonthlyByCategory(scopedTransactions, base, categories, {
+      excludeOutliers,
+    });
+  }, [scopedTransactions, now, categories, excludeOutliers]);
 
   const incomeSlices = useMemo(() => {
     const base = now ?? new Date();
@@ -153,8 +159,19 @@ export function MonthCategoryCard({
           </div>
 
           {/* 🆕 支出 / 收入 segmented control — iOS 風 framer-motion 滑塊 */}
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <ModeSegmentedControl mode={mode} onChange={setMode} />
+            {/*
+              👁️ 排除大額/系統項目 toggle — 只在 expense 模式顯示（income 不需要）。
+              預設 ON：圓餅圖呈現「真實日常消費」不被系統 / 大額調度污染。
+              OFF 顯示 raw 數據，給 user「我要看全部」的退路。
+            */}
+            {mode === "expense" && (
+              <OutlierToggle
+                excluded={excludeOutliers}
+                onChange={setExcludeOutliers}
+              />
+            )}
           </div>
         </CardHeader>
 
@@ -182,6 +199,45 @@ export function MonthCategoryCard({
         </CardContent>
       </Card>
     </section>
+  );
+}
+
+/* ─────────────────── Outlier 排除 Toggle ─────────────────── */
+
+/**
+ * 👁️ 排除大額/系統項目 — 極簡 toggle pill。
+ *
+ * 設計:
+ *   - Apple 風 — 用 emerald 色彩在 ON 時提示「乾淨數據鎖定中」，OFF 時降回
+ *     muted 灰色暗示「raw 模式」
+ *   - aria-pressed 對應 toggle 語意（不是 checkbox / radio）
+ *   - icon 動態切換 Eye <-> EyeOff，強化「在看 / 不在看」的視覺隱喻
+ */
+function OutlierToggle({
+  excluded,
+  onChange,
+}: {
+  excluded: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const Icon = excluded ? Eye : EyeOff;
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={excluded}
+      aria-label="排除大額或系統項目"
+      onClick={() => onChange(!excluded)}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors",
+        excluded
+          ? "bg-emerald-500/10 text-emerald-400 ring-emerald-500/30 hover:bg-emerald-500/15"
+          : "bg-muted/40 text-muted-foreground ring-foreground/10 hover:bg-muted/60"
+      )}
+    >
+      <Icon className="size-3.5" />
+      <span>排除大額/系統項目</span>
+    </button>
   );
 }
 
