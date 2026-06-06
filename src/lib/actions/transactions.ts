@@ -8,6 +8,12 @@ import { runBudgetAlerts } from "@/lib/budget-alerts";
 import { createClient } from "@/lib/supabase/server";
 
 import type { ExpenseCategory, IncomeCategory } from "@/lib/dashboard";
+import { EXPENSE_CATEGORY_LABEL } from "@/lib/expense-categories";
+
+/** 7 大支出分類 code set — server-side enum validation 用 */
+const EXPENSE_CATEGORY_CODES = new Set<string>(
+  Object.keys(EXPENSE_CATEGORY_LABEL)
+);
 
 export type TransactionType = "income" | "expense" | "transfer";
 export type TransactionPriority = "essential" | "non_essential";
@@ -172,6 +178,75 @@ export async function updateTransaction(
   if (userData?.user) {
     await runBudgetAlerts(supabase, userData.user.id);
   }
+
+  return { ok: true };
+}
+
+/**
+ * 輕量分類重分類 action — 給 analytics drill-down 面板「現場修正」用。
+ *
+ * 為什麼不重用 updateTransaction:
+ *   updateTransaction 要求 description / amount / type 等一整組欄位驗證，
+ *   只想改分類的場景傳那些是浪費 + caller 端要組假資料。獨立 action 更貼
+ *   現場修正的單一意圖，也方便加 budget alert 連動。
+ *
+ * 規則:
+ *   - 只接受 7 大 expense 分類 code（前端枚舉外的字串 server 端直接 reject）
+ *   - 只動 type='expense' 的交易（transfer / income 沒有 expense category 概念）
+ *   - 雙保險：RLS UPDATE policy + .eq('user_id', uid) 顯式 scope
+ *   - 重算 runBudgetAlerts — 改分類等於把錢搬到另一個預算桶，可能觸發新警報
+ *
+ * 連動 revalidatePath: /（首頁 plates）/ /analytics（圓餅 + drill-down）/
+ *   /transactions（明細列）/ /net-worth（無影響但便宜，順手打）
+ */
+export async function updateTransactionCategory(
+  transactionId: string,
+  newCategory: string
+): Promise<MutationResult> {
+  if (!transactionId) return { ok: false, error: "缺少交易 ID" };
+  if (!EXPENSE_CATEGORY_CODES.has(newCategory)) {
+    return { ok: false, error: "分類錯誤" };
+  }
+
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+  const uid = userData.user.id;
+
+  // 先確認這筆是 expense — transfer / income 不該透過此 action 改分類
+  const { data: existing, error: fetchErr } = await supabase
+    .from("transactions")
+    .select("type, category")
+    .eq("id", transactionId)
+    .eq("user_id", uid)
+    .maybeSingle();
+  if (fetchErr) return { ok: false, error: fetchErr.message };
+  if (!existing) return { ok: false, error: "找不到該筆交易（或不屬於你）" };
+  if (existing.type !== "expense") {
+    return { ok: false, error: "只能修改支出交易的分類" };
+  }
+
+  // 樂觀短路：分類沒變就不打 DB（節流），但仍回 ok 讓 UI 行為一致
+  if (existing.category === newCategory) {
+    return { ok: true };
+  }
+
+  const { error, count } = await supabase
+    .from("transactions")
+    .update({ category: newCategory }, { count: "exact" })
+    .eq("id", transactionId)
+    .eq("user_id", uid);
+
+  if (error) return { ok: false, error: error.message };
+  if (!count) return { ok: false, error: "更新失敗（無命中）" };
+
+  // 預算門檻監控 — 改分類 = 錢從一個預算桶搬到另一個，可能觸發新警報
+  await runBudgetAlerts(supabase, uid);
+
+  revalidatePath("/");
+  revalidatePath("/analytics");
+  revalidatePath("/transactions");
+  revalidatePath("/net-worth");
 
   return { ok: true };
 }

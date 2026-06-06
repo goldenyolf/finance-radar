@@ -268,6 +268,7 @@ export function MonthCategoryCard({
                 selectedSlice?.label ?? EXPENSE_CATEGORY_LABEL[selectedCategory]
               }
               transactions={drilldownTransactions}
+              categories={categories ?? []}
               onClose={() => setSelectedCategory(null)}
             />
           </motion.div>
