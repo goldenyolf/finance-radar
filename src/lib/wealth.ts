@@ -58,6 +58,32 @@ export const numW = (v: number | string | null | undefined): number =>
   typeof v === "number" ? v : Number.parseFloat(v ?? "0") || 0;
 
 /**
+ * 找出已封存帳戶在「最後一張仍包含它」的 snapshot 裡的 value —
+ * 也就是 user 心目中「封存當時的估值」(per 0027 軟刪除追溯面板用)。
+ *
+ * 為什麼這樣定義:
+ *   archiveWealthAccount 會 UPSERT 今日 snapshot 把該戶剔除，所以「今日的
+ *   snapshot 沒有它」。往前 DESC 走，第一張仍含這個 account_id 的 snapshot
+ *   就是封存前最後一筆已落地的真實估值。
+ *
+ * 邊界:
+ *   - snapshots 為空或全部都不含此 account_id → 回 null
+ *     （UI 顯示 "—"；通常發生在 user 還沒拍過任何 snapshot 就把帳戶 archive）
+ *   - load-wealth.ts 預設只撈 last 24 月；archive 超過兩年的歷史值會回 null —
+ *     可接受 trade-off，老歷史不該佔頻寬
+ */
+export function findFrozenValue(
+  accountId: string,
+  snapshots: WealthSnapshotRow[]
+): number | null {
+  for (const s of snapshots) {
+    const item = s.details.find((d) => d.account_id === accountId);
+    if (item) return Number(item.value) || 0;
+  }
+  return null;
+}
+
+/**
  * 撈最新一筆快照 — snapshots 預設 DESC by recorded_at，所以拿 [0]。
  * 沒任何快照回 null（empty state）。
  */

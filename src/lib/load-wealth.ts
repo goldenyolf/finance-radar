@@ -48,3 +48,28 @@ export async function loadWealth(): Promise<WealthSnapshot> {
     return { accounts: [], snapshots: [] };
   }
 }
+
+/**
+ * 撈當前會員的已封存 wealth_accounts（per 0027 軟刪除）。
+ * 給 /net-worth 底部「📂 已封存資產追溯」摺疊面板用。
+ *
+ * 排序：archived_at DESC — 最近封存的優先呈現（user 翻找近期決策最常需要）。
+ *
+ * 跟 loadWealth() 分開撈是有意的：
+ *   - 大盤主流程 (active 過濾) 失敗也不該因為 archived 撈失敗連帶崩潰
+ *   - archived 是 cold path，新會員根本沒有，獨立 query 不拖慢主頁
+ */
+export async function loadArchivedWealthAccounts(): Promise<WealthAccountRow[]> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("wealth_accounts")
+      .select("*")
+      .eq("status", "archived")
+      .order("archived_at", { ascending: false });
+    if (error || !data) return [];
+    return data as WealthAccountRow[];
+  } catch {
+    return [];
+  }
+}

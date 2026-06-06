@@ -1,5 +1,6 @@
 import { CalendarClock, Wallet } from "lucide-react";
 
+import { ArchivedWealthAccounts } from "@/components/dashboard/archived-wealth-accounts";
 import { AssetAllocationCard } from "@/components/dashboard/asset-allocation-card";
 import { NetWorthCards } from "@/components/dashboard/net-worth-cards";
 import { NetWorthTrendChart } from "@/components/dashboard/net-worth-trend-chart";
@@ -14,7 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { loadWealth } from "@/lib/load-wealth";
+import { loadArchivedWealthAccounts, loadWealth } from "@/lib/load-wealth";
 import {
   buildDisplayAccounts,
   latestSnapshot,
@@ -34,7 +35,10 @@ export const dynamic = "force-dynamic";
  * Phase 4 會在 header 接「📸 更新本月資產快照」Dialog；現在先空著版位。
  */
 export default async function NetWorthPage() {
-  const { accounts, snapshots } = await loadWealth();
+  const [{ accounts, snapshots }, archived] = await Promise.all([
+    loadWealth(),
+    loadArchivedWealthAccounts(),
+  ]);
   const latest = latestSnapshot(snapshots);
   // snapshots 是 DESC（最新在前），所以 [1] 就是「前一筆」給 MoM 用
   const previous = snapshots[1] ?? null;
@@ -106,6 +110,13 @@ export default async function NetWorthPage() {
 
         {/* 資產 / 負債清單 */}
         <WealthAccountsList accounts={displayAccounts} />
+
+        {/*
+          📂 已封存資產追溯 — per 0027 軟刪除 + 原因追銷收尾。
+          摺疊默認關閉，配色克制 (muted)；展開後 timeline 列出歷史 archive
+          紀錄 + reason，劃下「完美閉環」。
+        */}
+        <ArchivedWealthAccounts archived={archived} snapshots={snapshots} />
       </main>
     </PageTransition>
   );
