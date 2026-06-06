@@ -11,10 +11,15 @@ import {
 
 import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
 import { Money } from "@/components/ui/money";
-import type { CategorySlice } from "@/lib/expense-categories";
+import type { CategorySlice, ExpenseCategory } from "@/lib/expense-categories";
+import { cn } from "@/lib/utils";
 
 type Props = {
   data: CategorySlice[];
+  /** drill-down 主路徑 — 當前選中分類；null = 未選 */
+  selectedCategory?: ExpenseCategory | null;
+  /** 點扇形 / 列表 row 觸發；caller 自己判斷重複點擊 → null toggle */
+  onSelectCategory?: (next: ExpenseCategory | null) => void;
 };
 
 function formatTwd(n: number) {
@@ -52,12 +57,22 @@ function budgetTone(pct: number): {
   };
 }
 
-export function ExpensePieChart({ data }: Props) {
+export function ExpensePieChart({
+  data,
+  selectedCategory = null,
+  onSelectCategory,
+}: Props) {
   if (data.length === 0) {
     return <ChartEmptyState variant="pie" />;
   }
 
   const total = data.reduce((sum, s) => sum + s.amount, 0);
+  const hasSelection = selectedCategory !== null;
+
+  function toggleCategory(cat: ExpenseCategory) {
+    if (!onSelectCategory) return;
+    onSelectCategory(cat === selectedCategory ? null : cat);
+  }
 
   return (
     <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px] sm:items-center">
@@ -75,10 +90,29 @@ export function ExpensePieChart({ data }: Props) {
               strokeWidth={2}
               isAnimationActive
               animationDuration={500}
+              onClick={(payload) => {
+                // Recharts payload 是 cell 的原始 data；safe-cast 取 category
+                const cat = (payload as { category?: string } | undefined)
+                  ?.category as ExpenseCategory | undefined;
+                if (cat) toggleCategory(cat);
+              }}
+              style={onSelectCategory ? { cursor: "pointer" } : undefined}
             >
-              {data.map((slice) => (
-                <Cell key={slice.category} fill={slice.color} />
-              ))}
+              {data.map((slice) => {
+                const isSelected = slice.category === selectedCategory;
+                // 有選中時非選取的扇形暗化 0.25；未選中時全部 1.0
+                const opacity = !hasSelection ? 1 : isSelected ? 1 : 0.25;
+                return (
+                  <Cell
+                    key={slice.category}
+                    fill={slice.color}
+                    fillOpacity={opacity}
+                    style={{
+                      transition: "fill-opacity 200ms ease-out",
+                    }}
+                  />
+                );
+              })}
             </Pie>
             <Tooltip
               cursor={{ fill: "transparent" }}
@@ -123,10 +157,35 @@ export function ExpensePieChart({ data }: Props) {
           const overshoot = hasBudget && budgetPct >= 100;
           const barWidth = Math.min(100, budgetPct);
 
+          const isSelected = slice.category === selectedCategory;
+          const dimmed = hasSelection && !isSelected;
           return (
             <li
               key={slice.category}
-              className="flex flex-col gap-1.5 rounded-md px-2 py-1.5 hover:bg-muted/40"
+              role={onSelectCategory ? "button" : undefined}
+              tabIndex={onSelectCategory ? 0 : undefined}
+              onClick={
+                onSelectCategory ? () => toggleCategory(slice.category) : undefined
+              }
+              onKeyDown={
+                onSelectCategory
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleCategory(slice.category);
+                      }
+                    }
+                  : undefined
+              }
+              className={cn(
+                "flex flex-col gap-1.5 rounded-md px-2 py-1.5 transition-all duration-200",
+                onSelectCategory && "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-foreground/20",
+                isSelected
+                  ? "bg-foreground/[0.04] ring-1 ring-foreground/15"
+                  : dimmed
+                  ? "opacity-50 hover:opacity-100 hover:bg-muted/40"
+                  : "hover:bg-muted/40"
+              )}
             >
               {/*
                 Header row — 主結構：左側分類名 + 右側「金額 · 佔總比 %」。
@@ -136,7 +195,10 @@ export function ExpensePieChart({ data }: Props) {
                 <span className="flex min-w-0 items-center gap-2">
                   <span
                     aria-hidden
-                    className="inline-block size-2.5 shrink-0 rounded-full"
+                    className={cn(
+                      "inline-block size-2.5 shrink-0 rounded-full transition-transform",
+                      isSelected && "scale-125 ring-2 ring-background"
+                    )}
                     style={{ backgroundColor: slice.color }}
                   />
                   <span className="truncate font-medium">{slice.label}</span>

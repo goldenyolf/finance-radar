@@ -261,16 +261,26 @@ export interface AggregateOptions {
  *   「系統 / 大額調度」outliers 後重算分類總額。這樣 outlier 判定是
  *   data-driven 比例，不靠 hardcoded 金額門檻。
  */
-export function aggregateMonthlyByCategory(
+/**
+ * 撈當月「合格 expense」清單 — 跟 aggregateMonthlyByCategory 同款過濾邏輯，
+ * 但回 transaction 陣列而非分類加總，給「圓餅鑽取明細」(per UAT spec drill-down)
+ * 共用：圓餅圖跟下方 drill-down panel 數據基礎一致，避免「pie 顯示 X 元 / 點開
+ * 列表加總 ≠ X」的不一致。
+ *
+ * 過濾鏈跟 aggregator 對齊：
+ *   1. type='expense' + status='completed' + 同月份
+ *   2. (可選) excludeOutliers — 兩段式：先算 raw total 當門檻，再過濾 outlier
+ *
+ * 不在這層 sort — caller 自己決定 ASC/DESC（pie 走 amount DESC，drill-down 走 date DESC）。
+ */
+export function filterMonthlyExpenses(
   transactions: TransactionRow[],
   now: Date = new Date(),
-  categories?: CategoryRow[],
   options?: AggregateOptions
-): CategorySlice[] {
+): TransactionRow[] {
   const year = now.getFullYear();
   const month = now.getMonth();
 
-  // 第一段：撈出當月所有「合格 expense」（type/status/日期過濾後的池子）
   const monthExpenses: TransactionRow[] = [];
   for (const t of transactions) {
     if (t.type !== "expense") continue;
@@ -281,12 +291,20 @@ export function aggregateMonthlyByCategory(
     monthExpenses.push(t);
   }
 
-  // 第二段：若啟用排除，先算 raw total 當門檻分母，再篩掉 outlier
-  let workingSet = monthExpenses;
-  if (options?.excludeOutliers) {
-    const rawTotal = monthExpenses.reduce((s, t) => s + num(t.amount), 0);
-    workingSet = monthExpenses.filter((t) => !isOutlierExpense(t, rawTotal));
-  }
+  if (!options?.excludeOutliers) return monthExpenses;
+
+  const rawTotal = monthExpenses.reduce((s, t) => s + num(t.amount), 0);
+  return monthExpenses.filter((t) => !isOutlierExpense(t, rawTotal));
+}
+
+export function aggregateMonthlyByCategory(
+  transactions: TransactionRow[],
+  now: Date = new Date(),
+  categories?: CategoryRow[],
+  options?: AggregateOptions
+): CategorySlice[] {
+  // 兩段式過濾抽到 filterMonthlyExpenses（drill-down 共用，確保數據一致）
+  const workingSet = filterMonthlyExpenses(transactions, now, options);
 
   const totals = new Map<ExpenseCategory, number>();
   for (const t of workingSet) {

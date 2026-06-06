@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Eye,
@@ -12,6 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { CategoryDrilldownPanel } from "@/components/dashboard/category-drilldown-panel";
 import { ExpensePieChart } from "@/components/dashboard/expense-pie-chart";
 import { IncomePieChart } from "@/components/dashboard/income-pie-chart";
 import {
@@ -31,7 +32,13 @@ import {
 import { getAccountLabel } from "@/lib/account-display";
 import type { CategoryRow } from "@/lib/categories";
 import type { AccountRow, TransactionRow } from "@/lib/dashboard";
-import { aggregateMonthlyByCategory } from "@/lib/expense-categories";
+import {
+  aggregateMonthlyByCategory,
+  EXPENSE_CATEGORY_COLOR,
+  EXPENSE_CATEGORY_LABEL,
+  filterMonthlyExpenses,
+  type ExpenseCategory,
+} from "@/lib/expense-categories";
 import { triggerHaptic } from "@/lib/haptics";
 import { aggregateMonthlyByIncomeCategory } from "@/lib/income-categories";
 import { cn } from "@/lib/utils";
@@ -58,6 +65,9 @@ export function MonthCategoryCard({
   const [mode, setMode] = useState<CategoryMode>("expense");
   // 預設 ON — 圓餅圖首次呈現「真實日常消費」不被系統 / 大額調度污染 (per UAT spec)
   const [excludeOutliers, setExcludeOutliers] = useState<boolean>(true);
+  // 圓餅鑽取明細 — 點扇形 / 列表 row toggle；null = 未選 (per UAT drill-down spec)
+  const [selectedCategory, setSelectedCategory] =
+    useState<ExpenseCategory | null>(null);
 
   // 帳戶 scope 過濾（兩模式共用）
   const scopedTransactions = useMemo(() => {
@@ -76,6 +86,32 @@ export function MonthCategoryCard({
     const base = now ?? new Date();
     return aggregateMonthlyByIncomeCategory(scopedTransactions, base);
   }, [scopedTransactions, now]);
+
+  // Drill-down 明細：用 filterMonthlyExpenses 跟 aggregator 走同款過濾鏈
+  // （含 excludeOutliers），再依 category 過 + sort date DESC。
+  // 確保「pie 顯示的 X 元 = 列表加總」一致性。
+  const drilldownTransactions = useMemo(() => {
+    if (mode !== "expense" || !selectedCategory) return [];
+    const base = now ?? new Date();
+    const monthExpenses = filterMonthlyExpenses(scopedTransactions, base, {
+      excludeOutliers,
+    });
+    return monthExpenses
+      .filter((t) => (t.category ?? "other") === selectedCategory)
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [mode, selectedCategory, scopedTransactions, now, excludeOutliers]);
+
+  // 切 mode (expense -> income) / 改帳戶範圍 → 清掉鑽取選擇避免殘留
+  // (相依集合裡少 selectedCategory 是有意的 — 不會跟自己打架)
+  useEffect(() => {
+    setSelectedCategory(null);
+  }, [mode, selectedAccount]);
+
+  // 選中的 slice 元資料給 drill-down panel 用 (顏色 / label)
+  const selectedSlice = useMemo(() => {
+    if (!selectedCategory) return null;
+    return expenseSlices.find((s) => s.category === selectedCategory) ?? null;
+  }, [selectedCategory, expenseSlices]);
 
   const isScoped = selectedAccount !== ALL;
   const scopedAccountName = isScoped
@@ -190,7 +226,11 @@ export function MonthCategoryCard({
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
               {mode === "expense" ? (
-                <ExpensePieChart data={expenseSlices} />
+                <ExpensePieChart
+                  data={expenseSlices}
+                  selectedCategory={selectedCategory}
+                  onSelectCategory={setSelectedCategory}
+                />
               ) : (
                 <IncomePieChart data={incomeSlices} />
               )}
@@ -198,6 +238,41 @@ export function MonthCategoryCard({
           </AnimatePresence>
         </CardContent>
       </Card>
+
+      {/*
+        🔍 鑽取明細面板 — 圖卡正下方滑入。
+        AnimatePresence + spring：高度 0 ↔ auto + opacity 0 ↔ 1，落點吸附帶
+        微 overshoot；overflow-hidden 包外層避免展開時內容溢出。
+        只在 expense 模式 + 有 selection 時 render；income 模式或未選一律不出現。
+      */}
+      <AnimatePresence initial={false}>
+        {mode === "expense" && selectedCategory && (
+          <motion.div
+            key="drilldown"
+            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+            animate={{ opacity: 1, height: "auto", marginTop: 12 }}
+            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+            transition={{
+              type: "spring",
+              stiffness: 320,
+              damping: 32,
+              mass: 0.8,
+            }}
+            className="overflow-hidden"
+          >
+            <CategoryDrilldownPanel
+              color={
+                selectedSlice?.color ?? EXPENSE_CATEGORY_COLOR[selectedCategory]
+              }
+              label={
+                selectedSlice?.label ?? EXPENSE_CATEGORY_LABEL[selectedCategory]
+              }
+              transactions={drilldownTransactions}
+              onClose={() => setSelectedCategory(null)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
