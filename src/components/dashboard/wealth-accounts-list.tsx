@@ -49,7 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  deleteWealthAccount,
+  archiveWealthAccount,
   updateWealthAccount,
 } from "@/lib/actions/wealth";
 import {
@@ -71,9 +71,9 @@ export function WealthAccountsList({ accounts }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  // Dialog state — 共用 edit + delete confirm；同時 active 一個
+  // Dialog state — 共用 edit + archive confirm；同時 active 一個
   const [editing, setEditing] = useState<DisplayAccount | null>(null);
-  const [deletingTarget, setDeletingTarget] = useState<DisplayAccount | null>(
+  const [archivingTarget, setArchivingTarget] = useState<DisplayAccount | null>(
     null
   );
 
@@ -81,6 +81,8 @@ export function WealthAccountsList({ accounts }: Props) {
   const [draftName, setDraftName] = useState("");
   const [draftType, setDraftType] = useState<WealthAccountType>("asset");
   const [draftValue, setDraftValue] = useState<string>("");
+  // Archive reason for confirm dialog (per 0027 軟刪除 + 原因追銷)
+  const [archiveReason, setArchiveReason] = useState<string>("");
 
   function openEdit(acc: DisplayAccount) {
     setEditing(acc);
@@ -139,25 +141,34 @@ export function WealthAccountsList({ accounts }: Props) {
     });
   }
 
-  function openDeleteConfirm() {
+  function openArchiveConfirm() {
     if (!editing) return;
     const target = editing;
     setEditing(null); // 關 edit dialog，避免兩個彈窗疊
+    setArchiveReason(""); // 每次重置，避免上次殘留
     // 微延遲讓關 dialog 動畫先跑，再開 confirm，視覺乾淨
-    setTimeout(() => setDeletingTarget(target), 80);
+    setTimeout(() => setArchivingTarget(target), 80);
   }
 
-  function handleConfirmDelete() {
-    if (!deletingTarget) return;
-    const target = deletingTarget;
+  function handleConfirmArchive() {
+    if (!archivingTarget) return;
+    const target = archivingTarget;
+    const reason = archiveReason.trim();
+    if (!reason) {
+      toast.error("請輸入封存原因");
+      return;
+    }
     startTransition(async () => {
-      const result = await deleteWealthAccount(target.id);
+      const result = await archiveWealthAccount({ id: target.id, reason });
       if (!result.ok) {
-        toast.error("刪除失敗", { description: result.error });
+        toast.error("封存失敗", { description: result.error });
         return;
       }
-      toast.success(`已刪除【${target.name}】`);
-      setDeletingTarget(null);
+      toast.success(`已封存【${target.name}】`, {
+        description: `原因：${reason.length > 30 ? reason.slice(0, 30) + "..." : reason}`,
+      });
+      setArchivingTarget(null);
+      setArchiveReason("");
       router.refresh();
     });
   }
@@ -299,12 +310,12 @@ export function WealthAccountsList({ accounts }: Props) {
             <Button
               type="button"
               variant="ghost"
-              onClick={openDeleteConfirm}
+              onClick={openArchiveConfirm}
               disabled={pending}
               className="text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
             >
               <Trash2 className="size-3.5" />
-              刪除
+              封存
             </Button>
             <div className="flex gap-2">
               <Button
@@ -328,62 +339,88 @@ export function WealthAccountsList({ accounts }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* ── Delete confirm dialog (二次確認，防誤刪) ── */}
+      {/* ── Archive confirm dialog (per 0027 軟刪除 + 原因追銷) ── */}
       <Dialog
-        open={!!deletingTarget}
-        onOpenChange={(o) => !o && !pending && setDeletingTarget(null)}
+        open={!!archivingTarget}
+        onOpenChange={(o) => !o && !pending && setArchivingTarget(null)}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="text-rose-600 dark:text-rose-400">
-              確認刪除 {deletingTarget ? TYPE_LABEL[deletingTarget.type] : ""}
+              封存 {archivingTarget ? TYPE_LABEL[archivingTarget.type] : ""}
               {" — "}
-              {deletingTarget?.name}
+              {archivingTarget?.name}
             </DialogTitle>
             <DialogDescription>
-              此操作不可復原。刪除後：
+              封存是「軟刪除」— 帳戶會從現役大盤消失，但底層 row + 歷史快照
+              完整保留供追溯。請填寫封存原因（之後可以查到）。
             </DialogDescription>
           </DialogHeader>
 
-          <ul className="space-y-1.5 text-sm text-muted-foreground">
-            <li className="flex items-start gap-2">
-              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-current" />
-              <span>此帳戶今後不會出現在資產 / 負債清單。</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-current" />
-              <span>
-                <span className="font-medium text-foreground/80">
-                  歷史快照中的紀錄不會被擦除
-                </span>{" "}
-                — 過去的趨勢圖數值維持原樣，不會因為刪戶被回頭改寫。
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-current" />
-              <span>
-                之後拍新快照時，這個帳戶不會再被列入，總資產 / 負債會自動排除它。
-              </span>
-            </li>
-          </ul>
+          <form
+            id="archive-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleConfirmArchive();
+            }}
+            className="flex flex-col gap-3"
+          >
+            <div className="grid gap-1.5">
+              <Label htmlFor="archive-reason">封存原因（必填）</Label>
+              <textarea
+                id="archive-reason"
+                value={archiveReason}
+                onChange={(e) => setArchiveReason(e.target.value)}
+                rows={3}
+                required
+                maxLength={500}
+                autoFocus
+                placeholder="例：滿期解約 / 轉購買股票 / 帳戶已關閉"
+                className="rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+              <p className="text-[11px] text-muted-foreground/70">
+                {archiveReason.length}/500 字 — 寫得越詳細，半年後翻看越好查。
+              </p>
+            </div>
+
+            <ul className="space-y-1.5 text-xs text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <span className="mt-1.5 size-1 shrink-0 rounded-full bg-current" />
+                <span>封存後此帳戶不會出現在資產 / 負債列表 + 圓餅圖 + 大盤。</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-1.5 size-1 shrink-0 rounded-full bg-current" />
+                <span>
+                  <span className="font-medium text-foreground/80">歷史快照完整保留</span>
+                  ：過去的趨勢圖數值維持原樣，archived 帳戶名 + 值仍在 details JSONB 內可查。
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-1.5 size-1 shrink-0 rounded-full bg-current" />
+                <span>
+                  封存今日 snapshot 會自動扣除這戶 — 大字 + 圓餅立刻反映新總額。
+                </span>
+              </li>
+            </ul>
+          </form>
 
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => setDeletingTarget(null)}
+              onClick={() => setArchivingTarget(null)}
               disabled={pending}
             >
               取消
             </Button>
             <Button
-              type="button"
-              onClick={handleConfirmDelete}
-              disabled={pending}
+              type="submit"
+              form="archive-form"
+              disabled={pending || !archiveReason.trim()}
               className="bg-rose-600 text-white hover:bg-rose-700 focus-visible:ring-rose-500"
             >
               {pending && <Loader2 className="size-3.5 animate-spin" />}
-              {pending ? "刪除中..." : "確認刪除"}
+              {pending ? "封存中..." : "確認封存"}
             </Button>
           </DialogFooter>
         </DialogContent>

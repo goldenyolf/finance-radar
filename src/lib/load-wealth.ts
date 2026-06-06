@@ -27,6 +27,9 @@ export async function loadWealth(): Promise<WealthSnapshot> {
       supabase
         .from("wealth_accounts")
         .select("*")
+        // 軟刪除過濾 (per 0027) — 大盤 / 圓餅 / 列表只看 active；
+        // 歷史快照詳情仍透過 wealth_snapshots.details JSONB 保留 archived 紀錄
+        .eq("status", "active")
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
       // DESC：UI 拿 [0] 就是最新；趨勢圖在 client 端轉 ASC 再餵 Recharts

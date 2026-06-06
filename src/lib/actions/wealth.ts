@@ -65,10 +65,12 @@ export async function upsertWealthSnapshot(
 
   const supabase = await createClient();
 
-  // 重撈帳戶清單，依當前 RLS scope 看到的為準（不信任 client 的 account_id）
+  // 重撈帳戶清單，依當前 RLS scope 看到的為準（不信任 client 的 account_id）。
+  // 軟刪除過濾 (per 0027) — archived 不參與新快照計算
   const { data: accountsData, error: accErr } = await supabase
     .from("wealth_accounts")
-    .select("id, name, type");
+    .select("id, name, type")
+    .eq("status", "active");
   if (accErr) return { ok: false, error: accErr.message };
   if (!accountsData || accountsData.length === 0) {
     return { ok: false, error: "請先建立至少一個財富帳戶" };
@@ -176,13 +178,14 @@ export async function updateWealthAccount(
     return { ok: true };
   }
 
-  // (3) Snapshot upsert：拉 current accounts + latest snapshot，重組 details
+  // (3) Snapshot upsert：拉 active accounts (per 0027 軟刪除) + latest snapshot，重組 details
   const [{ data: accountsData, error: accErr }, { data: latestData, error: latestErr }] =
     await Promise.all([
       supabase
         .from("wealth_accounts")
         .select("id, name, type")
-        .eq("user_id", uid),
+        .eq("user_id", uid)
+        .eq("status", "active"),
       supabase
         .from("wealth_snapshots")
         .select("details")
@@ -239,55 +242,78 @@ export async function updateWealthAccount(
   return { ok: true };
 }
 
+interface ArchiveWealthAccountInput {
+  id: string;
+  /** 封存原因（per 0027 spec：滿期解約 / 轉購買股票 等）。空字串會在 server 端轉 null。 */
+  reason: string;
+}
+
 /**
- * 刪除 wealth_account，並重算今日 snapshot 排除該戶（保歷史不擦）。
+ * 軟刪除 (archive) wealth_account — 取代舊版 hard delete (per 0027 spec)。
+ *
+ * 核心:
+ *   UPDATE status='archived' + archive_reason + archived_at；row 完整保留。
+ *
+ * 三件事同步發生:
+ *   (1) UPDATE wealth_accounts: status / archive_reason / archived_at
+ *   (2) 重算今日 snapshot 排除 archived (同 deleteWealthAccount 邏輯)
+ *   (3) revalidatePath('/net-worth') → 大盤同步刷新
  *
  * 為什麼要重算今日 snapshot:
- *   NetWorthCards 的「總資產 / 淨資產」大字讀的是 latest snapshot 的
- *   total_assets / total_liabilities (已落地 column，不是即時 sum)。如果
- *   只 DELETE wealth_accounts 不動 snapshot → 刪戶後總額不變、user 感覺
- *   到 bug。
+ *   NetWorthCards / AssetAllocationCard 讀 latest snapshot 的 total_*
+ *   column（不是即時 sum）。只 UPDATE status 不動 snapshot → 大字不會變、
+ *   user 看到「封存了總資產沒減」的 bug（這 bug 在 0027 之前的 delete 版
+ *   就踩過）。所以一定要 UPSERT 今日 snapshot 把 archived 的值剔除。
  *
- *   解法：DELETE 完跟 updateWealthAccount 同款的 snapshot upsert pattern —
- *   重撈 *剩下的* wealth_accounts、從上一張 snapshot 拿 prev values，建
- *   新 details + 算新 totals、UPSERT 今日。今日存在則覆蓋；不存在則新建。
+ * 歷史不動原則保留:
+ *   只動「今日」這張 snapshot，昨天以前歷史保持原樣（包含 archived 帳戶
+ *   的歷史值），趨勢圖過去段呈現原樣 — 配合 archive_reason 文字紀錄達成
+ *   「完美追溯性」spec 目標。
  *
- * 歷史不動原則:
- *   只動「今日」這張 snapshot；昨天以前的歷史保持原樣（包含已刪戶的值），
- *   趨勢圖過去段不會因刪戶被回頭改寫。UI dialog 已 warning 點明這點。
- *
- * 邊界:
- *   - 全 user 沒任何 snapshot 過 → UPSERT 後創第一張，所有剩下的 account
- *     value=0；user 之後拍新 snapshot 才有真實數字（這也是合理初始狀態）
- *   - 全 user 沒任何 account（剛刪光）→ snapshot 變 0/0/[]，趨勢線從這天歸零
- *
- * RLS DELETE policy + 顯式 .eq user_id 雙保險。
+ * RLS UPDATE policy + 顯式 .eq user_id 雙保險。
  */
-export async function deleteWealthAccount(id: string): Promise<MutationResult> {
-  if (!id) return { ok: false, error: "缺少帳戶 ID" };
+export async function archiveWealthAccount(
+  input: ArchiveWealthAccountInput
+): Promise<MutationResult> {
+  if (!input.id) return { ok: false, error: "缺少帳戶 ID" };
+  const reason = input.reason.trim();
+  if (!reason) return { ok: false, error: "請輸入封存原因" };
+  if (reason.length > 500) return { ok: false, error: "原因不可超過 500 字" };
 
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { ok: false, error: "尚未登入" };
   const uid = userData.user.id;
 
-  // (1) DELETE wealth_account
+  // (1) UPDATE status='archived' + reason + timestamp
   const { error, count } = await supabase
     .from("wealth_accounts")
-    .delete({ count: "exact" })
-    .eq("id", id)
-    .eq("user_id", uid);
+    .update(
+      {
+        status: "archived",
+        archive_reason: reason,
+        archived_at: new Date().toISOString(),
+      },
+      { count: "exact" }
+    )
+    .eq("id", input.id)
+    .eq("user_id", uid)
+    // 防呆：already-archived 的不重複封存（idempotent）
+    .eq("status", "active");
 
   if (error) return { ok: false, error: error.message };
-  if (!count) return { ok: false, error: "找不到該帳戶（或不屬於你）" };
+  if (!count) {
+    return { ok: false, error: "找不到該帳戶或已封存（或不屬於你）" };
+  }
 
-  // (2) 重撈剩下的 accounts + latest snapshot (剛 DELETE 完，這次 SELECT 已不含被刪戶)
+  // (2) 重算今日 snapshot — 只拉 active accounts (剛 archive 完，這次 SELECT 已不含被封存戶)
   const [{ data: accountsData, error: accErr }, { data: latestData, error: latestErr }] =
     await Promise.all([
       supabase
         .from("wealth_accounts")
         .select("id, name, type")
-        .eq("user_id", uid),
+        .eq("user_id", uid)
+        .eq("status", "active"),
       supabase
         .from("wealth_snapshots")
         .select("details")

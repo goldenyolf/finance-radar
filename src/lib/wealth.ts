@@ -15,12 +15,20 @@
 
 export type WealthAccountType = "asset" | "liability";
 
+export type WealthAccountStatus = "active" | "archived";
+
 export interface WealthAccountRow {
   id: string;
   user_id: string;
   name: string;
   type: WealthAccountType;
   sort_order: number;
+  /** 軟刪除狀態 (per 0027)。'archived' 不會出現在大盤 / 圓餅 / 列表，但歷史快照保留。 */
+  status: WealthAccountStatus;
+  /** 封存原因 (per 0027) — 純文字審計欄，archive 時 user 必填。 */
+  archive_reason: string | null;
+  /** 封存時間戳 (per 0027)。 */
+  archived_at: string | null;
   created_at?: string;
   updated_at?: string;
 }
