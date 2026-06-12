@@ -214,15 +214,21 @@ const SYSTEM_DESCRIPTION_MARKERS = [
 const OUTLIER_RATIO_THRESHOLD = 0.33;
 
 /**
+ * 絕對金額門檻：單筆 ≥ NT$50,000 視為非日常一次性大額（家電 / 醫療 / 年繳保險 /
+ * 旅遊團費 …）。比例門檻在大月份會擦邊不過（e.g. 149K / 462K = 32.4% 卡在
+ * 33% 下方），絕對門檻當保底。想調鬆 / 緊改這一個常數即可。
+ */
+const OUTLIER_ABSOLUTE_THRESHOLD = 50_000;
+
+/**
  * 判定單筆 transaction 是否屬於「系統 / 大額調度」非日常消費。
  *
- * 兩條判定（任一命中即視為 outlier）：
- *   (a) description 含 SYSTEM_DESCRIPTION_MARKERS 任一字串 — user 自己標
- *       「系統初始」「校正餘額」這類的記帳
- *   (b) 單筆金額 / 當月 raw total > 0.33 — 數據驅動，自動抓出「異常大額
- *       調度」（不靠 hardcoded 金額，能跟著 user 收入規模自適應）
+ * 三條判定（任一命中即視為 outlier）：
+ *   (a) description 含 SYSTEM_DESCRIPTION_MARKERS 任一字串
+ *   (b) 單筆金額 ≥ OUTLIER_ABSOLUTE_THRESHOLD — 絕對金額保底
+ *   (c) 單筆金額 / 當月 raw total > 0.33 — 比例門檻，跟著規模自適應
  *
- * monthlyTotal 為 0 時略過 (b)，只看 (a) — 避免 division by zero。
+ * monthlyTotal 為 0 時略過 (c)，只看 (a)(b) — 避免 division by zero。
  */
 function isOutlierExpense(
   tx: TransactionRow,
@@ -232,9 +238,10 @@ function isOutlierExpense(
   for (const m of SYSTEM_DESCRIPTION_MARKERS) {
     if (desc.includes(m.toLowerCase())) return true;
   }
-  if (monthlyTotal > 0) {
-    const amt = num(tx.amount);
-    if (amt / monthlyTotal > OUTLIER_RATIO_THRESHOLD) return true;
+  const amt = num(tx.amount);
+  if (amt >= OUTLIER_ABSOLUTE_THRESHOLD) return true;
+  if (monthlyTotal > 0 && amt / monthlyTotal > OUTLIER_RATIO_THRESHOLD) {
+    return true;
   }
   return false;
 }
