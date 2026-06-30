@@ -76,7 +76,7 @@ function sanitizeTerm(t: string): string {
  * "尿布" → ["尿布"]
  * "" → []
  *
- * 偵測到 `+` 才走 AND 拆解；否則整串當單一詞（保留中間空白的關聯性）。
+ * 偵測到 `+` 才走 OR 拆解；否則整串當單一詞（保留中間空白的關聯性）。
  */
 function parseSearchTerms(raw: string): string[] {
   const trimmed = raw.trim();
@@ -286,15 +286,17 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
       if (range.to) q = q.lte("date", range.to);
 
       /*
-        每個 term 自成一個 OR 群組 → 多個 .or() 由 PostgREST AND 起來。
-        OR 群組內：description ilike + （若中文 label 命中分類）category in (codes)
+        所有 term 攤平成單一 OR 群組 → 任一字 / 分類命中即收。
+        每個 term 都貢獻 description ilike + （若中文 label 命中分類）category in (codes)，
+        全部塞進一次 `.or()`（多個 .or() 會被 PostgREST AND 起來，不是我們要的）。
       */
+      const allOrs: string[] = [];
       for (const term of terms) {
+        allOrs.push(`description.ilike.%${term}%`);
         const codes = resolveCategoryCodes(term, lookup);
-        const ors = [`description.ilike.%${term}%`];
-        if (codes.length > 0) ors.push(`category.in.(${codes.join(",")})`);
-        q = q.or(ors.join(","));
+        if (codes.length > 0) allOrs.push(`category.in.(${codes.join(",")})`);
       }
+      if (allOrs.length > 0) q = q.or(allOrs.join(","));
 
       const { data, error: err } = await q
         .order("date", { ascending: false })
@@ -375,7 +377,7 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="例：尿布、午餐；支援多關鍵字如「老婆+醫院」"
-            aria-label="搜尋帳目，支援以 + 串接多關鍵字（AND）"
+            aria-label="搜尋帳目，支援以 + 串接多關鍵字（OR）"
             className="h-11 truncate pr-10 pl-9 text-base"
             autoComplete="off"
             spellCheck={false}
@@ -410,7 +412,7 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
       </div>
 
       <p className="-mt-2 hidden text-[11px] text-muted-foreground sm:block">
-        多關鍵字以 <span className="font-mono text-foreground/80">+</span> 串接（AND）；留空 + 不選區間顯示最近 200 筆。
+        多關鍵字以 <span className="font-mono text-foreground/80">+</span> 串接（OR，任一命中即收）；留空 + 不選區間顯示最近 200 筆。
       </p>
 
       {hasAnyFilter && !loading && !error && results.length > 0 && (
