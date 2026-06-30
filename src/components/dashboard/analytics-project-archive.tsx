@@ -161,11 +161,12 @@ function ArchivedRow({ row, accounts }: RowProps) {
   return (
     <li
       /*
-        line-through + opacity-30 的雙重壓制 — 視覺上「這筆已被剔除」的訊號
-        最強；hover 微提高 opacity 讓使用者要看細節時還是讀得清楚（不至於
-        completely unreadable）。
+        只靠 line-through 表達「已被剔除」— 不再疊 opacity-30，否則內容根本
+        看不見（per user 2026-06-30 feedback）。text-muted-foreground 已經
+        對比降了一階，配 strikethrough 訊號夠清楚又讀得到內容。
+        hover 微亮到 text-foreground/80 給對帳掃明細時更銳利。
       */
-      className="group grid grid-cols-[auto_1fr_auto] items-center gap-x-3 rounded-md px-2 py-1.5 text-muted-foreground opacity-30 transition-opacity hover:opacity-60"
+      className="group grid grid-cols-[auto_1fr_auto] items-center gap-x-3 rounded-md px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground/80"
     >
       <span className="w-16 shrink-0 text-[11px] tabular-nums sm:w-20">
         {formatDateShort(row.date)}
