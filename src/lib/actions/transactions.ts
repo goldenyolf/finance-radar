@@ -35,6 +35,12 @@ export interface CreateTransactionInput {
   paymentMethod?: PaymentMethod;
   /** 收入多維度分類（type='income' 才有意義；expense 一律 null） */
   incomeCategory?: IncomeCategory;
+  /**
+   * 重大專案標籤（per 0028）— freeform e.g. '太太醫療' / '新居家電'。
+   * 空字串 / undefined / null 都視為「日常」不打標籤；server 端統一寫 NULL。
+   * 在分析頁的隔離模式 OFF 時，這些有打標籤的交易會被過濾掉、進歸檔區。
+   */
+  projectTag?: string | null;
   status: TransactionStatus;
   date: string;
 }
@@ -48,6 +54,8 @@ export interface CreateTransferInput {
   amount: number;
   status: TransactionStatus;
   date: string;
+  /** 重大專案標籤 — 兩腿都寫，保持配對資料一致。 */
+  projectTag?: string | null;
 }
 
 export type MutationResult = { ok: true } | { ok: false; error: string };
@@ -65,6 +73,21 @@ export interface UpdateTransactionInput {
   /** 週期性 placeholder 編輯時帶 'confirmed' → 把 fulfillment_state 改成
    *  confirmed。不傳的話 state 不動。 */
   fulfillmentState?: "confirmed";
+  /**
+   * 重大專案標籤（per 0028）— freeform 字串或顯式 null 解綁。
+   *   - undefined: 不動原值
+   *   - "" / null: 寫成 NULL（使用者刪光輸入框 = 解綁）
+   *   - 非空字串: trim 後寫入
+   * Transfer rows 兩腿一起更新，保持配對資料一致。
+   */
+  projectTag?: string | null;
+}
+
+/** 把 caller 傳來的 projectTag 標準化成 DB 想要的格式：null 或 trimmed 非空字串。 */
+function normalizeProjectTag(v: string | null | undefined): string | null {
+  if (v == null) return null;
+  const trimmed = v.trim();
+  return trimmed === "" ? null : trimmed;
 }
 
 export async function updateTransaction(
@@ -97,11 +120,16 @@ export async function updateTransaction(
     };
   }
 
-  // 1) description / amount：transfer 的話兩腿一起更新；否則只動本筆
-  const sharedPatch = {
+  // 1) description / amount / project_tag：transfer 的話兩腿一起更新；否則只動本筆。
+  //    project_tag 對兩腿 sync 是刻意的 — 一筆「新居家電」轉帳被標籤後，配對的
+  //    另一腿也屬於同一專案，分析頁過濾時兩腿才會同進同出。
+  const sharedPatch: Record<string, string | number | null> = {
     description: input.description.trim(),
     amount: input.amount,
   };
+  if (input.projectTag !== undefined) {
+    sharedPatch.project_tag = normalizeProjectTag(input.projectTag);
+  }
   if (isTransfer) {
     const { error } = await supabase
       .from("transactions")
@@ -311,6 +339,7 @@ export async function createTransaction(
     payment_method: input.paymentMethod ?? null,
     status: input.status,
     date: input.date,
+    project_tag: normalizeProjectTag(input.projectTag ?? null),
   });
 
   if (error) return { ok: false, error: error.message };
@@ -349,6 +378,7 @@ export async function createTransfer(
   const supabase = await createClient();
   const groupId = randomUUID();
   const description = input.description.trim();
+  const projectTag = normalizeProjectTag(input.projectTag ?? null);
 
   // user_id 兩腿都走 DB DEFAULT auth.uid()
   const { error } = await supabase.from("transactions").insert([
@@ -364,6 +394,7 @@ export async function createTransfer(
       date: input.date,
       transfer_group_id: groupId,
       transfer_direction: "out" satisfies TransferDirection,
+      project_tag: projectTag,
     },
     {
       account_id: input.toAccountId,
@@ -377,6 +408,7 @@ export async function createTransfer(
       date: input.date,
       transfer_group_id: groupId,
       transfer_direction: "in" satisfies TransferDirection,
+      project_tag: projectTag,
     },
   ]);
 

@@ -58,6 +58,7 @@ type SearchRow = Pick<
   | "category"
   | "type"
   | "payment_method"
+  | "project_tag"
 >;
 
 const DEBOUNCE_MS = 350;
@@ -203,6 +204,7 @@ function toSearchRow(t: TransactionRow): SearchRow {
     category: t.category,
     type: t.type,
     payment_method: t.payment_method ?? null,
+    project_tag: t.project_tag ?? null,
   };
 }
 
@@ -279,7 +281,7 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
       let q = supabase
         .from("transactions")
         .select(
-          "id, description, amount, date, account_id, category, type, payment_method"
+          "id, description, amount, date, account_id, category, type, payment_method, project_tag"
         );
 
       if (range.from) q = q.gte("date", range.from);
@@ -350,6 +352,17 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
     () => results.filter((r) => r.type === "expense").length,
     [results]
   );
+
+  /* 既有 project_tag 清單（去重去空）— 編輯 dialog 的 datalist 自動完成用。
+     拿 initial（SSR 最近 200 筆）算就夠了，重大專案大概率近期都動過。 */
+  const projectTagSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const t of initial) {
+      const tag = t.project_tag?.trim();
+      if (tag) seen.add(tag);
+    }
+    return Array.from(seen).sort();
+  }, [initial]);
 
   /* 摘要顯示用字串 — keyword + 日期都吃進去，讓使用者一眼看到當前疊整條件。 */
   const summaryHint = useMemo(() => {
@@ -459,6 +472,7 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
               accounts={accounts}
               lookup={lookup}
               categories={categories}
+              projectTagSuggestions={projectTagSuggestions}
             />
           ))}
         </ul>
@@ -472,6 +486,7 @@ interface RowProps {
   accounts: AccountRow[];
   lookup: CategoryLookup | null;
   categories?: CategoryRow[];
+  projectTagSuggestions?: string[];
 }
 
 const PAYMENT_METHOD_META: Record<
@@ -497,7 +512,13 @@ function PaymentMethodBadge({ method }: { method: PaymentMethod | null }) {
   );
 }
 
-function TransactionRow({ row, accounts, lookup, categories }: RowProps) {
+function TransactionRow({
+  row,
+  accounts,
+  lookup,
+  categories,
+  projectTagSuggestions,
+}: RowProps) {
   const accName = getAccountLabel(
     row.account_id,
     accounts.find((a) => a.id === row.account_id)?.name
@@ -564,8 +585,10 @@ function TransactionRow({ row, accounts, lookup, categories }: RowProps) {
           expenseCategory={row.category as ExpenseCategory | null}
           isTransfer={row.type === "transfer"}
           transactionType={row.type as "income" | "expense" | "transfer"}
+          projectTag={row.project_tag ?? null}
           accounts={accounts}
           categories={categories}
+          projectTagSuggestions={projectTagSuggestions}
         />
       </div>
     </li>

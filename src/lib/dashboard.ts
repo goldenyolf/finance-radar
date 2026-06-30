@@ -542,6 +542,8 @@ export interface BoardDetailItem {
   /** materialize 出來且還沒被 LINE / 網頁端核銷時 = 'placeholder'；
    *  核銷後 = 'confirmed'；一般交易則 null（不渲染 badge）。 */
   fulfillmentState?: FulfillmentState | null;
+  /** 重大專案標籤 — 編輯 dialog 預填用；null = 日常。 */
+  projectTag?: string | null;
   /** ISO date string (for sorting) */
   date: string;
 }
@@ -774,6 +776,7 @@ export function buildBoardData(opts: {
         expenseCategory: t.category,
         isTransfer: t.type === "transfer",
         fulfillmentState: t.fulfillment_state ?? null,
+        projectTag: t.project_tag ?? null,
         date: t.date,
       });
     }

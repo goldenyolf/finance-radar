@@ -467,6 +467,7 @@ export function BoardCard({ data, allAccounts, categories, isEditMode, onEmojiCh
                                 : "expense"
                           }
                           fulfillmentState={item.fulfillmentState ?? null}
+                          projectTag={item.projectTag ?? null}
                           accounts={allAccounts}
                           categories={categories}
                         />

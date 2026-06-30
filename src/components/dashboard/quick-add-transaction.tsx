@@ -57,6 +57,12 @@ export interface QuickAddAccount {
 
 interface Props {
   accounts: QuickAddAccount[];
+  /**
+   * 既有 project_tag 清單（去重）— 給 <datalist> 做即時自動完成。
+   * caller 從 transactions 撈 distinct 後傳進來；undefined / [] 時退化成純
+   * placeholder 提示，UI 不出 hint 列表。
+   */
+  projectTagSuggestions?: string[];
 }
 
 function todayIsoDate() {
@@ -84,7 +90,7 @@ const PAYMENT_TO_ACCOUNT_TYPE: Record<PaymentMethod, AccountType> = {
   transfer: "bank",
 };
 
-export function QuickAddTransaction({ accounts }: Props) {
+export function QuickAddTransaction({ accounts, projectTagSuggestions }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -103,6 +109,7 @@ export function QuickAddTransaction({ accounts }: Props) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initialPaymentMethod);
   const [fromAccountId, setFromAccountId] = useState<string>(accounts[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState<string>(accounts[1]?.id ?? "");
+  const [projectTag, setProjectTag] = useState<string>("");
 
   const descId = useId();
   const amountId = useId();
@@ -113,6 +120,8 @@ export function QuickAddTransaction({ accounts }: Props) {
   const priorityGroupId = useId();
   const statusGroupId = useId();
   const paymentGroupId = useId();
+  const projectTagFieldId = useId();
+  const projectTagListId = useId();
 
   const isTransfer = type === "transfer";
   const needsTwoAccounts = isTransfer;
@@ -132,6 +141,7 @@ export function QuickAddTransaction({ accounts }: Props) {
     setPaymentMethod(initialPaymentMethod());
     setFromAccountId(accounts[0]?.id ?? "");
     setToAccountId(accounts[1]?.id ?? "");
+    setProjectTag("");
   }
 
   // 雙向綁定：選帳戶 -> 同步 paymentMethod
@@ -174,6 +184,7 @@ export function QuickAddTransaction({ accounts }: Props) {
         amount: parsedAmount,
         status,
         date,
+        projectTag: projectTag || null,
       };
       startTransition(async () => {
         const result = await createTransfer(payload);
@@ -208,6 +219,7 @@ export function QuickAddTransaction({ accounts }: Props) {
       paymentMethod,
       status,
       date,
+      projectTag: projectTag || null,
     };
 
     startTransition(async () => {
@@ -546,6 +558,42 @@ export function QuickAddTransaction({ accounts }: Props) {
               </div>
             </div>
           )}
+
+          {/*
+            🏷️ 歸屬專案標籤 — 給「太太醫療 / 新居家電 / 大型轉帳」這種非經常性
+            重大開銷打烙印；空白等於日常，不出現在分析頁的歸檔區。
+            走 native datalist 自動完成：使用者打過的 tag 會浮在下拉裡，減少
+            typo + 鼓勵重複使用同一組 tag（讓 archive group 才有意義）。
+          */}
+          <div className="grid gap-1.5">
+            <Label htmlFor={projectTagFieldId}>
+              歸屬專案標籤
+              <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                （選填）
+              </span>
+            </Label>
+            <Input
+              id={projectTagFieldId}
+              type="text"
+              value={projectTag}
+              onChange={(e) => setProjectTag(e.target.value)}
+              placeholder="選填，例如：太太醫療、新居家電"
+              autoComplete="off"
+              spellCheck={false}
+              list={
+                projectTagSuggestions && projectTagSuggestions.length > 0
+                  ? projectTagListId
+                  : undefined
+              }
+            />
+            {projectTagSuggestions && projectTagSuggestions.length > 0 && (
+              <datalist id={projectTagListId}>
+                {projectTagSuggestions.map((t) => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
+            )}
+          </div>
 
           <DialogFooter className="mt-2">
             <Button

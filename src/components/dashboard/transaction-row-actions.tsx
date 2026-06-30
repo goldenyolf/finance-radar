@@ -57,9 +57,13 @@ interface Props {
   transactionType?: "income" | "expense" | "transfer";
   /** 週期性核銷狀態 — 'placeholder' 時 dialog 提示「儲存即核銷」並把 state 設成 confirmed。 */
   fulfillmentState?: "placeholder" | "confirmed" | null;
+  /** 該筆當前的專案標籤；null = 日常。dialog 內可以清空 → 等於解綁。 */
+  projectTag?: string | null;
   accounts: AccountRow[];
   /** 動態 categories — 編輯 dialog 的分類下拉用使用者自訂清單；省略時走靜態 7 大類。 */
   categories?: CategoryRow[];
+  /** 既有 project_tag 清單（去重）→ datalist 自動完成；省略時退回純文字輸入。 */
+  projectTagSuggestions?: string[];
 }
 
 const STATIC_CATEGORY_OPTIONS = Object.entries(EXPENSE_CATEGORY_LABEL) as Array<
@@ -75,8 +79,10 @@ export function TransactionRowActions({
   isTransfer,
   transactionType,
   fulfillmentState,
+  projectTag,
   accounts,
   categories,
+  projectTagSuggestions,
 }: Props) {
   const isPlaceholder = fulfillmentState === "placeholder";
   // 推導初始 editable type：transfer 不會被使用者改（dialog 鎖定 income/expense tab）
@@ -112,11 +118,16 @@ export function TransactionRowActions({
     expenseCategory ?? "other"
   );
   const [draftType, setDraftType] = useState<EditableType>(initialEditableType);
+  const [draftProjectTag, setDraftProjectTag] = useState<string>(
+    projectTag ?? ""
+  );
 
   const titleId = useId();
   const amountId = useId();
   const accountFieldId = useId();
   const categoryFieldId = useId();
+  const projectTagFieldId = useId();
+  const projectTagListId = useId();
 
   function handleDelete() {
     if (deletePending) return;
@@ -142,6 +153,7 @@ export function TransactionRowActions({
       setDraftAccountId(accountId ?? "");
       setDraftCategory(expenseCategory ?? "other");
       setDraftType(initialEditableType);
+      setDraftProjectTag(projectTag ?? "");
     }
   }
 
@@ -165,6 +177,11 @@ export function TransactionRowActions({
       !isTransfer &&
       draftType === "expense" &&
       draftCategory !== (expenseCategory ?? "other");
+    // project_tag 比較：normalize 空白 → "" 視為等於 null。對 transfer 也生效
+    // （transfer 兩腿在 server action 端會同步）。
+    const normalizedDraftTag = draftProjectTag.trim();
+    const normalizedOriginalTag = (projectTag ?? "").trim();
+    const projectTagChanged = normalizedDraftTag !== normalizedOriginalTag;
 
     startSaveTransition(async () => {
       const result = await updateTransaction({
@@ -174,6 +191,12 @@ export function TransactionRowActions({
         accountId: accountChanged ? draftAccountId : undefined,
         category: categoryChanged ? draftCategory : undefined,
         type: typeChanged ? draftType : undefined,
+        // 顯式傳 null 代表「解綁標籤」；不傳 undefined 留原值
+        projectTag: projectTagChanged
+          ? normalizedDraftTag === ""
+            ? null
+            : normalizedDraftTag
+          : undefined,
         // Placeholder 編輯儲存即視為核銷 — 把 state 一併推到 confirmed，
         // 避免多一顆「確認」按鈕讓使用者再決策一次。
         fulfillmentState: isPlaceholder ? "confirmed" : undefined,
@@ -348,6 +371,41 @@ export function TransactionRowActions({
                 )}
               </>
             )}
+
+            {/*
+              🏷️ 歸屬專案標籤 — 給「太太醫療 / 新居家電 / 大型轉帳」這類非
+              經常性重大開銷打烙印。空字串 = 解綁回日常。transfer 也露出，
+              讓「200K 給孩子」轉帳能掛上 tag、跟兩腿同步寫進 DB。
+            */}
+            <div className="grid gap-1.5">
+              <Label htmlFor={projectTagFieldId}>
+                歸屬專案標籤
+                <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                  （選填）
+                </span>
+              </Label>
+              <Input
+                id={projectTagFieldId}
+                type="text"
+                value={draftProjectTag}
+                onChange={(e) => setDraftProjectTag(e.target.value)}
+                placeholder="選填，例如：太太醫療、新居家電"
+                autoComplete="off"
+                spellCheck={false}
+                list={
+                  projectTagSuggestions && projectTagSuggestions.length > 0
+                    ? projectTagListId
+                    : undefined
+                }
+              />
+              {projectTagSuggestions && projectTagSuggestions.length > 0 && (
+                <datalist id={projectTagListId}>
+                  {projectTagSuggestions.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+              )}
+            </div>
 
             <DialogFooter className="mt-2">
               <Button
