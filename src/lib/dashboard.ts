@@ -136,6 +136,12 @@ export interface TransactionRow {
   recurring_period?: string | null;
   /** 收入多維度分類（per 0017）— 只在 type='income' 時有值；expense / transfer 一律 null。 */
   income_category?: IncomeCategory | null;
+  /**
+   * 重大專案標籤（per 0028）— freeform text，e.g. '太太醫療' / '新居家電' /
+   * '長照支援'。null = 日常開銷，計入主圖；非 null = 大額專案，主圖過濾掉、
+   * 改集中到「專案隔離歸檔區」。分析頁全域 switch 切 OFF 時生效。
+   */
+  project_tag?: string | null;
 }
 
 /** 抽出來給 UI / actions / line-bot 共用的字面 type。 */
