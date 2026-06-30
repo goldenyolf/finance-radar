@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Banknote, CreditCard, Landmark, Loader2Icon, Search } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import {
+  Banknote,
+  CreditCard,
+  Download,
+  Landmark,
+  Loader2Icon,
+  Search,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
+import { Button } from "@/components/ui/button";
 import {
   DatePickerWithRange,
   type DateRange,
@@ -114,6 +123,74 @@ function formatDateShort(iso: string): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}/${m}/${day}`;
+}
+
+/* ─── CSV export helpers ────────────────────────────────────────────
+   Excel 友善 CSV：
+   - 開頭 BOM (﻿) → Excel 自動把檔案視為 UTF-8，中文不會亂碼
+   - 行尾 CRLF → 對齊 RFC 4180，Windows / macOS Excel 一致解析
+   - 含 `,` `"` `\n` 的欄位需 double-quote 並把內部 `"` 轉義成 `""`
+   數字欄位（金額）出 plain number，讓 Excel 自動視為數值，SUM 不會壞。
+*/
+const CSV_HEADERS = [
+  "交易日期",
+  "消費項目描述",
+  "記帳分類",
+  "扣款水庫",
+  "支出金額",
+] as const;
+
+function csvEscape(v: string): string {
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+function buildExportCsv(
+  rows: SearchRow[],
+  accounts: AccountRow[],
+  lookup: CategoryLookup | null
+): string {
+  const lines: string[] = [CSV_HEADERS.join(",")];
+  for (const r of rows) {
+    const date = formatDateShort(r.date);
+    const desc = r.description ?? "";
+    const categoryKey = (r.category ?? "other") as ExpenseCategory;
+    const categoryLabel =
+      lookup?.byCode.get(categoryKey)?.name ??
+      EXPENSE_CATEGORY_LABEL[categoryKey] ??
+      "其他";
+    const accountName = getAccountLabel(
+      r.account_id,
+      accounts.find((a) => a.id === r.account_id)?.name
+    );
+    // expense 出負值、income / transfer 出正值 → 直接整欄 SUM 等於淨流量
+    const amt = num(r.amount);
+    const signedAmount = r.type === "expense" ? -amt : amt;
+
+    lines.push(
+      [
+        csvEscape(date),
+        csvEscape(desc),
+        csvEscape(categoryLabel),
+        csvEscape(accountName),
+        String(signedAmount),
+      ].join(",")
+    );
+  }
+  return "﻿" + lines.join("\r\n");
+}
+
+function downloadBlob(content: string, filename: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // 下一個事件迴圈再 revoke — 避免 Safari 偶爾在 click 之前 revoke 拿不到檔案
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function toSearchRow(t: TransactionRow): SearchRow {
@@ -254,6 +331,19 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
         .reduce((sum, r) => sum + num(r.amount), 0),
     [results]
   );
+
+  /* 一鍵匯出當前 results — 不另呼 server，直接吃 derived 後的陣列；確保
+     使用者看到什麼就匯出什麼，避免 server / client filter 對不齊的尷尬。 */
+  const handleExport = useCallback(() => {
+    if (results.length === 0) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const filename = `MoneyRadar_匯出明細_${today}.csv`;
+    const csv = buildExportCsv(results, accounts, lookup);
+    downloadBlob(csv, filename, "text/csv;charset=utf-8");
+    toast.success("匯出完成", {
+      description: `${filename} — 共 ${results.length} 筆`,
+    });
+  }, [results, accounts, lookup]);
   const expenseCount = useMemo(
     () => results.filter((r) => r.type === "expense").length,
     [results]
@@ -295,11 +385,28 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
           )}
         </div>
 
-        <DatePickerWithRange
-          value={range}
-          onChange={setRange}
-          className="sm:shrink-0"
-        />
+        <div className="flex items-center gap-2 sm:shrink-0">
+          <DatePickerWithRange value={range} onChange={setRange} />
+
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onClick={handleExport}
+            disabled={results.length === 0}
+            aria-label="匯出此搜尋結果為 CSV"
+            title={
+              results.length === 0
+                ? "目前沒有可匯出的紀錄"
+                : `匯出 ${results.length} 筆為 CSV`
+            }
+            className="h-11 gap-1.5 px-3 text-sm font-normal text-muted-foreground hover:text-foreground"
+          >
+            <Download className="size-4" aria-hidden />
+            <span className="hidden sm:inline">匯出此搜尋結果</span>
+            <span className="sm:hidden">匯出</span>
+          </Button>
+        </div>
       </div>
 
       <p className="-mt-2 hidden text-[11px] text-muted-foreground sm:block">
