@@ -279,6 +279,74 @@ export async function updateTransactionCategory(
   return { ok: true };
 }
 
+export interface BulkUpdateProjectTagInput {
+  transactionIds: string[];
+  /**
+   * 批次套用的專案標籤：
+   *   - 非空字串：trim 後 set
+   *   - "" / null：清除標籤回日常
+   */
+  projectTag: string | null;
+}
+
+export type BulkMutationResult =
+  | { ok: true; updatedCount: number }
+  | { ok: false; error: string };
+
+/**
+ * 批次更新 N 筆 transactions 的 project_tag — 給歷史明細頁的「多選 + 懸浮工具列」用。
+ *
+ * 資安防線雙保險:
+ *   1) RLS UPDATE policy（0028 已建）— DB 端 row-level 過濾，這是主要 fence
+ *   2) `.eq("user_id", uid)` 顯式 scope — RLS 萬一被誤關（dev / 未來 migration
+ *      手滑），程式碼層仍擋住跨租戶污染。per memory:
+ *      [supabase_multi_tenant_update_scope]
+ *
+ * 為什麼不展開 transfer 配對:
+ *   transfer 的兩條 leg 在 transactions-view 各自佔一列 row + 自己的 checkbox，
+ *   使用者要批次標記理應自己選兩腿。多此一舉自動展開反而會「打到沒選的另一腿」
+ *   產生 surprise update。trust selection literally。
+ *
+ * 上限 500 筆:
+ *   PostgREST query string ~8KB；UUID 36 chars × 500 ≈ 18KB（含 quotes / commas）
+ *   實測 supabase-js 會分批，但保守攔在 500 給清楚錯誤訊息比讓底層偷偷拆好。
+ */
+export async function bulkUpdateTransactionProject(
+  input: BulkUpdateProjectTagInput
+): Promise<BulkMutationResult> {
+  if (input.transactionIds.length === 0) {
+    return { ok: false, error: "未選擇任何交易" };
+  }
+  if (input.transactionIds.length > 500) {
+    return { ok: false, error: "單次最多 500 筆，請分批處理" };
+  }
+
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+  const uid = userData.user.id;
+
+  const projectTag = normalizeProjectTag(input.projectTag);
+
+  const { error, count } = await supabase
+    .from("transactions")
+    .update({ project_tag: projectTag }, { count: "exact" })
+    .in("id", input.transactionIds)
+    .eq("user_id", uid);
+
+  if (error) return { ok: false, error: error.message };
+  if (!count) {
+    return { ok: false, error: "更新失敗（無命中或不屬於你）" };
+  }
+
+  // 全站數據聯動：板塊卡 / 分析頁 / 明細頁都吃 transactions，全部打髒
+  revalidatePath("/");
+  revalidatePath("/analytics");
+  revalidatePath("/transactions");
+
+  return { ok: true, updatedCount: count };
+}
+
 export async function deleteTransaction(id: string): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少交易 ID" };
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   Banknote,
@@ -12,8 +13,10 @@ import {
 import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
+import { BulkProjectTagBar } from "@/components/dashboard/bulk-project-tag-bar";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DatePickerWithRange,
   type DateRange,
@@ -228,6 +231,7 @@ function applyRangeToInitial(
 }
 
 export function TransactionsView({ accounts, initial, categories }: Props) {
+  const router = useRouter();
   const lookup = useMemo(
     () => (categories ? buildCategoryLookup(categories) : null),
     [categories]
@@ -248,6 +252,15 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
     data: SearchRow[];
     error: string | null;
   } | null>(null);
+
+  /*
+    多選狀態 — Set 比 array 快、語意對齊「集合」。跨 search / 日期切換時
+    不主動清空（user 可能跨多次過濾累積選取），但會在「不在當前 results」的
+    id 被忽略於 master 三態計算中。
+  */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set<string>()
+  );
 
   const searchId = useId();
 
@@ -335,6 +348,52 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
         .reduce((sum, r) => sum + num(r.amount), 0),
     [results]
   );
+
+  /*
+    多選 derived state — 以「當前可見 results」為基準算 master 三態。
+    selectedVisibleIds = Set<id> 與 results 取交集；invisible 選取仍保留
+    在 selectedIds 內，但 master checkbox 不視為它們的代表。
+  */
+  const selectedVisibleIds = useMemo(() => {
+    return results.filter((r) => selectedIds.has(r.id)).map((r) => r.id);
+  }, [results, selectedIds]);
+
+  const selectedVisibleCount = selectedVisibleIds.length;
+  const allVisibleSelected =
+    results.length > 0 && selectedVisibleCount === results.length;
+  const partiallyVisibleSelected =
+    selectedVisibleCount > 0 && selectedVisibleCount < results.length;
+
+  const toggleRow = useCallback((id: string, nextSelected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (nextSelected) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAllVisible = useCallback(
+    (nextSelected: boolean) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const r of results) {
+          if (nextSelected) next.add(r.id);
+          else next.delete(r.id);
+        }
+        return next;
+      });
+    },
+    [results]
+  );
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set<string>());
+  }, []);
+
+  const handleBulkSuccess = useCallback(() => {
+    router.refresh();
+  }, [router]);
 
   /* 一鍵匯出當前 results — 不另呼 server，直接吃 derived 後的陣列；確保
      使用者看到什麼就匯出什麼，避免 server / client filter 對不齊的尷尬。 */
@@ -464,19 +523,57 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
       )}
 
       {results.length > 0 && (
-        <ul className="flex flex-col gap-0.5">
-          {results.map((r) => (
-            <TransactionRow
-              key={r.id}
-              row={r}
-              accounts={accounts}
-              lookup={lookup}
-              categories={categories}
-              projectTagSuggestions={projectTagSuggestions}
-            />
-          ))}
-        </ul>
+        <>
+          {/*
+            列表 mini header — 萬能 master checkbox + 筆數 hint。indeterminate
+            狀態（部分選）用 Minus icon；全選 / 全清空一鍵。
+          */}
+          <div className="flex items-center gap-2 border-b border-foreground/[0.06] px-2 pb-1.5 text-[11px] tracking-wider text-muted-foreground uppercase">
+            <label className="inline-flex cursor-pointer items-center gap-2 select-none">
+              <Checkbox
+                checked={allVisibleSelected}
+                indeterminate={partiallyVisibleSelected}
+                onCheckedChange={(v) => toggleAllVisible(v === true)}
+                aria-label={
+                  allVisibleSelected ? "取消全選" : "全選此頁"
+                }
+              />
+              <span>
+                {selectedVisibleCount > 0
+                  ? `已選 ${selectedVisibleCount}/${results.length}`
+                  : `共 ${results.length} 筆`}
+              </span>
+            </label>
+          </div>
+
+          <ul className="flex flex-col gap-0.5">
+            {results.map((r) => (
+              <TransactionRow
+                key={r.id}
+                row={r}
+                accounts={accounts}
+                lookup={lookup}
+                categories={categories}
+                projectTagSuggestions={projectTagSuggestions}
+                selected={selectedIds.has(r.id)}
+                onSelectChange={toggleRow}
+              />
+            ))}
+          </ul>
+        </>
       )}
+
+      {/*
+        懸浮批次工具列 — selectedIds > 0 才從底部 spring 滑入。
+        availableTags 用 projectTagSuggestions（initial 200 筆去重）餵進去，
+        跟編輯 dialog 的 datalist 同一份資料來源。
+      */}
+      <BulkProjectTagBar
+        selectedIds={Array.from(selectedIds)}
+        availableTags={projectTagSuggestions}
+        onClearSelection={clearSelection}
+        onSuccess={handleBulkSuccess}
+      />
     </div>
   );
 }
@@ -487,6 +584,8 @@ interface RowProps {
   lookup: CategoryLookup | null;
   categories?: CategoryRow[];
   projectTagSuggestions?: string[];
+  selected: boolean;
+  onSelectChange: (id: string, nextSelected: boolean) => void;
 }
 
 const PAYMENT_METHOD_META: Record<
@@ -518,6 +617,8 @@ function TransactionRow({
   lookup,
   categories,
   projectTagSuggestions,
+  selected,
+  onSelectChange,
 }: RowProps) {
   const accName = getAccountLabel(
     row.account_id,
@@ -534,8 +635,34 @@ function TransactionRow({
 
   return (
     <li
-      className="group grid grid-cols-[auto_1fr_auto_3rem] items-start gap-x-2 gap-y-1 rounded-md px-2 py-2 hover:bg-muted/40 sm:gap-x-3"
+      /*
+        5-col grid: [checkbox] [date] [title+meta] [amount+badge] [actions]
+        被選中時整列染上 emerald 帶子色，視覺一眼分辨「這列我有選」。
+        Checkbox 預設淡淡的（opacity-40 ungroup-hover），group-hover / selected
+        時 opacity-100 — 讓桌面端列表保持乾淨。行動裝置永遠顯示（no hover）。
+      */
+      className={`group grid grid-cols-[auto_auto_1fr_auto_3rem] items-start gap-x-2 gap-y-1 rounded-md px-2 py-2 transition-colors sm:gap-x-3 ${
+        selected
+          ? "bg-emerald-500/[0.07] hover:bg-emerald-500/[0.1]"
+          : "hover:bg-muted/40"
+      }`}
     >
+      <span
+        className={`mt-1 inline-flex items-center transition-opacity md:opacity-40 md:group-hover:opacity-100 ${
+          selected ? "md:opacity-100" : ""
+        }`}
+      >
+        <Checkbox
+          checked={selected}
+          onCheckedChange={(v) => onSelectChange(row.id, v === true)}
+          aria-label={
+            selected
+              ? `取消選取 ${row.description ?? "此筆"}`
+              : `選取 ${row.description ?? "此筆"}`
+          }
+        />
+      </span>
+
       <span className="mt-0.5 inline-block w-16 shrink-0 text-xs tabular-nums text-muted-foreground sm:w-20">
         {formatDateShort(row.date)}
       </span>
