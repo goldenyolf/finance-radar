@@ -97,12 +97,16 @@ function parseSearchTerms(raw: string): string[] {
 }
 
 /**
- * 把使用者輸入的關鍵字（多半是中文 label，如「育兒」「醫療」）反查回
- * transactions.category 欄位實際存的 snake_case code。
+ * 把使用者輸入的關鍵字（多半是中文 label，如「育兒」「醫療」「家庭醫療」）反查回
+ * transactions.category 欄位實際存的值 — 可能是 built-in code 或自訂 UUID。
  *
- * 兩條來源都查：
- *   1. 動態 categories（使用者自訂 name）
- *   2. 靜態 EXPENSE_CATEGORY_LABEL fallback（保底，避免動態還沒載入時搜不到）
+ * 三條來源都查：
+ *   1. 動態 categories 自訂分類（code=null，命中回 c.id UUID）— per review #2
+ *   2. 動態 categories built-in（有 code，命中回 c.code）
+ *   3. 靜態 EXPENSE_CATEGORY_LABEL fallback（保底，避免動態還沒載入時搜不到）
+ *
+ * 型別過濾：只吃 type='expense' 的分類，避免同名的 income 分類混進 expense
+ * 搜尋結果。
  */
 function resolveCategoryCodes(
   term: string,
@@ -112,7 +116,11 @@ function resolveCategoryCodes(
   const codes = new Set<string>();
   if (lookup) {
     for (const c of lookup.all) {
-      if (c.code && c.name.toLowerCase().includes(needle)) codes.add(c.code);
+      if (c.type !== "expense") continue;
+      if (c.name.toLowerCase().includes(needle)) {
+        // 有 code 用 code；自訂分類 code=null → 用 UUID
+        codes.add(c.code ?? c.id);
+      }
     }
   }
   for (const [code, label] of Object.entries(EXPENSE_CATEGORY_LABEL)) {
@@ -275,6 +283,29 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
   const hasQuery = terms.length > 0;
   const hasAnyFilter = hasQuery || hasRange;
 
+  /*
+    per review #14：判斷「日期區間是否超出 initial（SSR 200 筆）能覆蓋的範圍」。
+    initial 已按 date DESC 排序，末筆 = 最舊那筆。若 range.from 早於這筆日期
+    → 需要 server 撈；否則 initial 就夠 client-side filter。
+    range.to 只設 upper bound 不會拉出更舊資料，所以不影響需不需要 server fetch。
+  */
+  const oldestInitialDate = useMemo(() => {
+    if (initial.length === 0) return null;
+    return initial[initial.length - 1].date;
+  }, [initial]);
+  const rangeNeedsServer = Boolean(
+    range.from && oldestInitialDate && range.from < oldestInitialDate
+  );
+
+  /*
+    需要打 server 的條件：
+      (a) 有 keyword search — 一定 server-side
+      (b) 只有日期範圍，但 range.from 早於 initial 最舊 — server 補撈歷史
+    只有短期日期範圍（涵蓋在 initial 200 筆內）→ 走 applyRangeToInitial
+    client-side filter，省一次 round-trip。
+  */
+  const needsServerFetch = hasQuery || rangeNeedsServer;
+
   /* 當前過濾條件序列化成穩定 key，作為 fetched 快照對齊的基準。 */
   const fetchSig = useMemo(
     () => JSON.stringify({ terms, from: range.from, to: range.to }),
@@ -282,13 +313,14 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
   );
 
   /*
-    Server-side 撈資料 only 在有 keyword 時觸發。「只有日期 / 完全沒過濾」
-    都走 client-side derive 用 initial（已是最近 200 筆）filter，避免無意義
-    round-trip。effect 內不做 sync setState：cancelled flag 防 race，
-    setFetched 只在 await 之後跑。
+    Server-side 撈資料條件已擴大：keyword 有 → 一定要；沒有 keyword 但日期
+    範圍超出 initial → 一樣要 server 補撈歷史，per review #14 避免
+    「初始 200 筆之外的舊帳目在 date range only 情境下神秘消失」。
+    effect 內不做 sync setState：cancelled flag 防 race，setFetched 只在
+    await 之後跑。
   */
   useEffect(() => {
-    if (!hasQuery) return;
+    if (!needsServerFetch) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
@@ -305,14 +337,18 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
         所有 term 攤平成單一 OR 群組 → 任一字 / 分類命中即收。
         每個 term 都貢獻 description ilike + （若中文 label 命中分類）category in (codes)，
         全部塞進一次 `.or()`（多個 .or() 會被 PostgREST AND 起來，不是我們要的）。
+        沒 keyword 只有日期時 (rangeNeedsServer) 不需 .or() — .gte/.lte 已經
+        把日期範圍鎖住，剩下讓 server 排序 + limit 即可。
       */
-      const allOrs: string[] = [];
-      for (const term of terms) {
-        allOrs.push(`description.ilike.%${term}%`);
-        const codes = resolveCategoryCodes(term, lookup);
-        if (codes.length > 0) allOrs.push(`category.in.(${codes.join(",")})`);
+      if (hasQuery) {
+        const allOrs: string[] = [];
+        for (const term of terms) {
+          allOrs.push(`description.ilike.%${term}%`);
+          const codes = resolveCategoryCodes(term, lookup);
+          if (codes.length > 0) allOrs.push(`category.in.(${codes.join(",")})`);
+        }
+        if (allOrs.length > 0) q = q.or(allOrs.join(","));
       }
-      if (allOrs.length > 0) q = q.or(allOrs.join(","));
 
       const { data, error: err } = await q
         .order("date", { ascending: false })
@@ -328,19 +364,19 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [hasQuery, terms, range.from, range.to, lookup, fetchSig]);
+  }, [needsServerFetch, hasQuery, terms, range.from, range.to, lookup, fetchSig]);
 
   /* === Derived display state — 不再用 setState 同步推 ============== */
   const results: SearchRow[] = useMemo(() => {
     if (!hasAnyFilter) return initial.map(toSearchRow);
-    if (!hasQuery) return applyRangeToInitial(initial, range);
+    if (!needsServerFetch) return applyRangeToInitial(initial, range);
     // 撈完前保留上一筆快照避免閃爍；loading 旗標另外顯示 spinner。
     return fetched?.data ?? [];
-  }, [hasAnyFilter, hasQuery, initial, range, fetched]);
+  }, [hasAnyFilter, needsServerFetch, initial, range, fetched]);
 
-  const loading = hasQuery && fetched?.sig !== fetchSig;
+  const loading = needsServerFetch && fetched?.sig !== fetchSig;
   const error =
-    hasQuery && fetched?.sig === fetchSig ? fetched?.error ?? null : null;
+    needsServerFetch && fetched?.sig === fetchSig ? fetched?.error ?? null : null;
 
   const expenseTotal = useMemo(
     () =>

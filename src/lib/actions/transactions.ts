@@ -103,14 +103,23 @@ export async function updateTransaction(
   }
 
   const supabase = await createClient();
-  // 先查出這筆是否為 transfer（amount/description 需要同步另一腿）
+
+  // per review #7：明確拿當前 user id，belt+suspenders 對齊 bulkUpdate /
+  // updateTransactionCategory 的寫法。RLS 是主防線但不假設它永遠在（未來
+  // migration 手滑或 dev SECURITY DEFINER 引入的爬升路徑都可能繞開）。
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+  const uid = userData.user.id;
+
+  // 先查出這筆是否為 transfer（amount/description 需要同步另一腿）— fetch 也 scope 到當前 user
   const { data: existing, error: fetchError } = await supabase
     .from("transactions")
     .select("type, transfer_group_id")
     .eq("id", input.id)
+    .eq("user_id", uid)
     .maybeSingle();
   if (fetchError) return { ok: false, error: fetchError.message };
-  if (!existing) return { ok: false, error: "找不到該筆交易" };
+  if (!existing) return { ok: false, error: "找不到該筆交易（或不屬於你）" };
 
   const isTransfer =
     existing.type === "transfer" && Boolean(existing.transfer_group_id);
@@ -126,8 +135,12 @@ export async function updateTransaction(
   // 1) description / amount / project_tag：transfer 的話兩腿一起更新；否則只動本筆。
   //    project_tag 對兩腿 sync 是刻意的 — 一筆「新居家電」轉帳被標籤後，配對的
   //    另一腿也屬於同一專案，分析頁過濾時兩腿才會同進同出。
+  //    per review #1：edit 路徑不再自動 stripDescriptionLabel —— user 已在
+  //    dialog 內看到當前標題，任何刻意打的「支付：X」是用戶意圖，不該被
+  //    server 靜默改寫。create 路徑（createTransaction / createTransfer /
+  //    LINE webhook）仍會剝，因為那邊是「新鮮」文字。
   const sharedPatch: Record<string, string | number | null> = {
-    description: stripDescriptionLabel(input.description),
+    description: input.description.trim(),
     amount: input.amount,
   };
   if (input.projectTag !== undefined) {
@@ -137,13 +150,15 @@ export async function updateTransaction(
     const { error } = await supabase
       .from("transactions")
       .update(sharedPatch)
-      .eq("transfer_group_id", existing.transfer_group_id!);
+      .eq("transfer_group_id", existing.transfer_group_id!)
+      .eq("user_id", uid);
     if (error) return { ok: false, error: error.message };
   } else {
     const { error } = await supabase
       .from("transactions")
       .update(sharedPatch)
-      .eq("id", input.id);
+      .eq("id", input.id)
+      .eq("user_id", uid);
     if (error) return { ok: false, error: error.message };
   }
 
@@ -173,7 +188,8 @@ export async function updateTransaction(
       const { error } = await supabase
         .from("transactions")
         .update(rowPatch)
-        .eq("id", input.id);
+        .eq("id", input.id)
+        .eq("user_id", uid);
       if (error) return { ok: false, error: error.message };
     }
   }
@@ -189,7 +205,8 @@ export async function updateTransaction(
     const { error } = await supabase
       .from("transactions")
       .update({ fulfillment_state: "confirmed" })
-      .eq("id", input.id);
+      .eq("id", input.id)
+      .eq("user_id", uid);
     if (error) return { ok: false, error: error.message };
   }
 
@@ -205,10 +222,7 @@ export async function updateTransaction(
   // 用 await 而非 fire-and-forget — Next.js server action 回應後可能 kill
   // 背景 Promise，導致警報邏輯被中斷。執行時間 < 200ms 影響極微。
   // runBudgetAlerts 內部 try/catch 包死，警報失敗不會炸主流程。
-  const { data: userData } = await supabase.auth.getUser();
-  if (userData?.user) {
-    await runBudgetAlerts(supabase, userData.user.id);
-  }
+  await runBudgetAlerts(supabase, uid);
 
   return { ok: true };
 }
@@ -312,7 +326,7 @@ export interface BulkUpdateProjectTagInput {
 }
 
 export type BulkMutationResult =
-  | { ok: true; updatedCount: number }
+  | { ok: true; updatedCount: number; skippedCount: number }
   | { ok: false; error: string };
 
 /**
@@ -324,22 +338,29 @@ export type BulkMutationResult =
  *      手滑），程式碼層仍擋住跨租戶污染。per memory:
  *      [supabase_multi_tenant_update_scope]
  *
- * 為什麼不展開 transfer 配對:
- *   transfer 的兩條 leg 在 transactions-view 各自佔一列 row + 自己的 checkbox，
- *   使用者要批次標記理應自己選兩腿。多此一舉自動展開反而會「打到沒選的另一腿」
- *   產生 surprise update。trust selection literally。
+ * per review #8: transfer 配對展開 —
+ *   之前 spec 是「trust selection literally」，但這跟 updateTransaction 的
+ *   sync-both-legs 語意不一致。使用者常見 case：只勾其中一腿沒發現另一腿也
+ *   要跟著標。改成先查 selectedIds 內是 transfer 的 rows，抓出 transfer_group_id，
+ *   再把配對的另一腿一併納入更新集合。
+ *
+ * per review #9: partial-success telemetry —
+ *   updatedCount 可能 < requestedCount（某些 id race 已被刪、跨租戶 RLS 過濾）；
+ *   回傳 skippedCount 讓 UI 告訴使用者「已標 N 筆（M 筆被略過）」，別再假裝
+ *   全部成功。
  *
  * 上限 500 筆:
- *   PostgREST query string ~8KB；UUID 36 chars × 500 ≈ 18KB（含 quotes / commas）
- *   實測 supabase-js 會分批，但保守攔在 500 給清楚錯誤訊息比讓底層偷偷拆好。
+ *   PostgREST query string ~8KB；UUID 36 chars × 500 ≈ 18KB。攔在 500 是為了
+ *   給清楚錯誤訊息，比讓底層偷偷拆好 debug。
  */
 export async function bulkUpdateTransactionProject(
   input: BulkUpdateProjectTagInput
 ): Promise<BulkMutationResult> {
-  if (input.transactionIds.length === 0) {
+  const requestedCount = input.transactionIds.length;
+  if (requestedCount === 0) {
     return { ok: false, error: "未選擇任何交易" };
   }
-  if (input.transactionIds.length > 500) {
+  if (requestedCount > 500) {
     return { ok: false, error: "單次最多 500 筆，請分批處理" };
   }
 
@@ -350,23 +371,76 @@ export async function bulkUpdateTransactionProject(
 
   const projectTag = normalizeProjectTag(input.projectTag);
 
-  const { error, count } = await supabase
+  /*
+    per review #8：expand transfer pairs.
+    先查 selectedIds 內是 transfer 的 rows；把它們的 transfer_group_id 撈起來，
+    展開到「id IN (selected) OR transfer_group_id IN (groups)」的並集。
+    這樣一定跟 updateTransaction 的兩腿 sync 行為一致。
+    RLS + user_id filter 都上，跨租戶不會被展開撈到別家的 rows。
+  */
+  const { data: transferRows, error: transferErr } = await supabase
     .from("transactions")
-    .update({ project_tag: projectTag }, { count: "exact" })
+    .select("id, transfer_group_id")
     .in("id", input.transactionIds)
-    .eq("user_id", uid);
+    .eq("user_id", uid)
+    .eq("type", "transfer");
+  if (transferErr) return { ok: false, error: transferErr.message };
 
-  if (error) return { ok: false, error: error.message };
-  if (!count) {
+  const transferGroupIds = Array.from(
+    new Set(
+      (transferRows ?? [])
+        .map((r) => r.transfer_group_id as string | null)
+        .filter((g): g is string => !!g)
+    )
+  );
+
+  // 執行 update — 分兩個 statement 求穩，比 or 拼字串好 debug；用 Set 合併結果 count
+  const updatedIds = new Set<string>();
+
+  {
+    const { data, error } = await supabase
+      .from("transactions")
+      .update({ project_tag: projectTag })
+      .in("id", input.transactionIds)
+      .eq("user_id", uid)
+      .select("id");
+    if (error) return { ok: false, error: error.message };
+    for (const r of data ?? []) updatedIds.add(r.id as string);
+  }
+
+  if (transferGroupIds.length > 0) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .update({ project_tag: projectTag })
+      .in("transfer_group_id", transferGroupIds)
+      .eq("user_id", uid)
+      .select("id");
+    if (error) return { ok: false, error: error.message };
+    for (const r of data ?? []) updatedIds.add(r.id as string);
+  }
+
+  const updatedCount = updatedIds.size;
+  if (updatedCount === 0) {
     return { ok: false, error: "更新失敗（無命中或不屬於你）" };
   }
+
+  /*
+    per review #9：skippedCount 是「使用者選了但沒真的被標到」的數量。
+    展開 transfer 配對之後，updatedCount 可能 > requestedCount（多帶了另一腿），
+    這時 skippedCount = 0；也可能 < requestedCount（某些 id 已被刪 / RLS 過濾）。
+    只在使用者選的 ID 沒真的被 update 到時才算 skipped。
+  */
+  const missedFromRequest = input.transactionIds.filter(
+    (id) => !updatedIds.has(id)
+  ).length;
+  const skippedCount = missedFromRequest;
 
   // 全站數據聯動：板塊卡 / 分析頁 / 明細頁都吃 transactions，全部打髒
   revalidatePath("/");
   revalidatePath("/analytics");
   revalidatePath("/transactions");
 
-  return { ok: true, updatedCount: count };
+  return { ok: true, updatedCount, skippedCount };
 }
 
 export async function deleteTransaction(id: string): Promise<MutationResult> {

@@ -738,9 +738,12 @@ async function handleTextMessage(
   }
 
   // 剝「支付：」「支出：」這類記帳口語前綴 — LLM prompt 沒教它處理，
-  // 這裡 deterministic 一律剝掉再走分類器 / 存進 DB。剝完若空字串 fallback 原值。
-  const strippedItem = stripDescriptionLabel(item);
-  if (strippedItem) item = strippedItem;
+  // 這裡 deterministic 一律剝掉再走分類器 / 存進 DB。
+  // per review #6：改成無條件套用 — 之前有 `if (stripped) item = stripped`
+  // 的 fallback，遇到 LLM 罕見 edge case 抽到 item='支付：' 空 payload 時反而
+  // 保留了 raw 前綴 → classifier 打不到「早餐」→ 落 other，剛好是 0029 想修的 bug。
+  // 剝完是空字串就 empty description，DB 允許 nullable，user 之後可手動編輯補上。
+  item = stripDescriptionLabel(item);
 
   // expense 才需要 category；income 直接 null
   const category: ExpenseCategory | null =

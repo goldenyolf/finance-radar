@@ -7,8 +7,11 @@ import { cn } from "@/lib/utils";
 /**
  * Collapsible — 單一面板的展開 / 收合容器，比 Accordion 更輕。
  *
- * 動畫對齊 Accordion：data-open:animate-accordion-down / data-closed:animate-accordion-up；
- * 跟 globals.css 既有的 keyframes 直接共用，視覺語言一致。
+ * 動畫對齊 tw-animate-css 的 collapsible 語意：`animate-collapsible-down`
+ * / `animate-collapsible-up` — 這組 keyframe 走 --radix-collapsible-content-height
+ * 為目標高度。base-ui Collapsible 只暴露 --collapsible-panel-height，globals.css
+ * 有一條 alias rule 把兩個變數接起來（見 globals.css `[data-slot="collapsible-content"]`
+ * 段落，per review #11 fix）。
  *
  * 用法：
  *   <Collapsible open={open} onOpenChange={setOpen}>
@@ -54,17 +57,10 @@ function CollapsibleContent({
   return (
     <CollapsiblePrimitive.Panel
       data-slot="collapsible-content"
-      className="overflow-hidden text-sm data-open:animate-accordion-down data-closed:animate-accordion-up"
+      className="overflow-hidden text-sm data-open:animate-collapsible-down data-closed:animate-collapsible-up"
       {...props}
     >
-      <div
-        className={cn(
-          "h-(--collapsible-panel-height) data-ending-style:h-0 data-starting-style:h-0",
-          className
-        )}
-      >
-        {children}
-      </div>
+      <div className={cn(className)}>{children}</div>
     </CollapsiblePrimitive.Panel>
   );
 }

@@ -17,7 +17,12 @@
  */
 
 import { getAccountLabel } from "@/lib/account-display";
-import type { CategoryRow } from "@/lib/categories";
+import {
+  buildCategoryLookup,
+  resolveCategory as resolveCategoryRow,
+  type CategoryLookup,
+  type CategoryRow,
+} from "@/lib/categories";
 import { EXPENSE_CATEGORY_LABEL } from "@/lib/expense-categories";
 import { num, type AccountRow, type TransactionRow } from "@/lib/dashboard";
 
@@ -63,11 +68,14 @@ function enumerateMonthDays(year: number, monthIndex: number): string[] {
 }
 
 /**
- * 把 transactions.category（snake_case code 或 null）解析成顯示用 (name, color)。
+ * 把 transactions.category（built-in code 或 categories.id UUID 或 null）解析成
+ * 顯示用 (name, color)。per review #4：改用 shared resolveCategory (byId → byCode)，
+ * 讓自訂分類 UUID 也能命中正確 name + color，不再 collapse 成灰色「其他」。
+ *
  * 三段 fallback：
- *   1) 動態 categories.byCode 命中（user-defined or seed） — 用使用者設定值
+ *   1) lookup 命中（自訂 UUID or built-in code） — 用使用者設定值
  *   2) 靜態 EXPENSE_CATEGORY_LABEL 命中（舊資料 code 沒被 seed 進 categories）
- *   3) 'other' / 完全沒命中 — 統一歸到「其他」，避免 chart 爆出無名 stack
+ *   3) 完全沒命中 — 統一歸到「其他」灰色，避免 chart 爆出無名 stack
  */
 interface ResolvedCategory {
   name: string;
@@ -75,13 +83,14 @@ interface ResolvedCategory {
 }
 
 function resolveCategory(
-  code: string | null,
-  byCode: Map<string, CategoryRow>
+  value: string | null,
+  lookup: CategoryLookup | null
 ): ResolvedCategory {
-  if (code) {
-    const dyn = byCode.get(code);
-    if (dyn) return { name: dyn.name, color: dyn.color };
-    const staticName = EXPENSE_CATEGORY_LABEL[code as keyof typeof EXPENSE_CATEGORY_LABEL];
+  const dyn = resolveCategoryRow(value, lookup);
+  if (dyn) return { name: dyn.name, color: dyn.color };
+  if (value) {
+    const staticName =
+      EXPENSE_CATEGORY_LABEL[value as keyof typeof EXPENSE_CATEGORY_LABEL];
     if (staticName) return { name: staticName, color: FALLBACK_COLOR };
   }
   return { name: "其他", color: FALLBACK_COLOR };
@@ -104,11 +113,8 @@ export function buildDailySpendData(
   const monthIndex = selectedMonth.getMonth();
   const monthPrefix = `${year}-${pad2(monthIndex + 1)}-`;
 
-  // categories.byCode 查表 — 避免每筆 transaction 都跑 .find()
-  const byCode = new Map<string, CategoryRow>();
-  for (const c of categories) {
-    if (c.code) byCode.set(c.code, c);
-  }
+  // per review #4：改走 shared lookup，byId + byCode 一次建，兼容自訂 UUID。
+  const lookup = buildCategoryLookup(categories);
 
   // (1) 篩當月 + expense + completed
   const monthlyExpenses = transactions.filter(
@@ -124,7 +130,7 @@ export function buildDailySpendData(
   const seriesAgg = new Map<string, { color: string; monthTotal: number }>();
 
   for (const t of monthlyExpenses) {
-    const { name, color } = resolveCategory(t.category, byCode);
+    const { name, color } = resolveCategory(t.category, lookup);
     const amount = num(t.amount);
     if (amount <= 0) continue;
 
@@ -256,10 +262,7 @@ export function buildDailyDetail(
     return { isoDate, total: 0, groups: [] };
   }
 
-  const byCode = new Map<string, CategoryRow>();
-  for (const c of categories) {
-    if (c.code) byCode.set(c.code, c);
-  }
+  const lookup = buildCategoryLookup(categories);
   const accountById = new Map<string, AccountRow>();
   for (const a of accounts) {
     accountById.set(a.id, a);
@@ -283,7 +286,7 @@ export function buildDailyDetail(
     const amount = num(t.amount);
     if (amount <= 0) continue;
 
-    const { name, color } = resolveCategory(t.category, byCode);
+    const { name, color } = resolveCategory(t.category, lookup);
     const accName = getAccountLabel(
       t.account_id,
       t.account_id ? accountById.get(t.account_id)?.name : undefined

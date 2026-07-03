@@ -70,8 +70,14 @@ export function BulkProjectTagBar({
         toast.error("批次更新失敗", { description: result.error });
         return;
       }
+      // per review #9：skippedCount > 0 時明講「M 筆被略過」，避免使用者以為
+      // 全部成功卻其實有 race / RLS 過濾漏網。
+      const skippedNote =
+        result.skippedCount > 0 ? `（${result.skippedCount} 筆被略過）` : "";
       toast.success(
-        tag ? `已批次歸納 ${result.updatedCount} 筆到「${tag}」` : `已清除 ${result.updatedCount} 筆專案標籤`,
+        tag
+          ? `已批次歸納 ${result.updatedCount} 筆到「${tag}」${skippedNote}`
+          : `已清除 ${result.updatedCount} 筆專案標籤${skippedNote}`,
         {
           icon: <CheckCircle2 className="size-4 text-emerald-500" />,
         }

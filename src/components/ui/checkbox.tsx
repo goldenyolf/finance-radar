@@ -9,16 +9,22 @@ import { cn } from "@/lib/utils";
 /**
  * Checkbox — base-ui primitive 包成 shadcn 風單一 component。
  *
- * checked: false / true / "indeterminate" 三態。indeterminate 顯示 Minus icon，
- * 給「主開關全選 / 部分選」場景用（per spec phase 3 配置面板）。
+ * checked / indeterminate 兩 prop 分離控制（base-ui 1.5 語意）。
+ * per review #12：不再靠 base-ui Indicator（它 keepMounted=true 時
+ * unchecked 也會 render 一個含 Check 的空 span，即使 CSS 想藏也可能被
+ * transitionStatus attrs 破壞）。改為直接把 Check / Minus 放進 Root，
+ * 只靠 root 的 data-checked / data-indeterminate 決定誰顯示：
+ *   - data-indeterminate → 顯示 Minus
+ *   - data-checked（不 indeterminate）→ 顯示 Check
+ *   - 都沒有（unchecked）→ 兩個都藏
  *
  * 用法：
  *   <Checkbox checked={on} onCheckedChange={setOn} aria-label="..." />
- *   <Checkbox checked="indeterminate" ... />
+ *   <Checkbox checked={false} indeterminate={true} ... />
  */
 
 interface CheckboxProps
-  extends Omit<CheckboxPrimitive.Root.Props, "render" | "className"> {
+  extends Omit<CheckboxPrimitive.Root.Props, "render" | "className" | "children"> {
   className?: string;
 }
 
@@ -41,26 +47,21 @@ const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
         )}
         {...props}
       >
-        <CheckboxPrimitive.Indicator
-          keepMounted
-          className="flex items-center justify-center text-current"
-        >
-          {/*
-            兩 icon 都 mount，靠父層 root 的 data-indeterminate 切顯示。比起
-            render-function children 更穩，base-ui 1.5 的 Indicator children
-            不接 (state) => ReactNode 型別。
-          */}
-          <Check
-            className="size-3 group-data-[indeterminate]/checkbox:hidden"
-            strokeWidth={3}
-            aria-hidden
-          />
-          <Minus
-            className="hidden size-3 group-data-[indeterminate]/checkbox:block"
-            strokeWidth={3}
-            aria-hidden
-          />
-        </CheckboxPrimitive.Indicator>
+        {/*
+          Check 只在 data-checked 且非 indeterminate 時顯示；
+          Minus 只在 data-indeterminate 時顯示。
+          unchecked 兩個都藏（hidden by default），對齊使用者對「空 checkbox」的預期。
+        */}
+        <Check
+          aria-hidden
+          strokeWidth={3}
+          className="hidden size-3 group-data-[checked]/checkbox:block group-data-[indeterminate]/checkbox:hidden"
+        />
+        <Minus
+          aria-hidden
+          strokeWidth={3}
+          className="hidden size-3 group-data-[indeterminate]/checkbox:block"
+        />
       </CheckboxPrimitive.Root>
     );
   }

@@ -4,6 +4,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+  per review #11：tw-animate-css `animate-collapsible-down/-up` 的 keyframe 走
+  --radix-collapsible-content-height；base-ui Collapsible 只提供
+  --collapsible-panel-height。加這條 alias 把 base-ui 的變數 forward 給
+  tw-animate 期望的變數名，動畫才能真的從 0 → 內容高度 smooth 展開，
+  否則會 fallback 到 auto → 瀏覽器無法 interpolate → 直接 snap。
+  同理 accordion 也做一組 alias 給 base-ui accordion 用（如果未來替換）。
+*/
+[data-slot="collapsible-content"] {
+  --radix-collapsible-content-height: var(--collapsible-panel-height);
+}
+[data-slot="accordion-content"] {
+  --radix-accordion-content-height: var(--accordion-panel-height);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

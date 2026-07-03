@@ -17,7 +17,7 @@
  *     → 改到別類的 row 自動「飛出」當前 panel；圓餅 + 預算進度條同步 spring 動畫
  */
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -31,7 +31,11 @@ import {
 } from "@/components/ui/select";
 import { Money } from "@/components/ui/money";
 import { updateTransactionCategory } from "@/lib/actions/transactions";
-import { buildCategoryLookup, type CategoryRow } from "@/lib/categories";
+import {
+  buildCategoryLookup,
+  resolveCategory,
+  type CategoryRow,
+} from "@/lib/categories";
 import { num, type TransactionRow } from "@/lib/dashboard";
 import {
   EXPENSE_CATEGORY_COLOR,
@@ -40,8 +44,38 @@ import {
 } from "@/lib/expense-categories";
 import { cn } from "@/lib/utils";
 
-/** 七大支出分類 code 列表 — Select dropdown 選項來源 */
-const CATEGORY_CODES = Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[];
+/**
+ * per review #5：CATEGORY_CODES 只有 built-in 7 個，導致自訂分類的 row 在
+ * drilldown 面板顯示錯誤 label（永遠 fallback 到「其他」），且 Select dropdown
+ * 也沒把自訂分類列出來 → user 只能把 row 移到 built-in 7 個之一，
+ * 反而無意間把 row 從自訂類別移出去。
+ *
+ * 改法：把 built-in 7 個 + user 自訂 expense 分類都攤平成 options，value =
+ * code (built-in) 或 category.id (自訂 UUID)。
+ */
+type CategoryOption = { value: string; name: string; color: string };
+
+function buildCategoryOptions(categories: CategoryRow[]): CategoryOption[] {
+  const lookup = buildCategoryLookup(categories);
+  const options: CategoryOption[] = [];
+  // built-in 依 EXPENSE_CATEGORY_LABEL 固定順序
+  for (const code of Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[]) {
+    const dyn = lookup.byCode.get(code);
+    options.push({
+      value: code,
+      name: dyn?.name ?? EXPENSE_CATEGORY_LABEL[code],
+      color: dyn?.color ?? EXPENSE_CATEGORY_COLOR[code],
+    });
+  }
+  // 自訂分類（code = null）— 依 name 排序附加在後
+  const custom = categories
+    .filter((c) => c.type === "expense" && !c.code)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const c of custom) {
+    options.push({ value: c.id, name: c.name, color: c.color });
+  }
+  return options;
+}
 
 interface Props {
   /** 分類點 + label header 用的當前分類顏色（跟圓餅扇形一致）*/
@@ -143,11 +177,15 @@ function DrilldownRow({ tx, categories }: RowProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const lookup = buildCategoryLookup(categories);
-  // 當前 category — DB 端是 ExpenseCategory | null；null 視為 'other'
-  const currentCategory: ExpenseCategory = (tx.category ?? "other") as ExpenseCategory;
+  const options = buildCategoryOptions(categories);
+
+  // 當前 category value — DB 端可能是 built-in code 或自訂 UUID；null 視為 'other'。
+  // per review #5：不再窄化到 ExpenseCategory enum；跟 aggregator 對齊語意。
+  const currentValue: string = tx.category?.trim() || "other";
+  const optionByValue = new Map(options.map((o) => [o.value, o]));
 
   function handleChange(next: string) {
-    if (!next || next === currentCategory) return;
+    if (!next || next === currentValue) return;
     startTransition(async () => {
       const result = await updateTransactionCategory(tx.id, next);
       if (!result.ok) {
@@ -155,8 +193,11 @@ function DrilldownRow({ tx, categories }: RowProps) {
         return;
       }
       const newLabel =
-        lookup.byCode.get(next as ExpenseCategory)?.name ??
-        EXPENSE_CATEGORY_LABEL[next as ExpenseCategory];
+        optionByValue.get(next)?.name ??
+        resolveCategory(next, lookup)?.name ??
+        (next in EXPENSE_CATEGORY_LABEL
+          ? EXPENSE_CATEGORY_LABEL[next as ExpenseCategory]
+          : "自訂分類");
       toast.success(`已重新分類為【${newLabel}】`);
       // 觸發 RSC 重抓 → drilldown / pie / 預算條一氣呵成 spring 動畫
       router.refresh();
@@ -183,9 +224,11 @@ function DrilldownRow({ tx, categories }: RowProps) {
         現場分類選擇器 — 平時極簡無邊框，僅顯示分類點+簡名；hover 浮淡底色
         點開即 Select dropdown。base-ui Select.Value 用 render-function children
         (per memory: 否則 trigger 印 raw value)。
+        per review #5：SelectValue 用 optionByValue 一次查（含自訂 UUID）；
+        options 直接鋪 built-in + 自訂，user 可從自訂 → 自訂 / built-in → 自訂 都行。
       */}
       <Select
-        value={currentCategory}
+        value={currentValue}
         onValueChange={(next) => {
           // base-ui Select onValueChange 型別含 null — 收斂後再 forward
           if (typeof next === "string") handleChange(next);
@@ -198,12 +241,11 @@ function DrilldownRow({ tx, categories }: RowProps) {
         >
           <SelectValue>
             {(v) => {
-              const code = (typeof v === "string" && v in EXPENSE_CATEGORY_LABEL
-                ? v
-                : "other") as ExpenseCategory;
-              const dyn = lookup.byCode.get(code);
-              const dotColor = dyn?.color ?? EXPENSE_CATEGORY_COLOR[code];
-              const name = dyn?.name ?? EXPENSE_CATEGORY_LABEL[code];
+              const value = typeof v === "string" ? v : "other";
+              const opt = optionByValue.get(value);
+              const dotColor =
+                opt?.color ?? EXPENSE_CATEGORY_COLOR.other;
+              const name = opt?.name ?? EXPENSE_CATEGORY_LABEL.other;
               return (
                 <span className="flex items-center gap-1.5">
                   {pending ? (
@@ -222,23 +264,18 @@ function DrilldownRow({ tx, categories }: RowProps) {
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {CATEGORY_CODES.map((code) => {
-            const dyn = lookup.byCode.get(code);
-            const dotColor = dyn?.color ?? EXPENSE_CATEGORY_COLOR[code];
-            const name = dyn?.name ?? EXPENSE_CATEGORY_LABEL[code];
-            return (
-              <SelectItem key={code} value={code}>
-                <span className="flex items-center gap-2">
-                  <span
-                    aria-hidden
-                    className="inline-block size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: dotColor }}
-                  />
-                  <span>{name}</span>
-                </span>
-              </SelectItem>
-            );
-          })}
+          {options.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className="inline-block size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: opt.color }}
+                />
+                <span>{opt.name}</span>
+              </span>
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
 

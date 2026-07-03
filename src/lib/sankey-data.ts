@@ -1,5 +1,9 @@
 import { getAccountLabel } from "@/lib/account-display";
-import { buildCategoryLookup, type CategoryRow } from "@/lib/categories";
+import {
+  buildCategoryLookup,
+  resolveCategory,
+  type CategoryRow,
+} from "@/lib/categories";
 import {
   num,
   type AccountRow,
@@ -48,24 +52,34 @@ function isInMonth(dateStr: string, ref: Date): boolean {
 
 type CategoryLookup = ReturnType<typeof buildCategoryLookup> | null;
 
+/*
+  per review #4：0030 之後 t.category 可能是 built-in code 或 categories.id (UUID)，
+  舊實作只走 byCode → UUID miss、custom 分類全部 collapse 成灰色「其他」。
+  改走 shared resolveCategory (byId → byCode)，自訂分類有正確 name + color。
+  Fallback 也走 t.category 直接查 EXPENSE_CATEGORY_LABEL，UUID 打不中就退到 "other"。
+*/
 function categoryLabel(
-  cat: ExpenseCategory | null | undefined,
+  cat: string | null | undefined,
   lookup: CategoryLookup
 ): string {
-  const key = (cat ?? "other") as ExpenseCategory;
-  return (
-    lookup?.byCode.get(key)?.name ?? EXPENSE_CATEGORY_LABEL[key] ?? "其他"
-  );
+  const dyn = resolveCategory(cat, lookup);
+  if (dyn) return dyn.name;
+  const fallback = (
+    cat && cat in EXPENSE_CATEGORY_LABEL ? cat : "other"
+  ) as ExpenseCategory;
+  return EXPENSE_CATEGORY_LABEL[fallback] ?? "其他";
 }
 
 function categoryColor(
-  cat: ExpenseCategory | null | undefined,
+  cat: string | null | undefined,
   lookup: CategoryLookup
 ): string {
-  const key = (cat ?? "other") as ExpenseCategory;
-  return (
-    lookup?.byCode.get(key)?.color ?? EXPENSE_CATEGORY_COLOR[key] ?? "#94A3B8"
-  );
+  const dyn = resolveCategory(cat, lookup);
+  if (dyn) return dyn.color;
+  const fallback = (
+    cat && cat in EXPENSE_CATEGORY_COLOR ? cat : "other"
+  ) as ExpenseCategory;
+  return EXPENSE_CATEGORY_COLOR[fallback] ?? "#94A3B8";
 }
 
 /**
@@ -97,7 +111,7 @@ export function buildSankeyData(
   //    incomeSums[sourceName][accountId] = amount
   //    expenseSums[accountId][category]  = amount
   const incomeSums = new Map<string, Map<string, number>>();
-  const expenseSums = new Map<string, Map<ExpenseCategory, number>>();
+  const expenseSums = new Map<string, Map<string, number>>();
 
   for (const t of monthTxns) {
     const amt = Math.abs(num(t.amount));
@@ -114,7 +128,9 @@ export function buildSankeyData(
       }
       inner.set(accId, (inner.get(accId) ?? 0) + amt);
     } else if (t.type === "expense") {
-      const cat = (t.category ?? "other") as ExpenseCategory;
+      // per review #4：category 可能是 built-in code 或 UUID；normalize 到與
+      // aggregator 相同的 group key（trim + 空字串 → "other"）保持圖跟表一致。
+      const cat = t.category?.trim() || "other";
       let inner = expenseSums.get(accId);
       if (!inner) {
         inner = new Map();
@@ -135,7 +151,7 @@ export function buildSankeyData(
   const nodes: SankeyNode[] = [];
   const incomeIndex = new Map<string, number>();
   const accountIndex = new Map<string, number>();
-  const expenseIndex = new Map<ExpenseCategory, number>();
+  const expenseIndex = new Map<string, number>();
 
   // 4a. income nodes
   for (const sourceName of incomeSums.keys()) {
@@ -169,7 +185,7 @@ export function buildSankeyData(
   }
 
   // 4c. expense nodes（依本月實際出現的 category，色彩走專屬色票）
-  const usedExpenseCats = new Set<ExpenseCategory>();
+  const usedExpenseCats = new Set<string>();
   for (const inner of expenseSums.values()) {
     for (const cat of inner.keys()) usedExpenseCats.add(cat);
   }

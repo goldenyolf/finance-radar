@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import { ChevronDown, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -83,8 +83,21 @@ export function AnalyticsView({
   const [excludedTags, setExcludedTags] = useState<Set<string>>(
     () => new Set<string>()
   );
-  const [filterPanelOpen, setFilterPanelOpen] = useState<boolean>(false);
+  /*
+    per review #13：先前 open={filterPanelOpen || isolate} 讓 isolate=true 時
+    user 按 CollapsibleTrigger 收合永遠沒反應（onOpenChange 設 false，但 OR gate
+    立刻把 open 拉回 true）。改成：panelOpen 完全由 user 控制；isolate 由 OFF→ON
+    透過 handleIsolateChange 主動 sync 一次面板狀態，之後 user 可自由開合。
+  */
+  const [panelOpen, setPanelOpen] = useState<boolean>(false);
   const switchId = useId();
+
+  const handleIsolateChange = useCallback((next: boolean) => {
+    setIsolate(next);
+    // toggle 隔離時面板狀態跟著切：ON 自動展開（讓 user 看到過濾對象）；OFF 自動收起。
+    // user 之後仍可點 chevron 手動開合，不會被強制拉回。
+    setPanelOpen(next);
+  }, []);
 
   /* 從全部 transactions 撈出去重的 project_tag 清單 — 用全資料而非「當月」，
      讓 user 切月份檢視時 checkbox 不會神秘消失。 */
@@ -202,7 +215,7 @@ export function AnalyticsView({
             <Switch
               id={switchId}
               checked={isolate}
-              onCheckedChange={setIsolate}
+              onCheckedChange={handleIsolateChange}
               aria-label="特定專案隔離模式 — ON 啟用隔離、OFF 顯示全部"
             />
           </div>
@@ -211,10 +224,7 @@ export function AnalyticsView({
             配置面板 — isolate=true 自動展開，OFF 時收起；user 也可手動開合
             想「預先配置下次要過濾哪些」。
           */}
-          <Collapsible
-            open={filterPanelOpen || isolate}
-            onOpenChange={setFilterPanelOpen}
-          >
+          <Collapsible open={panelOpen} onOpenChange={setPanelOpen}>
             <div className="flex items-center justify-between border-t border-foreground/[0.05] px-3 py-1.5 sm:px-4">
               <CollapsibleTrigger
                 type="button"

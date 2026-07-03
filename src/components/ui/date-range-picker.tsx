@@ -43,28 +43,69 @@ function fmt(iso: string | null): string {
   return `${y}/${m}/${d}`;
 }
 
-function isoOf(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
+/*
+  per review #15：transactions.date 存 Asia/Taipei YYYY-MM-DD 字串
+  （見 analytics-view.tsx::todayIsoTaipei）；presets 若用瀏覽器本地時區算
+  在跨時區 user（旅遊 / 家人裝置設不同 TZ）會 boundary 差一天。統一走
+  Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }) — en-CA locale
+  直接吐 YYYY-MM-DD，跟 DB 儲存格式對齊。
+*/
+const TAIPEI_TZ = "Asia/Taipei";
+
+function taipeiYmd(date: Date): { y: number; m: number; d: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TAIPEI_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const y = Number(parts.find((p) => p.type === "year")?.value ?? "0");
+  const m = Number(parts.find((p) => p.type === "month")?.value ?? "1");
+  const d = Number(parts.find((p) => p.type === "day")?.value ?? "1");
+  return { y, m, d };
+}
+
+function isoOf(y: number, m: number, d: number): string {
+  const mm = String(m).padStart(2, "0");
+  const dd = String(d).padStart(2, "0");
+  return `${y}-${mm}-${dd}`;
 }
 
 function todayISO(): string {
-  return isoOf(new Date());
+  const { y, m, d } = taipeiYmd(new Date());
+  return isoOf(y, m, d);
 }
 
 function offsetISO(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return isoOf(d);
+  // 從 Taipei 「今天」往回推 days 天。用純日期算術避免夏令時間 edge case。
+  const { y, m, d } = taipeiYmd(new Date());
+  // 建 UTC noon 那天，加減天數穩定不受 DST 影響
+  const base = new Date(Date.UTC(y, m - 1, d, 12));
+  base.setUTCDate(base.getUTCDate() - days);
+  return isoOf(
+    base.getUTCFullYear(),
+    base.getUTCMonth() + 1,
+    base.getUTCDate()
+  );
 }
 
 function monthRange(offsetMonths = 0): DateRange {
-  const now = new Date();
-  const first = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1);
-  const last = new Date(now.getFullYear(), now.getMonth() + offsetMonths + 1, 0);
-  return { from: isoOf(first), to: isoOf(last) };
+  const { y, m } = taipeiYmd(new Date());
+  // JS Date 用 (year, monthIndex 0-based)，跨年 offset 靠自動 normalize
+  const first = new Date(Date.UTC(y, m - 1 + offsetMonths, 1, 12));
+  const last = new Date(Date.UTC(y, m + offsetMonths, 0, 12));
+  return {
+    from: isoOf(
+      first.getUTCFullYear(),
+      first.getUTCMonth() + 1,
+      first.getUTCDate()
+    ),
+    to: isoOf(
+      last.getUTCFullYear(),
+      last.getUTCMonth() + 1,
+      last.getUTCDate()
+    ),
+  };
 }
 
 const PRESETS: Array<{ label: string; build: () => DateRange }> = [

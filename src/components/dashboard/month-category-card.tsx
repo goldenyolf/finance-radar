@@ -95,8 +95,12 @@ export function MonthCategoryCard({
     const monthExpenses = filterMonthlyExpenses(scopedTransactions, base, {
       excludeOutliers,
     });
+    // per review #3：aggregator group key 是 `t.category?.trim() || "other"`
+    // （expense-categories.ts:aggregateMonthlyByCategory）。此處 filter 用
+    // 同款 normalize，避免空字串 / 純空白的 category 在 pie 落進 "other"
+    // bucket 但 drilldown 撈不到 → 「pie 總額 = 明細總額」不變式的違反。
     return monthExpenses
-      .filter((t) => (t.category ?? "other") === selectedCategory)
+      .filter((t) => (t.category?.trim() || "other") === selectedCategory)
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [mode, selectedCategory, scopedTransactions, now, excludeOutliers]);
 
