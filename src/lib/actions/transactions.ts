@@ -9,7 +9,10 @@ import { stripDescriptionLabel } from "@/lib/description-normalize";
 import { createClient } from "@/lib/supabase/server";
 
 import type { IncomeCategory } from "@/lib/dashboard";
-import { EXPENSE_CATEGORY_LABEL } from "@/lib/expense-categories";
+import {
+  classifyByKeyword,
+  EXPENSE_CATEGORY_LABEL,
+} from "@/lib/expense-categories";
 
 /** 7 大支出分類 code set — server-side enum validation 用 */
 const EXPENSE_CATEGORY_CODES = new Set<string>(
@@ -579,8 +582,14 @@ export async function createTransaction(
 
   const supabase = await createClient();
   // user_id 走 DB DEFAULT auth.uid()
-  // income 沒有「花費分類」概念 → 寫 null；expense 預設 'other'
-  const category = input.type === "income" ? null : (input.category ?? "other");
+  // income 沒有「花費分類」概念 → 寫 null
+  // expense: caller 有傳 category 就用；沒傳 → 走 classifyByKeyword 做關鍵字
+  // 反查（e.g.「早餐 60」→ food_dining），跟 LINE bot 端 fallback 對齊
+  // (per Ken persona review round 1 · K-A3.1)。沒命中才落 'other'。
+  const category =
+    input.type === "income"
+      ? null
+      : input.category ?? classifyByKeyword(input.description);
   // income_category 反過來：只有 income 時帶值；expense / transfer 強制 null
   const incomeCategory =
     input.type === "income" ? (input.incomeCategory ?? null) : null;

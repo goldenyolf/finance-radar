@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DatePickerWithRange,
+  formatDateDisplay,
   type DateRange,
 } from "@/components/ui/date-range-picker";
 import { Input } from "@/components/ui/input";
@@ -460,13 +461,15 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
     return Array.from(seen).sort();
   }, [initial]);
 
-  /* 摘要顯示用字串 — keyword + 日期都吃進去，讓使用者一眼看到當前疊整條件。 */
+  /* 摘要顯示用字串 — keyword + 日期都吃進去，讓使用者一眼看到當前疊整條件。
+     per Emma persona review E-A3.1/2：日期走 formatDateDisplay（YYYY/MM/DD）
+     跟 picker trigger 同款，避免同頁 ISO `-` vs display `/` 兩種分隔符。 */
   const summaryHint = useMemo(() => {
     const parts: string[] = [];
     if (hasQuery) parts.push(`「${terms.join(" + ")}」`);
     if (hasRange) {
-      const f = range.from ?? "起";
-      const t = range.to ?? "今";
+      const f = range.from ? formatDateDisplay(range.from) : "起";
+      const t = range.to ? formatDateDisplay(range.to) : "今";
       parts.push(`${f} ~ ${t}`);
     }
     return parts.join("　•　");
@@ -724,6 +727,20 @@ function TransactionRow({
             {categoryLabel}
           </span>
           <span className="truncate">{accName}</span>
+          {/*
+            專案標籤 chip（per Ken persona review K-A4.1）— 有 project_tag 時
+            顯示 🏷️ + tag 名，讓明細列一眼看得出「這筆已歸類到 X 專案」，
+            使用者不必再開 edit dialog 才知道有沒有存到。
+          */}
+          {row.project_tag && row.project_tag.trim() && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.04] px-1.5 py-0.5 text-foreground/70 ring-1 ring-foreground/10"
+              aria-label={`專案標籤 ${row.project_tag}`}
+            >
+              <span aria-hidden>🏷️</span>
+              <span className="truncate">{row.project_tag}</span>
+            </span>
+          )}
         </p>
       </div>
 

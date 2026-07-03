@@ -5,6 +5,7 @@ import { AccountSwitcher } from "@/components/dashboard/account-switcher";
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { BoardCard } from "@/components/dashboard/board-card";
 import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
+import { MonthHeadlineCards } from "@/components/dashboard/month-headline-cards";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
 import { GoalSummaryLink } from "@/components/dashboard/goal-summary-link";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
@@ -227,6 +228,16 @@ export default async function HomePage({ searchParams }: PageProps) {
           </AlertDescription>
         </Alert>
       )}
+
+      {/*
+        本月核心數據大字報（per Ken persona review K-A1.1）—
+        Ken 早上 8:00 掃戰情室要「3 秒判斷本月現金流健康度」，之前只有 3 個
+        板塊卡需逐塊看再心算加總，達不到目標。把已存在的 MonthHeadlineCards
+        (支出 / 收入 / 儲蓄率) 提上首頁，第一眼就拿到本月體檢報告。
+      */}
+      <div className="mb-6">
+        <MonthHeadlineCards transactions={transactions} monthDate={now} />
+      </div>
 
       {/* 板塊區（自訂 N 個，最多 4 個 — 沒任何 plate → 引導去 settings 建第一個） */}
       {boardData.length === 0 ? (

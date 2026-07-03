@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowRight,
@@ -95,10 +95,6 @@ export function QuickAddTransaction({ accounts, projectTagSuggestions }: Props) 
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  // 初始 paymentMethod 跟著第一個帳戶 type 走（最常見：cash → cash, bank → transfer）
-  const initialPaymentMethod = (): PaymentMethod =>
-    accounts[0] ? ACCOUNT_TYPE_TO_PAYMENT[accounts[0].type] : "cash";
-
   const [type, setType] = useState<TransactionType>(INITIAL_TYPE);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
@@ -106,7 +102,17 @@ export function QuickAddTransaction({ accounts, projectTagSuggestions }: Props) 
   const [status, setStatus] = useState<TransactionStatus>(INITIAL_STATUS);
   const [date, setDate] = useState(todayIsoDate);
   const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? "");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initialPaymentMethod);
+
+  /*
+    per Ken persona review K-A2.1：paymentMethod 從 accountId 純推導，不再獨立
+    state — 兩個 state 各自 initialize / 各自 setState 遇到 race 就會漂移，
+    導致「帳戶顯示 隨身現金 但現金 pill 是灰」。derived useMemo 保證兩者一定
+    對齊；user 點 pill 只需切 accountId，paymentMethod 自動同步。
+  */
+  const paymentMethod = useMemo<PaymentMethod>(() => {
+    const acc = accounts.find((a) => a.id === accountId);
+    return acc ? ACCOUNT_TYPE_TO_PAYMENT[acc.type] : "cash";
+  }, [accountId, accounts]);
   const [fromAccountId, setFromAccountId] = useState<string>(accounts[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState<string>(accounts[1]?.id ?? "");
   const [projectTag, setProjectTag] = useState<string>("");
@@ -138,22 +144,19 @@ export function QuickAddTransaction({ accounts, projectTagSuggestions }: Props) 
     setStatus(INITIAL_STATUS);
     setDate(todayIsoDate());
     setAccountId(accounts[0]?.id ?? "");
-    setPaymentMethod(initialPaymentMethod());
     setFromAccountId(accounts[0]?.id ?? "");
     setToAccountId(accounts[1]?.id ?? "");
     setProjectTag("");
   }
 
-  // 雙向綁定：選帳戶 -> 同步 paymentMethod
+  // 選帳戶 → paymentMethod 走 useMemo 自動 derive，這裡只切 accountId。
   function handleAccountChange(id: string) {
     setAccountId(id);
-    const acc = accounts.find((a) => a.id === id);
-    if (acc) setPaymentMethod(ACCOUNT_TYPE_TO_PAYMENT[acc.type]);
   }
 
-  // 雙向綁定：選 paymentMethod -> 若 current account type 不匹配，切到第一個 matching 帳戶
+  // 選 paymentMethod → 只切 accountId 到符合該 type 的第一個帳戶；
+  // paymentMethod 走 useMemo 自動 derive，永遠對齊 accountId。
   function handlePaymentMethodChange(pm: PaymentMethod) {
-    setPaymentMethod(pm);
     const wantType = PAYMENT_TO_ACCOUNT_TYPE[pm];
     const currentAcc = accounts.find((a) => a.id === accountId);
     if (!currentAcc || currentAcc.type !== wantType) {

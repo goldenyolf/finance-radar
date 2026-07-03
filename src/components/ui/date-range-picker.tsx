@@ -36,12 +36,20 @@ interface Props {
   className?: string;
 }
 
-function fmt(iso: string | null): string {
+/**
+ * 把 DB 存的 ISO YYYY-MM-DD 顯示成使用者看得順的 YYYY/MM/DD。
+ * export 出去讓其他 caller（transactions-view 的 summary hint）共用同款格式，
+ * 避免同頁一半 `2026/04/05`、一半 `2026-04-05`（per Emma persona review E-A3.1/2）。
+ */
+export function formatDateDisplay(iso: string | null): string {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
   if (!y || !m || !d) return iso;
   return `${y}/${m}/${d}`;
 }
+
+// 內部沿用短名 fmt() 讓下方 render 邏輯保持乾淨
+const fmt = formatDateDisplay;
 
 /*
   per review #15：transactions.date 存 Asia/Taipei YYYY-MM-DD 字串

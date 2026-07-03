@@ -203,10 +203,24 @@ export function AnalyticsView({
     <div className="flex flex-col gap-6">
       {/*
         全頁帳戶篩選 — 放在最上方，讓「我這個月在這個帳戶花多少 / 收多少」
-        一眼就能切到。單一帳戶時（accounts.length <= 1）藏起來，避免佔位。
-        Select trigger 樣式對齊首頁的 AccountSwitcher（rounded-full + 灰邊）
-        保持整站帳戶切換視覺一致。
+        一眼就能切到。
+        per Emma persona review E-A1.1：單一帳戶時不再完全隱藏，改顯 disabled
+        教學態 strip，讓新使用者知道「這功能存在，只是還沒觸發條件」；避免
+        「空 seed 帳號進來 → 頁面看不到帳戶篩選 → 以為沒此功能」的困惑。
       */}
+      {accounts.length <= 1 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-foreground/[0.07] bg-foreground/[0.015] px-3 py-2 text-muted-foreground/60 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Layers className="size-4 shrink-0" aria-hidden />
+            <span className="text-xs font-medium tracking-tight">
+              帳戶檢視範圍
+            </span>
+            <span className="truncate text-[11px]">
+              新增第二個帳戶後可切換單一帳戶檢視
+            </span>
+          </div>
+        </div>
+      )}
       {accounts.length > 1 && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/[0.07] bg-foreground/[0.015] px-3 py-2 sm:px-4">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -279,10 +293,23 @@ export function AnalyticsView({
       )}
 
       {/*
-        Slim 隔離條 — 沒任何 tag 直接 null；有 tag 才顯示一行緊湊條。
-        isolate=true 時 Collapsible 自動展開配置；OFF 時整條只佔約 36px 高，
-        副標一行字提示，視覺權重大幅降低。
+        Slim 隔離條 — isolate=true 時 Collapsible 自動展開配置。
+        per Emma persona review E-A2.1：沒 tag 也不完全隱藏，改顯 disabled
+        教學態，讓 user 看到功能存在 + 知道怎麼觸發。
       */}
+      {!hasTags && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-foreground/[0.07] bg-foreground/[0.015] px-3 py-2 text-muted-foreground/60 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <ShieldCheck className="size-4 shrink-0" aria-hidden />
+            <span className="text-xs font-medium tracking-tight">
+              特定專案隔離模式
+            </span>
+            <span className="truncate text-[11px]">
+              幫某筆大額交易打上專案標籤（例：太太醫療、新居家電）後可啟用
+            </span>
+          </div>
+        </div>
+      )}
       {hasTags && (
         <motion.div
           layout
