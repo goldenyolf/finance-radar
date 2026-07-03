@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { runBudgetAlerts } from "@/lib/budget-alerts";
+import { stripDescriptionLabel } from "@/lib/description-normalize";
 import { createClient } from "@/lib/supabase/server";
 
 import type { ExpenseCategory, IncomeCategory } from "@/lib/dashboard";
@@ -124,7 +125,7 @@ export async function updateTransaction(
   //    project_tag 對兩腿 sync 是刻意的 — 一筆「新居家電」轉帳被標籤後，配對的
   //    另一腿也屬於同一專案，分析頁過濾時兩腿才會同進同出。
   const sharedPatch: Record<string, string | number | null> = {
-    description: input.description.trim(),
+    description: stripDescriptionLabel(input.description),
     amount: input.amount,
   };
   if (input.projectTag !== undefined) {
@@ -398,7 +399,7 @@ export async function createTransaction(
   // payment_method：caller 沒給就寫 null（DB CHECK 允許 NULL），給了就照寫
   const { error } = await supabase.from("transactions").insert({
     account_id: input.accountId,
-    description: input.description.trim(),
+    description: stripDescriptionLabel(input.description),
     amount: input.amount,
     type: input.type,
     priority: input.priority,
@@ -445,7 +446,7 @@ export async function createTransfer(
 
   const supabase = await createClient();
   const groupId = randomUUID();
-  const description = input.description.trim();
+  const description = stripDescriptionLabel(input.description);
   const projectTag = normalizeProjectTag(input.projectTag ?? null);
 
   // user_id 兩腿都走 DB DEFAULT auth.uid()

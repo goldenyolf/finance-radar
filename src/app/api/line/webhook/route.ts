@@ -7,6 +7,7 @@ import {
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { runBudgetAlerts } from "@/lib/budget-alerts";
+import { stripDescriptionLabel } from "@/lib/description-normalize";
 import {
   buildCategoryLookup,
   classifyByCategoryKeywords,
@@ -735,6 +736,11 @@ async function handleTextMessage(
   if (intercepted.matchedAccount) {
     overrideAccountId = intercepted.matchedAccount.id;
   }
+
+  // 剝「支付：」「支出：」這類記帳口語前綴 — LLM prompt 沒教它處理，
+  // 這裡 deterministic 一律剝掉再走分類器 / 存進 DB。剝完若空字串 fallback 原值。
+  const strippedItem = stripDescriptionLabel(item);
+  if (strippedItem) item = strippedItem;
 
   // expense 才需要 category；income 直接 null
   const category: ExpenseCategory | null =

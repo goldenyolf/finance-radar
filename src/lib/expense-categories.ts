@@ -130,6 +130,7 @@ export const EXPENSE_CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
     "午餐",
     "晚餐",
     "早餐",
+    "中餐",
     "便當",
     "手搖",
     "飲料",
