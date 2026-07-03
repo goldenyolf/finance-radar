@@ -51,7 +51,8 @@ interface Props {
   title: string;
   amount: number;
   accountId: string | null;
-  expenseCategory: ExpenseCategory | null;
+  /** DB 值 — code (built-in) 或 category.id (UUID, 自訂)。per 0030。 */
+  expenseCategory: string | null;
   isTransfer: boolean;
   /** 該筆原本的 type — 預填 dialog 的 income/expense tab；transfer 走鎖定狀態 */
   transactionType?: "income" | "expense" | "transfer";
@@ -89,22 +90,27 @@ export function TransactionRowActions({
   // 沒傳 transactionType 時 fallback：有 expenseCategory → expense；否則看 transfer
   const initialEditableType: EditableType =
     transactionType === "income" ? "income" : "expense";
-  // 動態下拉：只列出 type='expense' 且有穩定 code 的分類；自訂分類（code=null）
-  // 暫不放這裡，因為 transactions.category 還是 ExpenseCategory enum。Phase 5
-  // 把欄位改成 category_id UUID 之後，整段就可以平鋪所有 categories。
-  const categoryOptions: Array<[ExpenseCategory, string]> = categories
-    ? categories
-        .filter((c): c is CategoryRow & { code: string } =>
-          c.type === "expense" && !!c.code
-        )
-        .map((c) => [c.code as ExpenseCategory, c.name])
-    : STATIC_CATEGORY_OPTIONS;
+  /*
+    per 0030：CHECK constraint 已 drop，transactions.category 可以存
+      - built-in 分類的 code ('food_dining' 等) → value 用 code
+      - 使用者自訂分類的 id (UUID)              → value 用 category.id
+    自訂分類擺在 built-in 後面，並用括號 tag 標「自訂」讓使用者一眼分辨。
+  */
+  const categoryOptions: Array<[string, string]> = (() => {
+    if (!categories) return STATIC_CATEGORY_OPTIONS as Array<[string, string]>;
+    const expense = categories.filter((c) => c.type === "expense");
+    const builtIn: Array<[string, string]> = expense
+      .filter((c) => !!c.code)
+      .map((c) => [c.code as string, c.name]);
+    const custom: Array<[string, string]> = expense
+      .filter((c) => !c.code)
+      .map((c) => [c.id, c.name]);
+    return [...builtIn, ...custom];
+  })();
   const dynamicLabelMap = new Map(categoryOptions);
   const renderCategoryLabel = (value: unknown): string => {
     if (typeof value !== "string" || !value) return "選擇花費類型";
-    return (
-      dynamicLabelMap.get(value as ExpenseCategory) ?? getCategoryLabel(value)
-    );
+    return dynamicLabelMap.get(value) ?? getCategoryLabel(value);
   };
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -114,7 +120,7 @@ export function TransactionRowActions({
   const [draftTitle, setDraftTitle] = useState(title);
   const [draftAmount, setDraftAmount] = useState(String(amount));
   const [draftAccountId, setDraftAccountId] = useState<string>(accountId ?? "");
-  const [draftCategory, setDraftCategory] = useState<ExpenseCategory>(
+  const [draftCategory, setDraftCategory] = useState<string>(
     expenseCategory ?? "other"
   );
   const [draftType, setDraftType] = useState<EditableType>(initialEditableType);
@@ -352,7 +358,7 @@ export function TransactionRowActions({
                   <Label htmlFor={categoryFieldId}>花費類型</Label>
                   <Select
                     value={draftCategory}
-                    onValueChange={(v) => setDraftCategory(v as ExpenseCategory)}
+                    onValueChange={(v) => setDraftCategory(v as string)}
                   >
                     <SelectTrigger id={categoryFieldId} className="w-full">
                       <SelectValue placeholder="選擇花費類型">

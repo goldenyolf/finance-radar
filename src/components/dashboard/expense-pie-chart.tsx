@@ -17,9 +17,9 @@ import { cn } from "@/lib/utils";
 type Props = {
   data: CategorySlice[];
   /** drill-down 主路徑 — 當前選中分類；null = 未選 */
-  selectedCategory?: ExpenseCategory | null;
+  selectedCategory?: string | null;
   /** 點扇形 / 列表 row 觸發；caller 自己判斷重複點擊 → null toggle */
-  onSelectCategory?: (next: ExpenseCategory | null) => void;
+  onSelectCategory?: (next: string | null) => void;
 };
 
 function formatTwd(n: number) {
@@ -69,7 +69,7 @@ export function ExpensePieChart({
   const total = data.reduce((sum, s) => sum + s.amount, 0);
   const hasSelection = selectedCategory !== null;
 
-  function toggleCategory(cat: ExpenseCategory) {
+  function toggleCategory(cat: string) {
     if (!onSelectCategory) return;
     onSelectCategory(cat === selectedCategory ? null : cat);
   }

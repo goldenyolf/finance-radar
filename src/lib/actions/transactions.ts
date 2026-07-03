@@ -8,7 +8,7 @@ import { runBudgetAlerts } from "@/lib/budget-alerts";
 import { stripDescriptionLabel } from "@/lib/description-normalize";
 import { createClient } from "@/lib/supabase/server";
 
-import type { ExpenseCategory, IncomeCategory } from "@/lib/dashboard";
+import type { IncomeCategory } from "@/lib/dashboard";
 import { EXPENSE_CATEGORY_LABEL } from "@/lib/expense-categories";
 
 /** 7 大支出分類 code set — server-side enum validation 用 */
@@ -30,8 +30,9 @@ export interface CreateTransactionInput {
   amount: number;
   type: Exclude<TransactionType, "transfer">;
   priority: TransactionPriority;
-  /** 花費大類；未提供時 server 端套用 'other' 預設值，由 DB 預設或這裡顯式填入。 */
-  category?: ExpenseCategory;
+  /** 花費大類；未提供時 server 端套用 'other' 預設值。per 0030：值可能是
+   *  built-in code 或 categories.id (UUID)。 */
+  category?: string;
   /** 付款方式；undefined 不寫 → DB 為 NULL（caller 沒指定就讓欄位空著）。 */
   paymentMethod?: PaymentMethod;
   /** 收入多維度分類（type='income' 才有意義；expense 一律 null） */
@@ -67,8 +68,9 @@ export interface UpdateTransactionInput {
   amount: number;
   /** 可選；變更才傳。Transfer 改帳戶會破壞配對，這欄位對 transfer 不生效。 */
   accountId?: string;
-  /** 可選；變更才傳。Transfer 沒有花費分類概念，這欄位對 transfer 不生效。 */
-  category?: ExpenseCategory;
+  /** 可選；變更才傳。Transfer 沒有花費分類概念，這欄位對 transfer 不生效。
+   *  per 0030：值可能是 built-in code 或 categories.id (UUID)；server 不再窄化 enum。 */
+  category?: string;
   /** 可選；只允許 income ↔ expense 互改。Transfer row 不接受 type 變更（會破壞配對）。 */
   type?: Exclude<TransactionType, "transfer">;
   /** 週期性 placeholder 編輯時帶 'confirmed' → 把 fulfillment_state 改成
@@ -233,14 +235,33 @@ export async function updateTransactionCategory(
   newCategory: string
 ): Promise<MutationResult> {
   if (!transactionId) return { ok: false, error: "缺少交易 ID" };
-  if (!EXPENSE_CATEGORY_CODES.has(newCategory)) {
-    return { ok: false, error: "分類錯誤" };
-  }
+  if (!newCategory) return { ok: false, error: "分類錯誤" };
 
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { ok: false, error: "尚未登入" };
   const uid = userData.user.id;
+
+  /*
+    per 0030：newCategory 可能是 built-in code 或 categories.id (UUID)。
+      - built-in code → 白名單認 7 個 code 就直接通過
+      - 其他字串 → 視為 UUID，去 categories 表確認這個 id 屬於當前使用者
+        （防跨租戶污染 / 亂發 UUID）
+    RLS 已擋，但 belt+suspenders 顯式擋一層錯誤訊息更好懂。
+  */
+  if (!EXPENSE_CATEGORY_CODES.has(newCategory)) {
+    const { data: catRow, error: catErr } = await supabase
+      .from("categories")
+      .select("id, type")
+      .eq("id", newCategory)
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (catErr) return { ok: false, error: catErr.message };
+    if (!catRow) return { ok: false, error: "分類不存在或不屬於你" };
+    if (catRow.type !== "expense") {
+      return { ok: false, error: "只能選 expense 類型的分類" };
+    }
+  }
 
   // 先確認這筆是 expense — transfer / income 不該透過此 action 改分類
   const { data: existing, error: fetchErr } = await supabase

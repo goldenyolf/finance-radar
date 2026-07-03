@@ -26,6 +26,7 @@ import { Money } from "@/components/ui/money";
 import { getAccountLabel } from "@/lib/account-display";
 import {
   buildCategoryLookup,
+  resolveCategory,
   type CategoryLookup,
   type CategoryRow,
 } from "@/lib/categories";
@@ -157,10 +158,10 @@ function buildExportCsv(
   for (const r of rows) {
     const date = formatDateShort(r.date);
     const desc = r.description ?? "";
-    const categoryKey = (r.category ?? "other") as ExpenseCategory;
+    const resolved = resolveCategory(r.category, lookup);
     const categoryLabel =
-      lookup?.byCode.get(categoryKey)?.name ??
-      EXPENSE_CATEGORY_LABEL[categoryKey] ??
+      resolved?.name ??
+      EXPENSE_CATEGORY_LABEL[(r.category ?? "other") as ExpenseCategory] ??
       "其他";
     const accountName = getAccountLabel(
       r.account_id,
@@ -624,12 +625,14 @@ function TransactionRow({
     row.account_id,
     accounts.find((a) => a.id === row.account_id)?.name
   );
-  const categoryKey = (row.category ?? "other") as ExpenseCategory;
-  const dyn = lookup?.byCode.get(categoryKey);
+  // per 0030：row.category 可能是 code 或 UUID → resolveCategory 統一解析。
+  // 找不到（legacy row 剛好 category=null）走「其他」灰色 fallback。
+  const dyn = resolveCategory(row.category, lookup);
+  const legacyKey = (row.category ?? "other") as ExpenseCategory;
   const categoryLabel =
-    dyn?.name ?? EXPENSE_CATEGORY_LABEL[categoryKey] ?? "其他";
+    dyn?.name ?? EXPENSE_CATEGORY_LABEL[legacyKey] ?? "其他";
   const categoryColor =
-    dyn?.color ?? EXPENSE_CATEGORY_COLOR[categoryKey] ?? "#94A3B8";
+    dyn?.color ?? EXPENSE_CATEGORY_COLOR[legacyKey] ?? "#94A3B8";
   const isExpense = row.type === "expense";
   const sign = isExpense ? "−" : row.type === "income" ? "+" : "";
 
@@ -709,7 +712,7 @@ function TransactionRow({
           title={row.description ?? "（無說明）"}
           amount={num(row.amount)}
           accountId={row.account_id}
-          expenseCategory={row.category as ExpenseCategory | null}
+          expenseCategory={row.category}
           isTransfer={row.type === "transfer"}
           transactionType={row.type as "income" | "expense" | "transfer"}
           projectTag={row.project_tag ?? null}

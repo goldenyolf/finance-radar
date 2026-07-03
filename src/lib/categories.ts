@@ -74,6 +74,25 @@ export function buildCategoryLookup(categories: CategoryRow[]): CategoryLookup {
 }
 
 /**
+ * 統一分類解析器（per 0030 開放自訂分類後）：
+ *   transactions.category 欄位可能存兩種形式 —
+ *     (a) 7 個 built-in code ('food_dining' 等)  — 舊資料 + LLM 寫的
+ *     (b) categories.id (UUID)                    — 使用者選了自訂分類時
+ *
+ *   本函式先試 byId（自訂命中），再試 byCode（built-in 命中）；都找不到回 null，
+ *   caller 自行 fallback 到 EXPENSE_CATEGORY_LABEL['other'] 那組靜態預設。
+ *
+ *   pass null / empty 直接 return null，caller 拿到 null 就走「其他」灰色 chip。
+ */
+export function resolveCategory(
+  value: string | null | undefined,
+  lookup: CategoryLookup | null
+): CategoryRow | null {
+  if (!value || !lookup) return null;
+  return lookup.byId.get(value) ?? lookup.byCode.get(value) ?? null;
+}
+
+/**
  * 拆 categories.keywords 成 string[]，過濾空字串。
  * 用 comma 分隔（包含全形＋半形 + 空白容錯）。
  */

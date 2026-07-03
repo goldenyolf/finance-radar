@@ -118,7 +118,14 @@ export interface TransactionRow {
   amount: number | string;
   type: TransactionTypeAll;
   priority: TransactionPriority | null;
-  category: ExpenseCategory | null;
+  /**
+   * per 0030 開放自訂分類：欄位可能存
+   *   (a) 7 個 built-in ExpenseCategory code ('food_dining' 等)
+   *   (b) categories.id (UUID) — 使用者選了自訂分類時
+   * 讀取一律走 resolveCategory(value, lookup) 統一解析。
+   * 型別保持 string | null 避免每個 caller 都要窄化 assertion。
+   */
+  category: string | null;
   status: TransactionStatus;
   date: string;
   transfer_group_id?: string | null;
@@ -535,8 +542,9 @@ export interface BoardDetailItem {
   accountName: string;
   /** 該筆所屬帳戶 ID。僅 transaction-source 有；recurring 不會走編輯 dialog 故省略。 */
   accountId?: string | null;
-  /** DB 上的花費大類（snake_case），給編輯 dialog 預設用。僅 transaction-source。 */
-  expenseCategory?: ExpenseCategory | null;
+  /** DB 上的花費大類值 — code (built-in) 或 category.id (UUID, 自訂)。
+   *  給編輯 dialog 預設用。僅 transaction-source。per 0030 開放自訂分類。 */
+  expenseCategory?: string | null;
   /** 是否為內部轉帳。Transfer row 不顯示帳戶/分類編輯欄位（避免破壞兩腿配對）。 */
   isTransfer?: boolean;
   /** materialize 出來且還沒被 LINE / 網頁端核銷時 = 'placeholder'；

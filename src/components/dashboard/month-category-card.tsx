@@ -66,8 +66,7 @@ export function MonthCategoryCard({
   // 預設 ON — 圓餅圖首次呈現「真實日常消費」不被系統 / 大額調度污染 (per UAT spec)
   const [excludeOutliers, setExcludeOutliers] = useState<boolean>(true);
   // 圓餅鑽取明細 — 點扇形 / 列表 row toggle；null = 未選 (per UAT drill-down spec)
-  const [selectedCategory, setSelectedCategory] =
-    useState<ExpenseCategory | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // 帳戶 scope 過濾（兩模式共用）
   const scopedTransactions = useMemo(() => {
@@ -261,11 +260,27 @@ export function MonthCategoryCard({
             className="overflow-hidden"
           >
             <CategoryDrilldownPanel
+              /*
+                per 0030：selectedCategory 可能是 built-in code 或 UUID。
+                selectedSlice 已從 aggregator resolve 過 color/label；
+                若 slice 找不到（罕見 race）走 EXPENSE_CATEGORY_LABEL fallback，
+                只認 built-in key，UUID 走 other 灰色。
+              */
               color={
-                selectedSlice?.color ?? EXPENSE_CATEGORY_COLOR[selectedCategory]
+                selectedSlice?.color ??
+                EXPENSE_CATEGORY_COLOR[
+                  (selectedCategory in EXPENSE_CATEGORY_COLOR
+                    ? selectedCategory
+                    : "other") as ExpenseCategory
+                ]
               }
               label={
-                selectedSlice?.label ?? EXPENSE_CATEGORY_LABEL[selectedCategory]
+                selectedSlice?.label ??
+                EXPENSE_CATEGORY_LABEL[
+                  (selectedCategory in EXPENSE_CATEGORY_LABEL
+                    ? selectedCategory
+                    : "other") as ExpenseCategory
+                ]
               }
               transactions={drilldownTransactions}
               categories={categories ?? []}

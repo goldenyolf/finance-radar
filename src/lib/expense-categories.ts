@@ -1,4 +1,8 @@
-import { buildCategoryLookup, type CategoryRow } from "@/lib/categories";
+import {
+  buildCategoryLookup,
+  resolveCategory,
+  type CategoryRow,
+} from "@/lib/categories";
 import {
   num,
   type ExpenseCategory,
@@ -183,7 +187,11 @@ export function classifyByKeyword(text: string): ExpenseCategory {
 }
 
 export interface CategorySlice {
-  category: ExpenseCategory;
+  /**
+   * 分類值：built-in code 或 categories.id (UUID) — per 0030。
+   * pie chart 需要用這個作為 key 觸發 drill-down / 群組聚合。
+   */
+  category: string;
   label: string;
   color: string;
   amount: number;
@@ -314,9 +322,15 @@ export function aggregateMonthlyByCategory(
   // 兩段式過濾抽到 filterMonthlyExpenses（drill-down 共用，確保數據一致）
   const workingSet = filterMonthlyExpenses(transactions, now, options);
 
-  const totals = new Map<ExpenseCategory, number>();
+  /*
+    per 0030：t.category 可能是 built-in code 或 categories.id (UUID)。
+    按原值當 group key（同一個 category 的 rows 會落到同 bucket）；label /
+    color 走 resolveCategory 兩段查找。
+    null / 空字串 → 一律歸「other」bucket，保持跟舊行為一致。
+  */
+  const totals = new Map<string, number>();
   for (const t of workingSet) {
-    const key = (t.category ?? "other") as ExpenseCategory;
+    const key = t.category?.trim() || "other";
     totals.set(key, (totals.get(key) ?? 0) + num(t.amount));
   }
 
@@ -325,11 +339,15 @@ export function aggregateMonthlyByCategory(
   return Array.from(totals.entries())
     .filter(([, amount]) => amount > 0)
     .map(([category, amount]) => {
-      const dyn = lookup?.byCode.get(category);
+      const dyn = lookup ? resolveCategory(category, lookup) : null;
+      // fallback：如果 key 剛好是 built-in code 就吃靜態 map；否則走 other 灰色
+      const fallbackKey = (
+        category in EXPENSE_CATEGORY_LABEL ? category : "other"
+      ) as ExpenseCategory;
       return {
         category,
-        label: dyn?.name ?? EXPENSE_CATEGORY_LABEL[category],
-        color: dyn?.color ?? EXPENSE_CATEGORY_COLOR[category],
+        label: dyn?.name ?? EXPENSE_CATEGORY_LABEL[fallbackKey],
+        color: dyn?.color ?? EXPENSE_CATEGORY_COLOR[fallbackKey],
         amount: Math.round(amount),
         budget: dyn?.budget_monthly ?? 0,
       };
