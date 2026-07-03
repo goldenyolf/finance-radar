@@ -443,6 +443,99 @@ export async function bulkUpdateTransactionProject(
   return { ok: true, updatedCount, skippedCount };
 }
 
+
+/* ─────────────────────── Bulk category update ─────────────────────── */
+
+export interface BulkUpdateCategoryInput {
+  transactionIds: string[];
+  /** built-in code ('food_dining' 等) 或 categories.id (UUID, 自訂)。per 0030。 */
+  category: string;
+}
+
+/**
+ * 批次更新 N 筆 expense transactions 的 category — 給歷史明細頁的多選工具列
+ * 「批次更改分類」入口用。
+ *
+ * 設計:
+ *   a) 雙路徑驗證（跟 updateTransactionCategory 一致）：
+ *        - built-in 7 code 白名單直接通過
+ *        - 其他字串當 UUID，查 categories 表確認屬於當前 user + type=expense
+ *          （防跨租戶亂發別家 UUID）
+ *   b) type=expense 過濾：category 對 income / transfer 沒意義；更新時直接
+ *      加 `.eq("type", "expense")`，income/transfer row 靜默略過。skippedCount
+ *      會反映被略過的筆數，toast 明講「M 筆被略過」。
+ *   c) 不展開 transfer 配對（跟 project_tag 相反）：transfer 沒 category 語意，
+ *      不該波及配對另一腿。
+ *   d) runBudgetAlerts — 分類改動 = 錢從一個預算桶搬到另一個，可能觸發新警報。
+ *   e) `.eq("user_id", uid)` belt+suspenders，per memory
+ *      [supabase_multi_tenant_update_scope]。
+ */
+export async function bulkUpdateTransactionCategory(
+  input: BulkUpdateCategoryInput
+): Promise<BulkMutationResult> {
+  const requestedCount = input.transactionIds.length;
+  if (requestedCount === 0) {
+    return { ok: false, error: "未選擇任何交易" };
+  }
+  if (requestedCount > 500) {
+    return { ok: false, error: "單次最多 500 筆，請分批處理" };
+  }
+  if (!input.category) return { ok: false, error: "分類錯誤" };
+
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+  const uid = userData.user.id;
+
+  // (a) 分類驗證 — built-in 7 直接通過；其他 → 當 UUID 查 categories 表
+  if (!EXPENSE_CATEGORY_CODES.has(input.category)) {
+    const { data: catRow, error: catErr } = await supabase
+      .from("categories")
+      .select("id, type")
+      .eq("id", input.category)
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (catErr) return { ok: false, error: catErr.message };
+    if (!catRow) return { ok: false, error: "分類不存在或不屬於你" };
+    if (catRow.type !== "expense") {
+      return { ok: false, error: "只能選 expense 類型的分類" };
+    }
+  }
+
+  // (b) 執行 update — 只動 type=expense 的 row；transfer / income 靜默過濾
+  const { data, error } = await supabase
+    .from("transactions")
+    .update({ category: input.category })
+    .in("id", input.transactionIds)
+    .eq("user_id", uid)
+    .eq("type", "expense")
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+
+  const updatedIds = new Set<string>((data ?? []).map((r) => r.id as string));
+  const updatedCount = updatedIds.size;
+  if (updatedCount === 0) {
+    return {
+      ok: false,
+      error: "更新失敗（沒有支出交易被更新，可能全選到轉帳 / 收入或已被刪除）",
+    };
+  }
+  const skippedCount = input.transactionIds.filter(
+    (id) => !updatedIds.has(id)
+  ).length;
+
+  // (c) 分類改動 → 重算預算門檻警報（錢搬預算桶）
+  await runBudgetAlerts(supabase, uid);
+
+  // (d) 全站聯動
+  revalidatePath("/");
+  revalidatePath("/analytics");
+  revalidatePath("/transactions");
+
+  return { ok: true, updatedCount, skippedCount };
+}
+
+
 export async function deleteTransaction(id: string): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少交易 ID" };
 

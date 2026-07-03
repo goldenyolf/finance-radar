@@ -13,7 +13,7 @@ import {
 import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
-import { BulkProjectTagBar } from "@/components/dashboard/bulk-project-tag-bar";
+import { BulkActionsBar } from "@/components/dashboard/bulk-actions-bar";
 import { TransactionRowActions } from "@/components/dashboard/transaction-row-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -605,9 +605,10 @@ export function TransactionsView({ accounts, initial, categories }: Props) {
         availableTags 用 projectTagSuggestions（initial 200 筆去重）餵進去，
         跟編輯 dialog 的 datalist 同一份資料來源。
       */}
-      <BulkProjectTagBar
+      <BulkActionsBar
         selectedIds={Array.from(selectedIds)}
         availableTags={projectTagSuggestions}
+        categories={categories}
         onClearSelection={clearSelection}
         onSuccess={handleBulkSuccess}
       />
