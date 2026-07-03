@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PieChart as PieChartIcon } from "lucide-react";
+import { useTheme } from "next-themes";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import { chartStroke } from "@/components/dashboard/chart-theme";
 import { Money } from "@/components/ui/money";
 import {
   Card,
@@ -84,6 +86,13 @@ export function AssetAllocationCard({ latest }: Props) {
 
   const totalAssets = slices.reduce((s, x) => s + x.value, 0);
 
+  // 圓餅切片分隔線的 theme-aware 色（Recharts stroke prop 不吃 var()，見 chart-theme.ts）
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+  const stroke = chartStroke(isDark);
+
   return (
     <Card>
       <CardHeader>
@@ -113,7 +122,7 @@ export function AssetAllocationCard({ latest }: Props) {
                     innerRadius={45}
                     outerRadius={80}
                     paddingAngle={2}
-                    stroke="var(--background)"
+                    stroke={stroke.surface}
                     strokeWidth={2}
                     isAnimationActive
                     animationDuration={500}

@@ -15,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { chartStroke } from "@/components/dashboard/chart-theme";
 import { formatCurrency } from "@/lib/dashboard";
 import type { CrossMonthTrendPoint } from "@/lib/cross-month-trend";
 
@@ -63,6 +64,7 @@ export function CrossMonthTrendChart({ data, targetSavingsRate }: Props) {
   const incomeColor = isDark ? "#34d399" : "#10b981"; // emerald-400 / 500
   const expenseColor = isDark ? "#f87171" : "#ef4444"; // red-400 / 500
   const lineColor = isDark ? "#60a5fa" : "#3b82f6"; // blue-400 / 500
+  const stroke = chartStroke(isDark);
 
   return (
     <div className="h-72 w-full">
@@ -74,7 +76,7 @@ export function CrossMonthTrendChart({ data, targetSavingsRate }: Props) {
         >
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="var(--border)"
+            stroke={stroke.grid}
             vertical={false}
           />
           <XAxis

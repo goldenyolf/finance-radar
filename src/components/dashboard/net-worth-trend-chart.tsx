@@ -13,6 +13,7 @@ import {
 } from "recharts";
 
 import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
+import { chartStroke } from "@/components/dashboard/chart-theme";
 import { formatTwd, type NetWorthPoint } from "@/lib/wealth";
 
 interface Props {
@@ -60,6 +61,7 @@ export function NetWorthTrendChart({ data }: Props) {
       ? "#34d399" // emerald-400
       : "#10b981"; // emerald-500
   const gradientOpacity = isDark ? 0.4 : 0.3;
+  const stroke = chartStroke(isDark);
 
   return (
     <div className="h-72 w-full">
@@ -80,7 +82,7 @@ export function NetWorthTrendChart({ data }: Props) {
           </defs>
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="var(--border)"
+            stroke={stroke.grid}
             vertical={false}
           />
           <XAxis
@@ -97,7 +99,7 @@ export function NetWorthTrendChart({ data }: Props) {
             width={56}
           />
           <Tooltip
-            cursor={{ stroke: "var(--border)", strokeDasharray: "3 3" }}
+            cursor={{ stroke: stroke.grid, strokeDasharray: "3 3" }}
             contentStyle={{
               background: "var(--card)",
               border: "1px solid var(--border)",

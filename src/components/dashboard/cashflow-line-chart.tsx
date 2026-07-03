@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
+import { chartStroke } from "@/components/dashboard/chart-theme";
 
 export type CashflowPoint = {
   /** 顯示用標籤，例如 "5月" 或 "Wk 21" */
@@ -44,6 +45,13 @@ function formatCompact(n: number) {
 }
 
 export function CashflowLineChart({ data, threshold = 150000 }: Props) {
+  // theme-aware 配色：dark 走霓虹藍 + 亮紅，light 維持 indigo + 標準紅。
+  // hooks 必須在 empty-state early return 之前（rules-of-hooks）。
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+
   if (!data || data.length === 0) {
     return (
       <ChartEmptyState
@@ -54,15 +62,10 @@ export function CashflowLineChart({ data, threshold = 150000 }: Props) {
   }
   const points = data;
 
-  // theme-aware 配色：dark 走霓虹藍 + 亮紅，light 維持 indigo + 標準紅
-  const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const isDark = mounted && resolvedTheme === "dark";
-
   const lineColor = isDark ? "#60a5fa" : "#6366f1"; // blue-400 vs indigo-500
   const thresholdColor = isDark ? "#f87171" : "#ef4444"; // red-400 vs red-500
   const gradientOpacity = isDark ? 0.45 : 0.35;
+  const stroke = chartStroke(isDark);
 
   return (
     <div className="h-72 w-full">
@@ -79,7 +82,7 @@ export function CashflowLineChart({ data, threshold = 150000 }: Props) {
           </defs>
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="var(--border)"
+            stroke={stroke.grid}
             vertical={false}
           />
           <XAxis
@@ -97,7 +100,7 @@ export function CashflowLineChart({ data, threshold = 150000 }: Props) {
           />
           <Tooltip
             cursor={{
-              stroke: "var(--border)",
+              stroke: stroke.grid,
               strokeDasharray: "3 3",
             }}
             contentStyle={{

@@ -8,6 +8,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { HelpTip } from "@/components/ui/help-tip";
 import { Money } from "@/components/ui/money";
+import { chartStroke } from "@/components/dashboard/chart-theme";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -49,6 +50,7 @@ export function FinancialElasticity({ data }: Props) {
   // theme-aware：dark mode 固定色從 slate-700 提亮到 slate-500，避免在暗背景看不到
   const fixedColor = isDark ? "#64748B" : "#334155"; // slate-500 / 700
   const variableColor = isDark ? "#FBBF24" : "#F59E0B"; // amber-400 / 500
+  const stroke = chartStroke(isDark);
 
   const slices = buildPieSlices(data, fixedColor, variableColor);
   const tier = data.tier;
@@ -91,7 +93,7 @@ export function FinancialElasticity({ data }: Props) {
                       innerRadius={52}
                       outerRadius={88}
                       paddingAngle={2}
-                      stroke="var(--background)"
+                      stroke={stroke.surface}
                       strokeWidth={2}
                       isAnimationActive
                       animationDuration={500}

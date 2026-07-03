@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { chartStroke } from "@/components/dashboard/chart-theme";
 import { formatCurrency } from "@/lib/dashboard";
 import type { DailySpendData, DailySpendPoint } from "@/lib/daily-spend";
 
@@ -51,6 +52,7 @@ export function DailySpendChart({ data, selectedDate, onDateSelect }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && resolvedTheme === "dark";
+  const stroke = chartStroke(isDark);
 
   const { points, series } = data;
 
@@ -85,7 +87,7 @@ export function DailySpendChart({ data, selectedDate, onDateSelect }: Props) {
             >
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="var(--border)"
+                stroke={stroke.grid}
                 vertical={false}
               />
               <XAxis

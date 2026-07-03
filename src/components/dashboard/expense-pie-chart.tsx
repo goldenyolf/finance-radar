@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 import {
   Cell,
   Legend,
@@ -10,6 +12,7 @@ import {
 } from "recharts";
 
 import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
+import { chartStroke } from "@/components/dashboard/chart-theme";
 import { Money } from "@/components/ui/money";
 import type { CategorySlice, ExpenseCategory } from "@/lib/expense-categories";
 import { cn } from "@/lib/utils";
@@ -62,6 +65,14 @@ export function ExpensePieChart({
   selectedCategory = null,
   onSelectCategory,
 }: Props) {
+  // theme-aware：圓餅切片分隔線要跟卡片底色融合（Recharts stroke prop 不吃 var()，
+  // 見 chart-theme.ts）。hooks 必須在 empty-state early return 之前。
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+  const stroke = chartStroke(isDark);
+
   if (data.length === 0) {
     return <ChartEmptyState variant="pie" />;
   }
@@ -86,7 +97,7 @@ export function ExpensePieChart({
               innerRadius="58%"
               outerRadius="86%"
               paddingAngle={2}
-              stroke="var(--card)"
+              stroke={stroke.surface}
               strokeWidth={2}
               isAnimationActive
               animationDuration={500}
