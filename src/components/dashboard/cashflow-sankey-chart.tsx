@@ -49,6 +49,16 @@ export function CashflowSankeyChart({ data }: Props) {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && resolvedTheme === "dark";
 
+  // SVG <text> 的 fill 是 presentation attribute，瀏覽器不會 evaluate CSS var()
+  // （先前用 fill="var(--foreground)"，暗色模式下 fill 靜默 fallback 成預設黑字 →
+  // 在深色背景看不見）。改成依 isDark 給具體色，跟 node/link 配色同一套機制。
+  // tooltip 也一樣：recharts 預設 itemStyle 會蓋掉 contentStyle 的 color，item 文字
+  // 必須顯式給色，否則暗色模式下金額字仍是黑的。
+  const labelColor = isDark ? "#e4e4e7" : "#27272a"; // zinc-200 / zinc-800
+  const tooltip = isDark
+    ? { bg: "#1c1c1f", border: "#3f3f46", fg: "#f4f4f5" }
+    : { bg: "#ffffff", border: "#e4e4e7", fg: "#18181b" };
+
   // expense 節點維持 EXPENSE_CATEGORY_COLOR（橘/粉/焦糖等，明暗都可讀）；
   // income / account 改用 theme-aware 色階，保留資料純函式不污染。
   const themedData = useMemo<SankeyData>(() => {
@@ -87,6 +97,7 @@ export function CashflowSankeyChart({ data }: Props) {
               node={(nodeProps) => (
                 <SankeyNodeShape
                   {...(nodeProps as unknown as SankeyNodeRenderProps)}
+                  labelColor={labelColor}
                 />
               )}
               link={(linkProps) => (
@@ -98,13 +109,15 @@ export function CashflowSankeyChart({ data }: Props) {
               <Tooltip
                 cursor={false}
                 contentStyle={{
-                  background: "var(--card)",
-                  border: "1px solid var(--border)",
+                  background: tooltip.bg,
+                  border: `1px solid ${tooltip.border}`,
                   borderRadius: 12,
                   fontSize: 12,
-                  color: "var(--card-foreground)",
+                  color: tooltip.fg,
                   padding: "8px 12px",
                 }}
+                itemStyle={{ color: tooltip.fg }}
+                labelStyle={{ color: tooltip.fg, fontWeight: 500 }}
                 formatter={(value: unknown) => {
                   const n = typeof value === "number" ? value : Number(value) || 0;
                   return [formatCurrency(n), "金額"];
@@ -191,8 +204,8 @@ function ScrollableSankey({ children }: { children: React.ReactNode }) {
 
 /* ─────────────────────────── Custom Node ─────────────────────────── */
 
-function SankeyNodeShape(props: SankeyNodeRenderProps) {
-  const { x, y, width, height, payload } = props;
+function SankeyNodeShape(props: SankeyNodeRenderProps & { labelColor: string }) {
+  const { x, y, width, height, payload, labelColor } = props;
   const node = payload as SankeyNode;
   // 右側欄（支出）label 放 rect 的左邊；其他放右邊
   const isRight = node.type === "expense";
@@ -217,8 +230,8 @@ function SankeyNodeShape(props: SankeyNodeRenderProps) {
         textAnchor={textAnchor}
         fontSize={12}
         fontWeight={500}
-        fill="var(--foreground)"
-        opacity={0.85}
+        fill={labelColor}
+        opacity={0.9}
       >
         {node.name}
       </text>
