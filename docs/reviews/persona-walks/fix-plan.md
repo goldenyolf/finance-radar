@@ -131,3 +131,46 @@ Icon 保留（暗淡）、Switch/Select 走 disabled，副標一句話帶引導�
 - Ken 4 UC 重跑：期待 HIGH 從 5 → 0-1
 - Emma 4 UC 重跑（先跑 demo seed）：期待完成 cross-module credibility 檢驗（同月支出 pie = 明細加總）
 - 兩位合議 verdict 期待從 ⚠ → ✓
+
+---
+
+# Round 2 · Re-verify 結果（2026-07-03）
+
+兩位 fresh persona（無前輪記憶）重走。完整報告：`persona-ken-reverify.md` / `persona-emma-reverify.md`。
+**合議 verdict：⚠ → ✓**。Round-1 所有能被觸發的修復都在真實點擊路徑層級通過。
+
+## 驗收狀態
+
+| Fix | 狀態 | 佐證 |
+|---|---|---|
+| K-A1.1 首頁 hero KPI | ✅ Verified | 標題下三欄大字報（支出/收入/儲蓄率）一眼可見 |
+| K-A2.1 payment pill sync | ✅ Verified | dialog 開啟 pill 即與預設帳戶對齊 |
+| K-A3.1 Quick Add auto-classify | ✅ Verified | 新記「早餐 −$88」= 餐飲食品（非其他） |
+| K-A4.1 project_tag chip | ✅ Verified | 存檔後列表立刻顯示 🏷️太太醫療 |
+| E-A3.1/2 date format 一致 | ✅ Verified | trigger 與空狀態訊息皆 `YYYY/MM/DD`（同 `/`） |
+| E-A1.1 / E-A2.1 空帳號教學態 strip | ⚠️ Not exercised（見下）→ **判定：接受** | 單帳戶/零 tag 分支未觸發 |
+
+## Methodology caveat（並行走查污染 — 記給未來輪次）
+
+兩位 persona 用**同一個登入帳號並行執行**。Ken 的走查在跑的同時寫入了交易 + 太太醫療 tag，
+導致 Emma 看到的帳號變成 4 帳戶 + $296 交易 + 1 tag（非預期的空帳號）。
+- 好處：Emma 反而走到真實「非空」分支（帳戶切換 5 scopes、隔離 Switch 主圖 reflow $296→$236、批次改分類 popover tab），驗證更強。
+- 缺口：E-A1.1 / E-A2.1 針對 `accounts.length<=1` / `!hasTags` 的**空狀態分支**，因帳號太滿而未被 render → 未 UI-walk。
+- **未來規則**：seed-dependent persona 需各自獨立帳號，或序列執行（不可共用同一 login 並行）。
+
+## E-A1/2.1 教學態缺口 — 判定：接受不再追
+
+兩條僅是「單帳戶 / 零 tag」時的 disabled 條件 render，typecheck + lint 綠、code 已審。
+真實帳戶的非空分支 Emma 本輪已完整確認正常。若日後要回歸保護，備一個 `≤1 帳戶 + 0 tag`
+測試帳號重走這兩條即可（列入 P2）。
+
+## Round-2 新發現 backlog（皆非 CRITICAL/HIGH，下輪處理）
+
+| ID | Persona | Sev | 描述 | 建議 |
+|---|---|---|---|---|
+| N-1 | Ken | MEDIUM | Quick Add 預設扣款帳戶落在銀行「個人零用」而非現金錢包；天天記現金的 Ken 每筆要手動切「現金」 | 「記住上次帳戶」或可設定的預設扣款帳戶（`quick-add-transaction.tsx` 初始 accountId 邏輯） |
+| N-2 | Ken | MEDIUM | `/transactions` 搜尋 debounce 回填重繪時，會把當下開著的編輯 dialog 連根 detach（手快者視窗無預警消失） | 讓 dialog 開啟期間 pause list re-render，或把 dialog 提到 row 重繪範圍外（`transactions-view.tsx`） |
+| N-3 | Emma | LOW | 日期區間波浪號旁空白差一格（純 cosmetic，格式/分隔符一致） | `date-range-picker.tsx` labelText 空白微調 |
+
+環境噪音：帳號留有重複 `早餐`（$60 灰其他 + $88 餐飲食品）走查資料，可選擇性清除：
+`DELETE FROM transactions WHERE description = '早餐' AND date = '2026-07-03' AND user_id = <austin_uid>;`
