@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Eye,
   EyeOff,
-  Layers,
   PieChart as PieChartIcon,
   TrendingDown,
   TrendingUp,
-  Wallet,
 } from "lucide-react";
 
 import { CategoryDrilldownPanel } from "@/components/dashboard/category-drilldown-panel";
@@ -22,16 +20,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { getAccountLabel } from "@/lib/account-display";
 import type { CategoryRow } from "@/lib/categories";
-import type { AccountRow, TransactionRow } from "@/lib/dashboard";
+import type { TransactionRow } from "@/lib/dashboard";
 import {
   aggregateMonthlyByCategory,
   EXPENSE_CATEGORY_COLOR,
@@ -45,46 +35,42 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   transactions: TransactionRow[];
-  accounts: AccountRow[];
   /** 統計的目標月份。歷史時光機切過去時傳入；省略時走真實本月。 */
   now?: Date;
   /** 動態 categories（含使用者自訂顏色 / 名稱 / 預算）；省略時走靜態常數。 */
   categories?: CategoryRow[];
 }
 
-const ALL = "all";
 type CategoryMode = "expense" | "income";
 
+/**
+ * MonthCategoryCard — 只負責「當前 transactions 的分類拆解」。
+ * 帳戶篩選已提升到 AnalyticsView 全頁層級（見 analytics-view.tsx 頂端 slim
+ * strip），這裡吃到的 transactions 已按 user 選的帳戶 scope 過。所以拿掉
+ * 本卡片內原本的 Select + selectedAccount state，簡化描述文案。
+ */
 export function MonthCategoryCard({
   transactions,
-  accounts,
   now,
   categories,
 }: Props) {
-  const [selectedAccount, setSelectedAccount] = useState<string>(ALL);
   const [mode, setMode] = useState<CategoryMode>("expense");
   // 預設 ON — 圓餅圖首次呈現「真實日常消費」不被系統 / 大額調度污染 (per UAT spec)
   const [excludeOutliers, setExcludeOutliers] = useState<boolean>(true);
   // 圓餅鑽取明細 — 點扇形 / 列表 row toggle；null = 未選 (per UAT drill-down spec)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  // 帳戶 scope 過濾（兩模式共用）
-  const scopedTransactions = useMemo(() => {
-    if (selectedAccount === ALL) return transactions;
-    return transactions.filter((t) => t.account_id === selectedAccount);
-  }, [transactions, selectedAccount]);
-
   const expenseSlices = useMemo(() => {
     const base = now ?? new Date();
-    return aggregateMonthlyByCategory(scopedTransactions, base, categories, {
+    return aggregateMonthlyByCategory(transactions, base, categories, {
       excludeOutliers,
     });
-  }, [scopedTransactions, now, categories, excludeOutliers]);
+  }, [transactions, now, categories, excludeOutliers]);
 
   const incomeSlices = useMemo(() => {
     const base = now ?? new Date();
-    return aggregateMonthlyByIncomeCategory(scopedTransactions, base);
-  }, [scopedTransactions, now]);
+    return aggregateMonthlyByIncomeCategory(transactions, base);
+  }, [transactions, now]);
 
   // Drill-down 明細：用 filterMonthlyExpenses 跟 aggregator 走同款過濾鏈
   // （含 excludeOutliers），再依 category 過 + sort date DESC。
@@ -92,7 +78,7 @@ export function MonthCategoryCard({
   const drilldownTransactions = useMemo(() => {
     if (mode !== "expense" || !selectedCategory) return [];
     const base = now ?? new Date();
-    const monthExpenses = filterMonthlyExpenses(scopedTransactions, base, {
+    const monthExpenses = filterMonthlyExpenses(transactions, base, {
       excludeOutliers,
     });
     // per review #3：aggregator group key 是 `t.category?.trim() || "other"`
@@ -102,13 +88,21 @@ export function MonthCategoryCard({
     return monthExpenses
       .filter((t) => (t.category?.trim() || "other") === selectedCategory)
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [mode, selectedCategory, scopedTransactions, now, excludeOutliers]);
+  }, [mode, selectedCategory, transactions, now, excludeOutliers]);
 
-  // 切 mode (expense -> income) / 改帳戶範圍 → 清掉鑽取選擇避免殘留
-  // (相依集合裡少 selectedCategory 是有意的 — 不會跟自己打架)
-  useEffect(() => {
+  /*
+    切 mode (expense ↔ income) → 清掉鑽取選擇避免殘留。
+    改用 handler 直接 setState 而非 useEffect：
+      - 消除 react-hooks/set-state-in-effect 警告
+      - 語意更貼近「使用者觸發的動作連鎖」而非「side effect」
+    帳戶範圍變化不必自己處理 — AnalyticsView 換 transactions ref 會讓
+    aggregator 重算，selectedCategory 若不再對應任何 slice，selectedSlice
+    自然變 null；drilldown panel AnimatePresence 也會 fade-out。
+  */
+  const handleModeChange = useCallback((next: CategoryMode) => {
+    setMode(next);
     setSelectedCategory(null);
-  }, [mode, selectedAccount]);
+  }, []);
 
   // 選中的 slice 元資料給 drill-down panel 用 (顏色 / label)
   const selectedSlice = useMemo(() => {
@@ -116,23 +110,11 @@ export function MonthCategoryCard({
     return expenseSlices.find((s) => s.category === selectedCategory) ?? null;
   }, [selectedCategory, expenseSlices]);
 
-  const isScoped = selectedAccount !== ALL;
-  const scopedAccountName = isScoped
-    ? getAccountLabel(
-        selectedAccount,
-        accounts.find((a) => a.id === selectedAccount)?.name
-      )
-    : null;
-
   const cardTitle = mode === "expense" ? "本月花費分類" : "本月收入結構";
   const description =
     mode === "expense"
-      ? isScoped
-        ? `僅檢視「${scopedAccountName}」的本月支出，依七大類加總。`
-        : "依「餐飲 / 育兒 / 孝親 / 居家 / 金融 / 交通 / 其他」七大類加總當月已支出。LINE 機器人記帳會自動分類。"
-      : isScoped
-        ? `僅檢視「${scopedAccountName}」的本月入帳，依薪資 / 副業 / 配息 / 其他四維度拆解。`
-        : "依「主業薪資 / 副業外快 / 投資配息 / 其他流入」四大維度拆解當月實際入帳，多元化越高財務彈性越強。";
+      ? "依「餐飲 / 育兒 / 孝親 / 居家 / 金融 / 交通 / 其他」七大類加總當月已支出。LINE 機器人記帳會自動分類。"
+      : "依「主業薪資 / 副業外快 / 投資配息 / 其他流入」四大維度拆解當月實際入帳，多元化越高財務彈性越強。";
 
   return (
     <section className="mt-8">
@@ -149,57 +131,12 @@ export function MonthCategoryCard({
               </CardDescription>
             </div>
 
-            {/* 帳戶篩選下拉 — 樣式刻意與右上 AccountSwitcher 對齊 */}
-            <Select
-              value={selectedAccount}
-              onValueChange={(v) => setSelectedAccount(v as string)}
-            >
-              <SelectTrigger className="h-9 min-w-56 rounded-full border-foreground/15 bg-background pl-3 pr-2 text-sm font-medium shadow-sm">
-                <SelectValue>
-                  {(v) => {
-                    const id = typeof v === "string" ? v : ALL;
-                    if (id === ALL) {
-                      return (
-                        <span className="flex items-center gap-2">
-                          <Layers className="size-4 text-muted-foreground" />
-                          全部資產總覽
-                        </span>
-                      );
-                    }
-                    return (
-                      <span className="flex items-center gap-2">
-                        <Wallet className="size-4 text-muted-foreground" />
-                        {getAccountLabel(
-                          id,
-                          accounts.find((a) => a.id === id)?.name
-                        )}
-                      </span>
-                    );
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="min-w-64">
-                <SelectItem value={ALL}>
-                  <span className="flex items-center gap-2">
-                    <Layers className="size-4 text-muted-foreground" />
-                    全部資產總覽
-                  </span>
-                </SelectItem>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    <span className="flex items-center gap-2">
-                      <Wallet className="size-4 text-muted-foreground" />
-                      {getAccountLabel(a.id, a.name)}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* 帳戶篩選已提升到 AnalyticsView 頂端 slim strip — 此處不再重複。 */}
           </div>
 
           {/* 🆕 支出 / 收入 segmented control — iOS 風 framer-motion 滑塊 */}
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <ModeSegmentedControl mode={mode} onChange={setMode} />
+            <ModeSegmentedControl mode={mode} onChange={handleModeChange} />
             {/*
               👁️ 排除大額/系統項目 toggle — 只在 expense 模式顯示（income 不需要）。
               預設 ON：圓餅圖呈現「真實日常消費」不被系統 / 大額調度污染。

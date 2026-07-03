@@ -166,7 +166,6 @@ export function AnalyticsMonthlyTab({
         <div className="mb-6">
           <MonthCategoryCard
             transactions={transactions}
-            accounts={accounts}
             now={monthDate}
             categories={categories}
           />

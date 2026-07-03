@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useId, useMemo, useState } from "react";
-import { ChevronDown, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import {
+  ChevronDown,
+  Layers,
+  ShieldCheck,
+  SlidersHorizontal,
+  Wallet,
+} from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { AnalyticsDailyTab } from "@/components/dashboard/analytics-daily-tab";
@@ -13,6 +19,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   Tabs,
@@ -20,12 +33,15 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { getAccountLabel } from "@/lib/account-display";
 import type { CategoryRow } from "@/lib/categories";
 import type {
   AccountRow,
   RecurringRow,
   TransactionRow,
 } from "@/lib/dashboard";
+
+const ALL_ACCOUNTS = "__all_accounts__";
 
 interface Props {
   accounts: AccountRow[];
@@ -77,6 +93,10 @@ export function AnalyticsView({
   const today = useMemo(() => todayIsoTaipei(), []);
   const [tab, setTab] = useState<string>("monthly");
   const [selectedDate, setSelectedDate] = useState<string>(() => today);
+  /* 全域帳戶篩選 — 從 MonthCategoryCard 提升上來，讓整頁的月度大字 / 圓餅 /
+     Sankey / 財務彈性 / 趨勢等全部圖表都跟著這個帳戶 scope 走。 */
+  const [selectedAccount, setSelectedAccount] =
+    useState<string>(ALL_ACCOUNTS);
   /* isolate=false (default) → 顯示全部；isolate=true → 啟用隔離過濾 */
   const [isolate, setIsolate] = useState<boolean>(false);
   /* deny-list 語意：tag 在 set 內 = 不過濾（留在主圖）；不在 set 內 = 過濾掉 */
@@ -99,29 +119,40 @@ export function AnalyticsView({
     setPanelOpen(next);
   }, []);
 
-  /* 從全部 transactions 撈出去重的 project_tag 清單 — 用全資料而非「當月」，
-     讓 user 切月份檢視時 checkbox 不會神秘消失。 */
+  /*
+    (1) 先套帳戶過濾 — 全站的下游計算都吃這份 accountScopedTransactions，
+    不必每張圖各自維護 selectedAccount。避免下面 project_tag 清單也被別家帳戶
+    污染（切某帳戶時就只看該帳戶的專案）。
+  */
+  const accountScopedTransactions = useMemo(() => {
+    if (selectedAccount === ALL_ACCOUNTS) return transactions;
+    return transactions.filter((t) => t.account_id === selectedAccount);
+  }, [transactions, selectedAccount]);
+
+  /* (2) 從 account-scoped transactions 撈去重的 project_tag —
+        切帳戶時可用 tag 清單自動跟著窄化。 */
   const availableTags = useMemo(() => {
     const seen = new Set<string>();
-    for (const t of transactions) {
+    for (const t of accountScopedTransactions) {
       const tag = t.project_tag?.trim();
       if (tag) seen.add(tag);
     }
     return Array.from(seen).sort();
-  }, [transactions]);
+  }, [accountScopedTransactions]);
 
   const hasTags = availableTags.length > 0;
 
+  /* (3) 再套隔離過濾。account 已經在 (1) 收窄了，這裡只負責 tag 拆解。 */
   const { mainTransactions, archivedTransactions } = useMemo(() => {
     if (!isolate || !hasTags) {
       return {
-        mainTransactions: transactions,
+        mainTransactions: accountScopedTransactions,
         archivedTransactions: [] as TransactionRow[],
       };
     }
     const main: TransactionRow[] = [];
     const archived: TransactionRow[] = [];
-    for (const t of transactions) {
+    for (const t of accountScopedTransactions) {
       const tag = t.project_tag?.trim();
       // 無 tag → 留主圖
       // 有 tag 但被使用者「不納入過濾」(deny-list) → 留主圖
@@ -130,7 +161,15 @@ export function AnalyticsView({
       else archived.push(t);
     }
     return { mainTransactions: main, archivedTransactions: archived };
-  }, [transactions, isolate, excludedTags, hasTags]);
+  }, [accountScopedTransactions, isolate, excludedTags, hasTags]);
+
+  const scopedAccountName =
+    selectedAccount === ALL_ACCOUNTS
+      ? null
+      : getAccountLabel(
+          selectedAccount,
+          accounts.find((a) => a.id === selectedAccount)?.name
+        );
 
   function handleDrillDownToDay(iso: string) {
     setSelectedDate(iso);
@@ -162,6 +201,83 @@ export function AnalyticsView({
 
   return (
     <div className="flex flex-col gap-6">
+      {/*
+        全頁帳戶篩選 — 放在最上方，讓「我這個月在這個帳戶花多少 / 收多少」
+        一眼就能切到。單一帳戶時（accounts.length <= 1）藏起來，避免佔位。
+        Select trigger 樣式對齊首頁的 AccountSwitcher（rounded-full + 灰邊）
+        保持整站帳戶切換視覺一致。
+      */}
+      {accounts.length > 1 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/[0.07] bg-foreground/[0.015] px-3 py-2 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {selectedAccount === ALL_ACCOUNTS ? (
+              <Layers
+                className="size-4 shrink-0 text-muted-foreground/60"
+                aria-hidden
+              />
+            ) : (
+              <Wallet
+                className="size-4 shrink-0 text-emerald-500"
+                aria-hidden
+              />
+            )}
+            <span className="text-xs font-medium tracking-tight">
+              帳戶檢視範圍
+            </span>
+            <span className="truncate text-[11px] text-muted-foreground/80">
+              {selectedAccount === ALL_ACCOUNTS
+                ? `所有 ${accounts.length} 個帳戶合計`
+                : `僅檢視「${scopedAccountName}」的本月收支`}
+            </span>
+          </div>
+          <Select
+            value={selectedAccount}
+            onValueChange={(v) => setSelectedAccount(v as string)}
+          >
+            <SelectTrigger className="h-9 min-w-44 rounded-full border-foreground/15 bg-background pl-3 pr-2 text-sm font-medium shadow-sm">
+              <SelectValue>
+                {(v) => {
+                  const id = typeof v === "string" ? v : ALL_ACCOUNTS;
+                  if (id === ALL_ACCOUNTS) {
+                    return (
+                      <span className="flex items-center gap-2">
+                        <Layers className="size-4 text-muted-foreground" />
+                        全部資產總覽
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="flex items-center gap-2">
+                      <Wallet className="size-4 text-muted-foreground" />
+                      {getAccountLabel(
+                        id,
+                        accounts.find((a) => a.id === id)?.name
+                      )}
+                    </span>
+                  );
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="min-w-56">
+              <SelectItem value={ALL_ACCOUNTS}>
+                <span className="flex items-center gap-2">
+                  <Layers className="size-4 text-muted-foreground" />
+                  全部資產總覽
+                </span>
+              </SelectItem>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  <span className="flex items-center gap-2">
+                    <Wallet className="size-4 text-muted-foreground" />
+                    {getAccountLabel(a.id, a.name)}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/*
         Slim 隔離條 — 沒任何 tag 直接 null；有 tag 才顯示一行緊湊條。
         isolate=true 時 Collapsible 自動展開配置；OFF 時整條只佔約 36px 高，
