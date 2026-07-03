@@ -13,6 +13,12 @@
 # testing
 /coverage
 
+# playwright / e2e persona walkthroughs
+/test-results
+/playwright-report
+# 截圖是可再生的本地佐證（本機重跑 e2e 即重建），不進 repo 免膨脹
+/e2e/walkthrough/screenshots
+
 # next.js
 /.next/
 /out/
