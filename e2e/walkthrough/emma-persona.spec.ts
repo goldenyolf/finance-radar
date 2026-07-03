@@ -1,10 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { TEST_EMAIL, testPassword } from './_creds'
+
 // ─── Persona-specific config ─────────────────────────────────────────────────
 const PERSONA = 'emma'
 const FRONTEND_URL = 'http://localhost:3000'
-const LOGIN_EMAIL = 'austin.hung@rfdme.com'
-const LOGIN_PASSWORD = 'Temp1234'
+const LOGIN_EMAIL = TEST_EMAIL
 const SCREENSHOT_DIR = 'e2e/walkthrough/screenshots'
 
 // ─── Browser config (pinned in-spec, not via CLI) ─────────────────────────────
@@ -53,7 +54,7 @@ async function shot(page: Page, uc: number, step: number, label = '') {
 async function loginAs(page: Page) {
   await page.goto(`${FRONTEND_URL}/login`)
   await page.fill('input[name=email]', LOGIN_EMAIL)
-  await page.fill('input[name=password]', LOGIN_PASSWORD)
+  await page.fill('input[name=password]', testPassword())
   await Promise.all([
     page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 20_000 }),
     page.click('button[type=submit]'),

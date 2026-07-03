@@ -1,12 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 
+import { TEST_EMAIL, testPassword } from "./_creds";
+
 // ─── Persona-specific config ─────────────────────────────────────────────────
 // Ken 老王 — 45 歲家庭主計 / IT 白領。竹科工程師，家裡財務他負責記帳。
 // 技術素養高，但生活情境下希望像用 iPhone 一樣不用學。
 const PERSONA = "ken";
 const FRONTEND_URL = "http://localhost:3000";
-const LOGIN_EMAIL = "austin.hung@rfdme.com";
-const LOGIN_PASSWORD = "Temp1234";
+const LOGIN_EMAIL = TEST_EMAIL;
 const SCREENSHOT_DIR = "e2e/walkthrough/screenshots";
 
 // ─── Browser config (pinned in-spec, not via CLI) ─────────────────────────────
@@ -101,7 +102,7 @@ test.describe("Ken persona walkthrough — 家庭主計的日常四場戲", () =
   // 首次 hydrate 需拉多支 RSC + Supabase；單 test 拉高 timeout。
   test.beforeEach(async ({ page }) => {
     test.setTimeout(180_000);
-    await loginAs(page, LOGIN_EMAIL, LOGIN_PASSWORD);
+    await loginAs(page, LOGIN_EMAIL, testPassword());
   });
 
   // ═══════════════════════════════════════════════════════════════════════

@@ -4,8 +4,8 @@
 **Reviewer**: Persona Emma 王太太（40 歲家庭 CFO / 兼職會計 — Excel PivotTable 熟練、看到不對稱金額會抓狂）
 **Environment**: Next 16 Turbopack dev server @ http://localhost:3000（前後端同址；Server Actions + Supabase）
 **Tool**: Playwright CLI（headless，viewport 1920×1080，pinned in-spec via `test.use({...})`）
-**Login**: austin.hung@rfdme.com / Temp1234
-**Run cmd**: `npx playwright test e2e/walkthrough/emma-persona.spec.ts --workers 1 --reporter list`
+**Login**: austin.hung@rfdme.com（密碼走 `PERSONA_TEST_PW` 環境變數，不再寫進 repo）
+**Run cmd**: `PERSONA_TEST_PW='<pw>' npx playwright test e2e/walkthrough/emma-persona.spec.ts --workers 1 --reporter list`
 
 ## Executive Verdict
 

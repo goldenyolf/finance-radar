@@ -4,8 +4,8 @@
 **Reviewer**: Persona Ken 老王（45 歲家庭主計 / 竹科 IT 白領）
 **Environment**: frontend + backend 皆 http://localhost:3000（Next 16 Turbopack dev server）
 **Tool**: Playwright CLI 1.61.1（headless, viewport 1920x1080 — 於 spec `test.use({...})` 內 pin 死）
-**Login**: austin.hung@rfdme.com / Temp1234
-**Run cmd**: `npx playwright test e2e/walkthrough/ken-persona.spec.ts --workers 1 --reporter list`
+**Login**: austin.hung@rfdme.com（密碼走 `PERSONA_TEST_PW` 環境變數，不再寫進 repo）
+**Run cmd**: `PERSONA_TEST_PW='<pw>' npx playwright test e2e/walkthrough/ken-persona.spec.ts --workers 1 --reporter list`
 **Spec**: `/Users/hungkuoxin/finance-radar/finance-radar/e2e/walkthrough/ken-persona.spec.ts`
 **Screenshots**: 21 張，位於 `e2e/walkthrough/screenshots/ken-uc{N}-step{M}.png`
 
