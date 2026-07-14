@@ -4,7 +4,7 @@ import { AlertTriangle, CalendarClock, TrendingUp } from "lucide-react";
 import { AccountSwitcher } from "@/components/dashboard/account-switcher";
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { BoardCard } from "@/components/dashboard/board-card";
-import { CashflowLineChart } from "@/components/dashboard/cashflow-line-chart";
+import { CashflowLineChartLazy } from "@/components/dashboard/cashflow-line-chart-lazy";
 import { MonthHeadlineCards } from "@/components/dashboard/month-headline-cards";
 import { ForecastDetailAccordion } from "@/components/dashboard/forecast-detail-accordion";
 import { GoalSummaryLink } from "@/components/dashboard/goal-summary-link";
@@ -44,6 +44,7 @@ import { loadGoals } from "@/lib/load-goals";
 import { loadOnboardingCompleted } from "@/lib/load-onboarding";
 import { loadOnboardingProgress } from "@/lib/load-onboarding-progress";
 import { loadProfileSettings } from "@/lib/load-profile";
+import { loadProjectTagSuggestions } from "@/lib/load-project-tags";
 import { loadSubscriptions } from "@/lib/load-subscriptions";
 import { loadSystemSettings } from "@/lib/load-system-settings";
 
@@ -57,6 +58,12 @@ interface PageProps {
 export default async function HomePage({ searchParams }: PageProps) {
   const { account: accountParam } = await searchParams;
   const now = new Date();
+  // 首頁只需要「上月（MoM 對比）＋本月（板塊 / 大字報）＋未來（預測）」的交易。
+  // 下界取上月月初 — getMonth()-1 在一月會自動回捲到去年 12 月。
+  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const transactionsSince = `${prevMonthStart.getFullYear()}-${String(
+    prevMonthStart.getMonth() + 1
+  ).padStart(2, "0")}-01`;
   const [
     { user, assets, debts, recurring, transactions, accounts },
     settings,
@@ -67,8 +74,9 @@ export default async function HomePage({ searchParams }: PageProps) {
     onboardingCompleted,
     onboardingProgress,
     profile,
+    projectTagSuggestions,
   ] = await Promise.all([
-    loadDashboard(),
+    loadDashboard({ transactionsSince }),
     loadSystemSettings(),
     loadSubscriptions(),
     loadGoals(),
@@ -77,6 +85,7 @@ export default async function HomePage({ searchParams }: PageProps) {
     loadOnboardingCompleted(),
     loadOnboardingProgress(),
     loadProfileSettings(),
+    loadProjectTagSuggestions(),
   ]);
 
   // 板塊：使用者自訂（dashboard_plates）；用真實當下；歷史月份切換在 /analytics
@@ -150,13 +159,7 @@ export default async function HomePage({ searchParams }: PageProps) {
           <div className="flex flex-wrap items-center gap-2 sm:flex-row-reverse">
             <QuickAddTransaction
               accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
-              projectTagSuggestions={Array.from(
-                new Set(
-                  transactions
-                    .map((t) => t.project_tag?.trim())
-                    .filter((v): v is string => Boolean(v))
-                )
-              ).sort()}
+              projectTagSuggestions={projectTagSuggestions}
             />
             {/* 週期性收支入口：行動版只露 icon（min 44x44 觸控標準），sm+ 才顯示文字 pill */}
             <Link
@@ -344,7 +347,7 @@ export default async function HomePage({ searchParams }: PageProps) {
           <CardContent className="flex flex-col gap-6">
             <div className="-mx-2 overflow-x-auto px-2 md:mx-0 md:overflow-x-visible md:px-0">
               <div className="min-w-[560px] md:min-w-0">
-                <CashflowLineChart
+                <CashflowLineChartLazy
                   data={forecastPoints}
                   threshold={threshold || undefined}
                 />

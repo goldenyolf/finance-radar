@@ -29,6 +29,16 @@ export interface DashboardSnapshot {
   accounts: AccountRow[];
 }
 
+export interface LoadDashboardOptions {
+  /**
+   * 只抓 `date >= transactionsSince`（ISO 'YYYY-MM-DD'）的 transactions。
+   * 首頁只需要「上月（MoM 對比）＋本月（板塊 / 大字報）＋未來（預測）」，
+   * 傳上月月初即可，對有長期歷史的使用者大幅砍掉抓取量。
+   * 不傳 = 全歷史（分析頁需要歷史月份，維持原行為）。
+   */
+  transactionsSince?: string;
+}
+
 /**
  * 共用的 RSC 載入函式：把首頁所需的 Supabase 全表抓取集中起來，
  * 4 個 page route 都會用同一份。Next 16 RSC fetch cache 在單一 request
@@ -39,7 +49,9 @@ export interface DashboardSnapshot {
  * period) + ON CONFLICT DO NOTHING 保證重複呼叫零副作用；沒過期項目時
  * 函式本身 < 1ms 即返。RPC 失敗 (e.g. anonymous session) 安靜降級不阻塞載入。
  */
-export async function loadDashboard(): Promise<DashboardSnapshot> {
+export async function loadDashboard(
+  options?: LoadDashboardOptions
+): Promise<DashboardSnapshot> {
   const supabase = await createClient();
 
   // 先 materialize — 之後的 transactions.select 才會吃到本月剛 placeholder 的
@@ -63,13 +75,22 @@ export async function loadDashboard(): Promise<DashboardSnapshot> {
     }
   })();
 
+  // 配 0032 索引 (user_id, date DESC)：帶 date 下界時走 index range scan，
+  // 不再全表 sequential scan。
+  const transactionsQuery = options?.transactionsSince
+    ? supabase
+        .from("transactions")
+        .select("*")
+        .gte("date", options.transactionsSince)
+    : supabase.from("transactions").select("*");
+
   const [user, assets, debts, recurring, transactions, accounts] =
     await Promise.all([
       userPromise,
       safeList<AssetRow>(supabase.from("assets").select("*")),
       safeList<DebtRow>(supabase.from("debts").select("*")),
       safeList<RecurringRow>(supabase.from("recurring_payments").select("*")),
-      safeList<TransactionRow>(supabase.from("transactions").select("*")),
+      safeList<TransactionRow>(transactionsQuery),
       safeList<AccountRow>(supabase.from("accounts").select("*")),
     ]);
 

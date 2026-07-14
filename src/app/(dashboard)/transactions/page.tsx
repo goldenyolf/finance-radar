@@ -3,21 +3,50 @@ import { ScrollText } from "lucide-react";
 import { CsvImportZone } from "@/components/dashboard/csv-import-zone";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { TransactionsView } from "@/components/dashboard/transactions-view";
+import type { AccountRow, TransactionRow } from "@/lib/dashboard";
 import { loadCategories } from "@/lib/load-categories";
-import { loadDashboard } from "@/lib/load-dashboard";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * 明細頁只需要 accounts + 最近 200 筆 transactions，不必走 loadDashboard()
+ * 全量抓 assets/debts/recurring/user。排序 + 取前 200 交給 DB 端
+ * `order(date desc).limit(200)`（配 0032 索引免全表 scan），結果與先前
+ * client-side sort+slice 完全等價，TransactionsView 仍假設 initial 是
+ * date DESC 的最近 200 筆。materialize RPC 保留 —— 直接進 /transactions
+ * 的使用者也要看到本月剛落地的週期性條目。
+ */
+async function loadTransactionsPage(): Promise<{
+  accounts: AccountRow[];
+  transactions: TransactionRow[];
+}> {
+  const supabase = await createClient();
+
+  const [, accountsRes, transactionsRes] = await Promise.all([
+    supabase.rpc("materialize_due_recurrings").then(
+      () => null,
+      () => null // RPC 不可用 → 安靜降級，不擋載入
+    ),
+    supabase.from("accounts").select("*"),
+    supabase
+      .from("transactions")
+      .select("*")
+      .order("date", { ascending: false })
+      .limit(200),
+  ]);
+
+  return {
+    accounts: (accountsRes.data as AccountRow[] | null) ?? [],
+    transactions: (transactionsRes.data as TransactionRow[] | null) ?? [],
+  };
+}
+
 export default async function TransactionsPage() {
-  const [{ accounts, transactions }, categories] = await Promise.all([
-    loadDashboard(),
+  const [{ accounts, transactions: sorted }, categories] = await Promise.all([
+    loadTransactionsPage(),
     loadCategories(),
   ]);
-  // SSR 先排序後端拿到的全量，挑前 200 筆當預設清單。client 之後可走 supabase
-  // 重撈（搜尋 / 重新整理）。
-  const sorted = [...transactions]
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-    .slice(0, 200);
 
   return (
     <PageTransition>
