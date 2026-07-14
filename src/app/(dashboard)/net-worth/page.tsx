@@ -3,7 +3,7 @@ import { CalendarClock, Wallet } from "lucide-react";
 import { ArchivedWealthAccounts } from "@/components/dashboard/archived-wealth-accounts";
 import { AssetAllocationCard } from "@/components/dashboard/asset-allocation-card";
 import { NetWorthCards } from "@/components/dashboard/net-worth-cards";
-import { NetWorthTrendChart } from "@/components/dashboard/net-worth-trend-chart";
+import { NetWorthTrendChartLazy } from "@/components/dashboard/net-worth-trend-chart-lazy";
 import { PageTransition } from "@/components/dashboard/page-transition";
 import { UpdateSnapshotDialog } from "@/components/dashboard/update-snapshot-dialog";
 import { WealthAccountsList } from "@/components/dashboard/wealth-accounts-list";
@@ -101,7 +101,7 @@ export default async function NetWorthPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <NetWorthTrendChart data={trendPoints} />
+              <NetWorthTrendChartLazy data={trendPoints} />
             </CardContent>
           </Card>
 
