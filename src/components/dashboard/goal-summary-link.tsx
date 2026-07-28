@@ -27,11 +27,13 @@ interface Props {
  * Featured 挑選邏輯：「最近 deadline 但還沒達標」最有故事性；
  * 全達標或無 deadline 時 fallback 第一筆。
  *
- * 沒設任何 goal → 整塊不出現（return null），首頁保持精簡；建立入口
- * 留在 /goals 頁，不在首頁占空間。
+ * 沒設任何 goal → 不再整塊消失，改渲染教學態（見 GoalEmptyState）。
+ * 原本 return null 的問題是：唯一會遇到「零 goal」的人就是第一次進來的人，
+ * 而他恰好最需要知道「這裡可以幫我存想買的東西」。看不見的功能等於不存在，
+ * 把建立入口丟在 /goals 頁等他自己逛到，等於這個 feature 對新手不存在。
  */
 export function GoalSummaryLink({ goals }: Props) {
-  if (goals.length === 0) return null;
+  if (goals.length === 0) return <GoalEmptyState />;
 
   // 挑 featured：先選未達標 + 最近 deadline；全達標 fallback 第一筆
   const featured = pickFeaturedGoal(goals);
@@ -112,6 +114,40 @@ export function GoalSummaryLink({ goals }: Props) {
           </div>
         </Link>
       </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * 教學態 — 還沒設任何夢想時顯示。
+ *
+ * 刻意走 dashed border + muted 標題：視覺上明顯比真卡片「輕」，不會讓
+ * 空狀態在首頁上跟有資料的卡片搶注意力，但功能仍然看得見、點得到。
+ */
+function GoalEmptyState() {
+  return (
+    <Card className="mt-8 border-dashed bg-transparent">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-muted-foreground/50" />
+            <CardTitle className="text-base text-muted-foreground">
+              🌟 夢想基金
+            </CardTitle>
+          </div>
+          <Link
+            href="/goals"
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            去設一個
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </div>
+        <CardDescription className="mt-1">
+          想買的東西、想去的旅行、想存的緊急預備金 — 設一個目標金額，
+          這裡就會出現進度條，每次存錢都看得到自己往前走了多少。
+        </CardDescription>
+      </CardHeader>
     </Card>
   );
 }
