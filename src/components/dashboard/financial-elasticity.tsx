@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { DualLabel } from "@/components/ui/dual-label";
 import { HelpTip } from "@/components/ui/help-tip";
 import { Money } from "@/components/ui/money";
 import { chartStroke } from "@/components/dashboard/chart-theme";
@@ -61,13 +62,16 @@ export function FinancialElasticity({ data }: Props) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Scale className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-base">⚖️ 財務彈性 — 固定 vs 浮動</CardTitle>
+          <CardTitle className="text-base">⚖️ 你的錢有多少是動不了的</CardTitle>
+          <span className="text-[10px] font-medium tracking-wider text-muted-foreground/60 uppercase">
+            財務彈性 — 固定 vs 浮動
+          </span>
         </div>
         <CardDescription className="mt-1">
-          硬性負擔率 = 固定支出 ÷ 總收入。越低代表發薪水後越多錢可自由分配
-          （投資、夢想基金、緊急預備金）。
+          每月一定要繳的錢佔收入多少（＝硬性負擔率）。這個比例越低，代表薪水進來後
+          越多錢是你可以自己決定怎麼用的（投資、夢想基金、緊急預備金）。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -129,12 +133,11 @@ export function FinancialElasticity({ data }: Props) {
             {/* 右：負擔率大字 + breakdown */}
             <div className="flex flex-col gap-4">
               <div>
-                <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-                  財務硬性負擔率
+                <DualLabel plain="每月被綁死的錢" term="財務硬性負擔率">
                   <HelpTip ariaLabel="財務硬性負擔率說明">
                     💡 計算公式：(固定支出 ÷ 總收入) × 100%。固定支出包含房貸、托育、保險等避不掉的「死錢」。理財學上建議此比率維持在 30% 以下，若超過 60% 代表財務空間被嚴重壓迫，一發薪水即被綁死。
                   </HelpTip>
-                </p>
+                </DualLabel>
                 <p
                   className={`mt-1 text-5xl font-bold tabular-nums tracking-tight ${tierClass}`}
                 >
@@ -158,11 +161,13 @@ export function FinancialElasticity({ data }: Props) {
               <dl className="flex flex-col gap-1.5 text-sm tabular-nums">
                 <Row
                   label="固定支出"
+                  hint="每月跑不掉的"
                   value={data.fixedExpense}
                   dotColor={fixedColor}
                 />
                 <Row
                   label="浮動支出"
+                  hint="可以調整的"
                   value={data.variableExpense}
                   dotColor={variableColor}
                 />
@@ -356,10 +361,13 @@ function buildPieSlices(
 
 function Row({
   label,
+  hint,
   value,
   dotColor,
 }: {
   label: string;
+  /** 大白話註解 — 讓沒有財務背景的人不用猜「固定 / 浮動」到底指什麼 */
+  hint?: string;
   value: number;
   dotColor: string;
 }) {
@@ -372,6 +380,9 @@ function Row({
           style={{ backgroundColor: dotColor }}
         />
         {label}
+        {hint && (
+          <span className="text-[11px] text-muted-foreground/60">（{hint}）</span>
+        )}
       </dt>
       <dd className="font-medium">
         <Money value={value} />

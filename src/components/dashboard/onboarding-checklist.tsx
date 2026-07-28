@@ -103,16 +103,16 @@ export function OnboardingChecklist({ progress }: Props) {
           <TaskRow
             done={progress.hasPlates}
             icon={<LayoutGrid className="size-4" />}
-            label="🧱 調整戰情室板塊配置"
-            hint="打造完全配合你生活型態的看板"
+            label="🧱 設定首頁要分成哪幾區"
+            hint="把家庭 / 個人 / 補助分開看，首頁才貼合你的生活"
             href="/settings"
             cta="前往自訂"
           />
           <TaskRow
             done={hasVisitedCategories}
             icon={<Tags className="size-4" />}
-            label="🏷️ 劃分固定與浮動分類"
-            hint="定義死錢 vs 活錢，解鎖硬性負擔率與財富智囊預警"
+            label="🏷️ 標出哪些錢每月跑不掉"
+            hint="分好「固定」與「浮動」，才算得出被綁死的錢與超支提醒"
             href="/settings"
             cta="前往配置"
             onClickCta={markCategoriesVisited}
@@ -121,7 +121,7 @@ export function OnboardingChecklist({ progress }: Props) {
             done={progress.hasSnapshot}
             icon={<Camera className="size-4" />}
             label="📸 記錄你的財富起跑點"
-            hint="拍下第一張資產負債快照，點亮淨資產面積圖"
+            hint="填一次「有多少錢、欠多少錢」，之後就能看到自己的成長曲線"
             href="/net-worth"
             cta="去拍照"
           />

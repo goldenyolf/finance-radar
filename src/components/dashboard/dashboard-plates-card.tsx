@@ -156,14 +156,17 @@ export function DashboardPlatesCard({ plates, accounts }: Props) {
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <LayoutGrid className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">🧱 戰情室板塊配置</CardTitle>
+              <CardTitle className="text-base">🧱 首頁要分成哪幾區</CardTitle>
+              <span className="text-[10px] font-medium tracking-wider text-muted-foreground/60 uppercase">
+                戰情室板塊配置
+              </span>
             </div>
             <CardDescription className="mt-1">
-              首頁顯示的板塊（家庭 / 補助 / 個人之類）。每個板塊可綁一個
-              cash flow 帳戶。最多 {DASHBOARD_PLATES_MAX} 個 — 超過會擠壓
-              首頁版位。
+              把首頁切成幾個獨立區塊分開看（例如 家庭 / 補助 / 個人）。每一區可以
+              綁定一個記帳用的帳戶，之後那個帳戶的收支就只算在這一區。最多
+              {" "}{DASHBOARD_PLATES_MAX} 區 — 再多首頁會擠。
             </CardDescription>
           </div>
           <Button

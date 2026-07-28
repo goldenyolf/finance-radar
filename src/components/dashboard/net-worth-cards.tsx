@@ -1,6 +1,7 @@
 import { TrendingDown, TrendingUp, Wallet } from "lucide-react";
 
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
+import { DualLabel } from "@/components/ui/dual-label";
 import { numW, type WealthSnapshotRow } from "@/lib/wealth";
 
 interface Props {
@@ -35,19 +36,22 @@ export function NetWorthCards({ latest, previous }: Props) {
       className="grid grid-cols-1 gap-3 sm:grid-cols-3"
     >
       <MetricCard
-        label="總資產"
+        plain="你擁有的"
+        term="總資產"
         value={assets}
         tone="positive"
         icon={<TrendingUp className="size-4" />}
       />
       <MetricCard
-        label="總負債"
+        plain="你欠人的"
+        term="總負債"
         value={liab}
         tone="danger"
         icon={<TrendingDown className="size-4" />}
       />
       <MetricCard
-        label="淨資產 (Net Worth)"
+        plain="真正屬於你的"
+        term="淨資產 Net Worth"
         value={net}
         tone={positive ? "positive" : "danger"}
         icon={<Wallet className="size-4" />}
@@ -82,7 +86,10 @@ function computeMoM(
 type Tone = "positive" | "danger";
 
 interface MetricCardProps {
-  label: string;
+  /** 大白話主標 */
+  plain: string;
+  /** 專業術語副標 */
+  term: string;
   value: number | null;
   tone: Tone;
   icon: React.ReactNode;
@@ -106,18 +113,24 @@ const TONE_ACCENT: Record<Tone, string> = {
   danger: "text-rose-500",
 };
 
-function MetricCard({ label, value, tone, icon, big, momRate }: MetricCardProps) {
+function MetricCard({
+  plain,
+  term,
+  value,
+  tone,
+  icon,
+  big,
+  momRate,
+}: MetricCardProps) {
   return (
     <div
       className={`rounded-xl bg-card px-5 py-4 ring-1 ${TONE_RING[tone]} ${
         big ? "shadow-sm sm:col-span-1" : ""
       }`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-          {label}
-        </span>
-        <span className={TONE_ACCENT[tone]} aria-hidden>
+      <div className="flex items-start justify-between gap-2">
+        <DualLabel plain={plain} term={term} />
+        <span className={`mt-0.5 ${TONE_ACCENT[tone]}`} aria-hidden>
           {icon}
         </span>
       </div>

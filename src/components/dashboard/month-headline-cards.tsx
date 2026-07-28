@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Minus, PiggyBank } from "lucide-react";
 
 import { AnimatedNumber } from "@/components/dashboard/animated-number";
 import { Card } from "@/components/ui/card";
+import { DualLabel } from "@/components/ui/dual-label";
 import { HelpTip } from "@/components/ui/help-tip";
 import { num, type TransactionRow } from "@/lib/dashboard";
 import { cn } from "@/lib/utils";
@@ -145,14 +146,16 @@ function SavingsRateCard({
   return (
     <Card className="px-4 py-3 ring-1 ring-foreground/10">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-          <PiggyBank className="size-3" />
-          當月儲蓄率
+        <DualLabel
+          plain="收入有多少存下來"
+          term="當月儲蓄率"
+          icon={<PiggyBank className="size-3" />}
+        >
           <HelpTip ariaLabel="儲蓄率說明">
             💡 儲蓄率 = (總收入 − 總支出) ÷ 總收入。理財建議至少維持
             <strong> 20%</strong>。負值代表本月入不敷出，正在動用存量。
           </HelpTip>
-        </span>
+        </DualLabel>
       </div>
       <p
         className={cn(
