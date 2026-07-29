@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
 
 import { LoginForm } from "./login-form";
@@ -41,7 +42,19 @@ export function GlassmorphismLoginCard() {
         <LoginForm />
       </div>
 
+      {/* 直接進 /login 的訪客（分享連結、書籤）也要有路可以去看服務介紹 —
+          proxy 只有在「未登入打首頁」時才會自動導向 /about */}
       <p className="mt-6 text-center text-xs text-slate-500">
+        還不確定這是什麼？
+        <Link
+          href="/about"
+          className="ml-1 text-slate-300 underline underline-offset-4 transition-colors hover:text-white"
+        >
+          先看服務介紹
+        </Link>
+      </p>
+
+      <p className="mt-3 text-center text-xs text-slate-500">
         資料完全隔離，每位會員只會看到自己的記帳紀錄
       </p>
     </motion.div>
