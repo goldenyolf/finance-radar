@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   Layers,
@@ -34,12 +34,14 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { getAccountLabel } from "@/lib/account-display";
+import { computeBackfillRange } from "@/lib/analytics-window";
 import type { CategoryRow } from "@/lib/categories";
 import type {
   AccountRow,
   RecurringRow,
   TransactionRow,
 } from "@/lib/dashboard";
+import { createClient } from "@/lib/supabase/client";
 
 const ALL_ACCOUNTS = "__all_accounts__";
 
@@ -51,6 +53,11 @@ interface Props {
   targetSavingsRate: number;
   /** recurring_payments — 月度財務彈性「零收入 fallback」計算用 */
   recurring: RecurringRow[];
+  /**
+   * server 端已載入的資料下界（ISO "YYYY-MM-01"）。使用者翻到比這更早的
+   * 月份時，本元件會用 browser client 補抓缺的區間。
+   */
+  loadedSince: string;
 }
 
 function todayIsoTaipei(): string {
@@ -89,6 +96,7 @@ export function AnalyticsView({
   categories,
   targetSavingsRate,
   recurring,
+  loadedSince,
 }: Props) {
   const today = useMemo(() => todayIsoTaipei(), []);
   const [tab, setTab] = useState<string>("monthly");
@@ -119,15 +127,96 @@ export function AnalyticsView({
     setPanelOpen(next);
   }, []);
 
+  /* ── 歷史補抓（lazy backfill）──────────────────────────────────────
+     server 只給最近 13 個月（見 analytics-window.ts）。使用者用歷史時光機
+     翻到更早的月份時，這裡補抓缺的區間再合併進來。
+
+     - history.earliest：目前手上資料的下界，補抓成功後往前推
+     - history.rows：補抓回來的資料，跟 props.transactions 連接成連續區間
+     - inflight ref：擋住「連點上一月」造成的重複請求；用 ref 而非 state，
+       因為它只是去重旗標、不該觸發 render
+     - 只在事件 callback 裡觸發（月份切換 / 選日），不放 effect —— 專案的
+       eslint 開了 react-hooks/set-state-in-effect
+  */
+  const [history, setHistory] = useState<{
+    earliest: string;
+    rows: TransactionRow[];
+  }>(() => ({ earliest: loadedSince, rows: [] }));
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const inflight = useRef<string | null>(null);
+
+  const ensureLoadedFor = useCallback(
+    async (anchorIso: string) => {
+      const range = computeBackfillRange(anchorIso, history.earliest);
+      if (!range) return;
+      if (inflight.current === range.since) return;
+      inflight.current = range.since;
+      setIsBackfilling(true);
+      try {
+        // transactions 有 RLS（0028），browser client 的查詢自動 scope 到本人。
+        const { data, error } = await createClient()
+          .from("transactions")
+          .select("*")
+          .gte("date", range.since)
+          .lt("date", range.until);
+        if (error) {
+          // 補抓失敗不擋畫面：維持現有窗口，該月圖表就是空的。下次再切
+          // 過去會重試（inflight 已清掉、earliest 沒動）。
+          console.error("[analytics] 歷史補抓失敗:", error);
+          return;
+        }
+        const rows = (data ?? []) as TransactionRow[];
+        setHistory((prev) => {
+          // 併發保護：只在 range.until 仍等於當前 earliest 時才接上去，
+          // 否則區間會不連續 / 重疊。
+          if (prev.earliest !== range.until) return prev;
+          return { earliest: range.since, rows: [...prev.rows, ...rows] };
+        });
+      } finally {
+        inflight.current = null;
+        setIsBackfilling(false);
+      }
+    },
+    [history.earliest]
+  );
+
+  /* server 給的 + 補抓回來的。兩段區間不重疊（gap 的 until = 當時的
+     earliest），所以直接接起來即可，不必 dedupe by id。 */
+  const allTransactions = useMemo(
+    () =>
+      history.rows.length === 0
+        ? transactions
+        : [...history.rows, ...transactions],
+    [transactions, history.rows]
+  );
+
+  /* 日期改變（單日透視的 navigator / 圖表 drill-down）也要確保資料在手上 */
+  const handleSelectedDateChange = useCallback(
+    (next: string) => {
+      setSelectedDate(next);
+      void ensureLoadedFor(next);
+    },
+    [ensureLoadedFor]
+  );
+
+  /* 月度總覽的歷史時光機切月 */
+  const handleMonthChange = useCallback(
+    (next: Date) => {
+      const iso = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`;
+      void ensureLoadedFor(iso);
+    },
+    [ensureLoadedFor]
+  );
+
   /*
     (1) 先套帳戶過濾 — 全站的下游計算都吃這份 accountScopedTransactions，
     不必每張圖各自維護 selectedAccount。避免下面 project_tag 清單也被別家帳戶
     污染（切某帳戶時就只看該帳戶的專案）。
   */
   const accountScopedTransactions = useMemo(() => {
-    if (selectedAccount === ALL_ACCOUNTS) return transactions;
-    return transactions.filter((t) => t.account_id === selectedAccount);
-  }, [transactions, selectedAccount]);
+    if (selectedAccount === ALL_ACCOUNTS) return allTransactions;
+    return allTransactions.filter((t) => t.account_id === selectedAccount);
+  }, [allTransactions, selectedAccount]);
 
   /* (2) 從 account-scoped transactions 撈去重的 project_tag —
         切帳戶時可用 tag 清單自動跟著窄化。 */
@@ -172,7 +261,7 @@ export function AnalyticsView({
         );
 
   function handleDrillDownToDay(iso: string) {
-    setSelectedDate(iso);
+    handleSelectedDateChange(iso);
     setTab("daily");
   }
 
@@ -459,6 +548,8 @@ export function AnalyticsView({
               onDrillDownToDay={handleDrillDownToDay}
               targetSavingsRate={targetSavingsRate}
               recurring={recurring}
+              onMonthChange={handleMonthChange}
+              isBackfilling={isBackfilling}
             />
           </motion.div>
         </TabsContent>
@@ -469,7 +560,7 @@ export function AnalyticsView({
             accounts={accounts}
             categories={categories ?? []}
             selectedDate={selectedDate}
-            onSelectedDateChange={setSelectedDate}
+            onSelectedDateChange={handleSelectedDateChange}
             today={today}
           />
         </TabsContent>

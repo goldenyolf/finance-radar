@@ -2,6 +2,7 @@ import { PieChart } from "lucide-react";
 
 import { AnalyticsView } from "@/components/dashboard/analytics-view";
 import { PageTransition } from "@/components/dashboard/page-transition";
+import { initialWindowSince } from "@/lib/analytics-window";
 import { loadCategories } from "@/lib/load-categories";
 import { loadDashboard } from "@/lib/load-dashboard";
 import { loadProfileSettings } from "@/lib/load-profile";
@@ -9,9 +10,21 @@ import { loadProfileSettings } from "@/lib/load-profile";
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
+  /*
+    只抓最近 13 個月，不再全歷史。
+
+    原本 loadDashboard() 不帶下界 = `select("*")` 全表，而且整份 transactions
+    會序列化進 AnalyticsView（"use client"）→ 全部進 RSC payload，每次進頁面
+    都重傳，隨資料量無上限成長。
+
+    使用者翻到窗口外的月份時，AnalyticsView 會用 browser client 補抓缺的
+    區間（見 analytics-window.ts），歷史瀏覽功能完全保留。
+  */
+  const transactionsSince = initialWindowSince();
+
   const [{ accounts, transactions, recurring }, categories, profile] =
     await Promise.all([
-      loadDashboard(),
+      loadDashboard({ transactionsSince }),
       loadCategories(),
       loadProfileSettings(),
     ]);
@@ -38,6 +51,7 @@ export default async function AnalyticsPage() {
         categories={categories}
         targetSavingsRate={profile.target_savings_rate}
         recurring={recurring}
+        loadedSince={transactionsSince}
       />
     </main>
     </PageTransition>

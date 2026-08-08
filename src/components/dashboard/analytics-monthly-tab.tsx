@@ -45,6 +45,13 @@ interface Props {
   targetSavingsRate: number;
   /** recurring_payments 全清單 — 0 收入 fallback 計算財務彈性用 */
   recurring: RecurringRow[];
+  /**
+   * 切月時通知父層 —— 父層負責判斷該月是否落在已載入窗口外並補抓歷史資料
+   * （見 analytics-window.ts）。本元件不碰資料來源，只回報「使用者要看哪個月」。
+   */
+  onMonthChange?: (next: Date) => void;
+  /** 父層正在補抓歷史資料 — 沿用切月的 skeleton，避免圖表先閃一次空狀態 */
+  isBackfilling?: boolean;
 }
 
 /**
@@ -65,9 +72,14 @@ export function AnalyticsMonthlyTab({
   onDrillDownToDay,
   targetSavingsRate,
   recurring,
+  onMonthChange,
+  isBackfilling = false,
 }: Props) {
   const [monthDate, setMonthDate] = useState<Date>(() => new Date());
-  const [isMonthSwitching, setIsMonthSwitching] = useState(false);
+  const [isSwitchAnimating, setIsSwitchAnimating] = useState(false);
+  /* 切月動畫 或 父層還在補抓歷史 → 都顯示 skeleton。少了 isBackfilling 的話，
+     翻到窗口外的月份會先閃一次「這個月沒資料」再跳出真實數字。 */
+  const isMonthSwitching = isSwitchAnimating || isBackfilling;
 
   const sankeyData = useMemo(
     () => buildSankeyData(transactions, accounts, monthDate, categories),
@@ -98,10 +110,12 @@ export function AnalyticsMonthlyTab({
   );
 
   function handleMonthChange(next: Date) {
-    setIsMonthSwitching(true);
+    // 補抓要立刻開跑，不等 280ms 的切月動畫 —— 兩件事並行，網路延遲被動畫吃掉
+    onMonthChange?.(next);
+    setIsSwitchAnimating(true);
     window.setTimeout(() => {
       setMonthDate(next);
-      setIsMonthSwitching(false);
+      setIsSwitchAnimating(false);
     }, MONTH_SWITCH_DELAY_MS);
   }
 
