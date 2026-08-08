@@ -40,7 +40,12 @@
 --     auth uid），開 RLS 後那一列對所有人不可見。這是預期結果：應用層已經
 --     改成 .eq("id", uid) 查不到它，安全門檻請走 /settings (system_settings)。
 --
--- 全部 idempotent，可重複跑。ASCII-only header 對齊 SQL Editor pre-parser。
+-- 可重複跑:
+--   第 (1) 段會先把那三張表的 policy 全砍，(2)(3)(4) 才重建，所以整支重跑
+--   不會撞 42710 duplicate_object。第 (5) 段自帶 IF NOT EXISTS 檢查。
+--   本檔第一版在 (4) 因 uuid = text 型別不合而中斷（users.id 是 TEXT），
+--   (1)(2)(3) 已生效、(5) 未執行 —— 修正後整支重跑即可補完。
+-- ASCII-only header 對齊 SQL Editor pre-parser。
 -- ==============================================================
 
 
@@ -103,7 +108,15 @@ CREATE POLICY recurring_payments_delete ON recurring_payments
 
 
 -- --------------------------------------------------------------
--- (4) users — 注意 PK 是 id，不是 user_id
+-- (4) users — 兩個跟其他表不同的地方，都會咬人:
+--
+--     a) PK 是 id，不是 user_id
+--     b) id 的型別是 TEXT，不是 UUID（跟 accounts.id 一樣的 legacy 遺留）。
+--        auth.uid() 回 UUID，直接寫 `auth.uid() = id` 會噴
+--          42883: operator does not exist: uuid = text
+--        兩邊都 ::text 轉換 —— 這樣不管 id 是 TEXT 還是 UUID 都成立
+--        （fork 環境可能不同）。1 列的遺留表，走不走索引無所謂。
+--
 --     只給 SELECT / UPDATE：這是 pre-auth 遺留表，應用層不會 insert，
 --     刪除應該跟著 auth.users 走 CASCADE。
 -- --------------------------------------------------------------
@@ -111,10 +124,10 @@ CREATE POLICY recurring_payments_delete ON recurring_payments
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY users_select ON users
-  FOR SELECT USING (auth.uid() = id);
+  FOR SELECT USING (id::text = auth.uid()::text);
 CREATE POLICY users_update ON users
-  FOR UPDATE USING (auth.uid() = id)
-             WITH CHECK (auth.uid() = id);
+  FOR UPDATE USING (id::text = auth.uid()::text)
+             WITH CHECK (id::text = auth.uid()::text);
 
 
 -- --------------------------------------------------------------
