@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, Reorder, useDragControls } from "framer-motion";
 import { Check, Settings2 } from "lucide-react";
@@ -45,10 +45,21 @@ export function PlateEditableGrid({ data, allAccounts, categories }: Props) {
   // 樂觀本地順序 — 拖拉時即時更新，server 失敗才 router.refresh() 回滾
   const [order, setOrder] = useState<BoardData[]>(data);
 
-  // server 傳新 data 時 sync 本地（reorder 後 router.refresh + 別人改了 DB）
-  useEffect(() => {
+  /*
+    server 傳新 data 時 sync 本地（reorder 後 router.refresh + 別人改了 DB）。
+
+    用 React 官方的「render 期間調整 state」pattern，而不是
+    useEffect(() => setOrder(data), [data])：
+      - 後者會被 react-hooks/set-state-in-effect 擋下
+      - 而且它會先用舊 order 提交一次畫面、effect 跑完再重繪 → router.refresh()
+        之後會閃一下舊順序
+    render 期間 setState 時 React 會直接丟棄這次輸出重跑，不會提交中間狀態。
+  */
+  const [syncedData, setSyncedData] = useState<BoardData[]>(data);
+  if (data !== syncedData) {
+    setSyncedData(data);
     setOrder(data);
-  }, [data]);
+  }
 
   const exitEditMode = () => setIsEditMode(false);
 
@@ -177,6 +188,22 @@ function PlateItem({
 }: ItemProps) {
   const dragControls = useDragControls();
 
+  /*
+    jiggle 動畫的隨機相位 — 每張卡固定一組，避免 N 張卡同步擺動像機器人。
+
+    用 useState lazy initializer 而非直接在 render 期間呼叫 Math.random()：
+      - 後者被 react-hooks/set-state-in-effect 同組的「Cannot call impure
+        function during render」擋下
+      - 而且它每次 render 都給新值 → framer-motion 每次 render 重啟動畫，
+        擺動看起來會抽搐
+    只在 isEditMode 時才用到，SSR 期間走不到這個分支，不會 hydration mismatch。
+  */
+  const [jigglePhase] = useState<[number, number, number]>(() => [
+    -0.5 + Math.random() * 0.2,
+    0.5 - Math.random() * 0.2,
+    -0.5 + Math.random() * 0.2,
+  ]);
+
   // 長按 500ms 偵測 — 非編輯模式才聽，已在編輯模式就不必再觸發
   // Reorder.Item 預設 render <li>，pointer event 走 HTMLLIElement
   const longPressTimer = useRef<number | null>(null);
@@ -208,17 +235,7 @@ function PlateItem({
       onPointerLeave={cancelLongPress}
       onPointerCancel={cancelLongPress}
       // jiggle 動畫 — 編輯模式才跑、隨機 phase 避免 3 張卡同步看起來像機器人
-      animate={
-        isEditMode
-          ? {
-              rotate: [
-                -0.5 + Math.random() * 0.2,
-                0.5 - Math.random() * 0.2,
-                -0.5 + Math.random() * 0.2,
-              ],
-            }
-          : { rotate: 0 }
-      }
+      animate={isEditMode ? { rotate: jigglePhase } : { rotate: 0 }}
       transition={{
         rotate: isEditMode
           ? {

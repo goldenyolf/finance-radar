@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import { ArrowLeftRight } from "lucide-react";
 import { useTheme } from "next-themes";
 import { ResponsiveContainer, Sankey, Tooltip } from "recharts";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { formatCurrency } from "@/lib/dashboard";
 import type { SankeyData, SankeyNode } from "@/lib/sankey-data";
 
@@ -45,8 +47,7 @@ interface SankeyLinkRenderProps {
 export function CashflowSankeyChart({ data }: Props) {
   // 主題感知：dark 用更飽和的霓虹色（Bloomberg 風），light 維持柔和淺色
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   const isDark = mounted && resolvedTheme === "dark";
 
   // SVG <text> 的 fill 是 presentation attribute，瀏覽器不會 evaluate CSS var()

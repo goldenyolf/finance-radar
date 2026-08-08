@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+
 import { ArrowLeftRight } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -13,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { chartStroke } from "@/components/dashboard/chart-theme";
 import { formatCurrency } from "@/lib/dashboard";
 import type { DailySpendData, DailySpendPoint } from "@/lib/daily-spend";
@@ -49,8 +51,7 @@ function formatCompact(n: number): string {
  */
 export function DailySpendChart({ data, selectedDate, onDateSelect }: Props) {
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   const isDark = mounted && resolvedTheme === "dark";
   const stroke = chartStroke(isDark);
 

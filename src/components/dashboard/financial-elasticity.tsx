@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { AlertTriangle, PartyPopper, Scale, Sparkles } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DualLabel } from "@/components/ui/dual-label";
 import { HelpTip } from "@/components/ui/help-tip";
@@ -44,8 +44,7 @@ interface Props {
  */
 export function FinancialElasticity({ data }: Props) {
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   const isDark = mounted && resolvedTheme === "dark";
 
   // theme-aware：dark mode 固定色從 slate-700 提亮到 slate-500，避免在暗背景看不到

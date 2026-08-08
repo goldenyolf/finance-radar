@@ -1,12 +1,9 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { createContext, useContext } from "react";
+
+import { useIsMounted } from "@/hooks/use-is-mounted";
+import { usePersistedFlag } from "@/hooks/use-persisted-flag";
 
 /**
  * Sidebar 摺疊狀態 — 全域 Provider。
@@ -14,9 +11,11 @@ import {
  * 為什麼跟 PrivacyProvider 同款 pattern：
  *   - state 由 <Navigation> sidebar UI 與 <MainPad> padding-left 共讀，
  *     單一 source of truth 最簡單。
- *   - localStorage 持久化讓使用者「摺疊一次後永遠摺疊」的偏好被尊重。
- *   - mounted guard：SSR 先給 false，掛載後同步 localStorage，避免
- *     hydration mismatch（跟 PrivacyProvider 一樣是 ~16ms flash，可接受）。
+ *   - localStorage 就是那個 source of truth（見 usePersistedFlag），不再是
+ *     「React state + useEffect 讀回」—— 後者會被
+ *     react-hooks/set-state-in-effect 擋下，也會多一次 render 造成
+ *     sidebar 展開後才收合的閃爍。
+ *   - mounted guard 保留：SSR / hydration 前一律 false，避免 mismatch。
  */
 
 const STORAGE_KEY = "sidebar_collapsed";
@@ -38,32 +37,12 @@ export function SidebarCollapsedProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  // 初次掛載：從 localStorage 讀回上次設定
-  useEffect(() => {
-    try {
-      const persisted = window.localStorage.getItem(STORAGE_KEY);
-      if (persisted === "true") setIsCollapsed(true);
-    } catch {
-      // localStorage 不可用 → 安靜降級成 false
-    }
-    setMounted(true);
-  }, []);
-
-  // state 改變 → 寫回 localStorage
-  useEffect(() => {
-    if (!mounted) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, String(isCollapsed));
-    } catch {
-      // 寫失敗不影響功能
-    }
-  }, [isCollapsed, mounted]);
-
-  const toggle = useCallback(() => setIsCollapsed((v) => !v), []);
-  const setCollapsed = useCallback((next: boolean) => setIsCollapsed(next), []);
+  const mounted = useIsMounted();
+  const {
+    value: isCollapsed,
+    set: setCollapsed,
+    toggle,
+  } = usePersistedFlag(STORAGE_KEY, "true", "false");
 
   return (
     <SidebarCollapsedContext.Provider

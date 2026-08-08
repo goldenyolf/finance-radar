@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { Moon, Sun } from "lucide-react";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -24,9 +24,7 @@ export function ThemeToggle({
   className,
 }: Props) {
   const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
 
   const isDark = mounted && resolvedTheme === "dark";
 

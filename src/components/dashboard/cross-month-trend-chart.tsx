@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   Bar,
@@ -15,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { chartStroke } from "@/components/dashboard/chart-theme";
 import { formatCurrency } from "@/lib/dashboard";
 import type { CrossMonthTrendPoint } from "@/lib/cross-month-trend";
@@ -56,8 +56,7 @@ function formatSigned(n: number): string {
  */
 export function CrossMonthTrendChart({ data, targetSavingsRate }: Props) {
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   const isDark = mounted && resolvedTheme === "dark";
 
   // theme-aware：暗色用稍亮版本（emerald/red/blue 都需要對比強化）

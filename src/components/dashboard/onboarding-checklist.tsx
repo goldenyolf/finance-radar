@@ -10,6 +10,8 @@ import {
   Tags,
 } from "lucide-react";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
+import { usePersistedFlag } from "@/hooks/use-persisted-flag";
 import type { OnboardingProgress } from "@/lib/load-onboarding-progress";
 
 interface Props {
@@ -36,20 +38,12 @@ const LS_KEY_CATEGORIES_VISITED = "money-radar:onboarding-categories-visited";
  * `transition-all duration-500` 做 CSS 過渡，500ms 後 setState 真正 unmount。
  */
 export function OnboardingChecklist({ progress }: Props) {
-  const [mounted, setMounted] = useState(false);
-  const [hasVisitedCategories, setHasVisitedCategories] = useState(false);
+  const mounted = useIsMounted();
+  // localStorage 就是 source of truth（見 usePersistedFlag）；SSR / hydration
+  // 前一律 false，之後直接讀真值，不必先 render 一次錯的再修正。
+  const { value: hasVisitedCategories, set: setHasVisitedCategories } =
+    usePersistedFlag(LS_KEY_CATEGORIES_VISITED, "1", "0");
   const [unmounted, setUnmounted] = useState(false);
-
-  useEffect(() => {
-    try {
-      setHasVisitedCategories(
-        window.localStorage.getItem(LS_KEY_CATEGORIES_VISITED) === "1"
-      );
-    } catch {
-      // localStorage 不可用（隱私模式 / SSR）→ 預設未訪問
-    }
-    setMounted(true);
-  }, []);
 
   const done =
     (progress.hasPlates ? 1 : 0) +
@@ -70,12 +64,9 @@ export function OnboardingChecklist({ progress }: Props) {
   const percent = Math.round((done / TOTAL_TASKS) * 100);
   const isAllDone = done >= TOTAL_TASKS;
 
+  // 寫 localStorage 就等於改狀態 —— usePersistedFlag 的 subscriber 會被通知
+  // 並重新讀值，不必再另外 setState。
   function markCategoriesVisited() {
-    try {
-      window.localStorage.setItem(LS_KEY_CATEGORIES_VISITED, "1");
-    } catch {
-      // 同上，失敗忽略
-    }
     setHasVisitedCategories(true);
   }
 

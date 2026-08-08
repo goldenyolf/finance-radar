@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   Cell,
@@ -11,6 +10,7 @@ import {
   Tooltip,
 } from "recharts";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
 import { chartStroke } from "@/components/dashboard/chart-theme";
 import { Money } from "@/components/ui/money";
@@ -68,8 +68,7 @@ export function ExpensePieChart({
   // theme-aware：圓餅切片分隔線要跟卡片底色融合（Recharts stroke prop 不吃 var()，
   // 見 chart-theme.ts）。hooks 必須在 empty-state early return 之前。
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   const isDark = mounted && resolvedTheme === "dark";
   const stroke = chartStroke(isDark);
 

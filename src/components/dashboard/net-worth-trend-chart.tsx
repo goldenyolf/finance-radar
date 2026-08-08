@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   Area,
@@ -12,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
 import { chartStroke } from "@/components/dashboard/chart-theme";
 import { formatTwd, type NetWorthPoint } from "@/lib/wealth";
@@ -37,8 +37,7 @@ function formatCompact(n: number): string {
  */
 export function NetWorthTrendChart({ data }: Props) {
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   const isDark = mounted && resolvedTheme === "dark";
 
   if (data.length === 0) {

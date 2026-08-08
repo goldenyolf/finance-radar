@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+
 import { PieChart as PieChartIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { chartStroke } from "@/components/dashboard/chart-theme";
 import { Money } from "@/components/ui/money";
 import {
@@ -88,8 +90,7 @@ export function AssetAllocationCard({ latest }: Props) {
 
   // 圓餅切片分隔線的 theme-aware 色（Recharts stroke prop 不吃 var()，見 chart-theme.ts）
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   const isDark = mounted && resolvedTheme === "dark";
   const stroke = chartStroke(isDark);
 

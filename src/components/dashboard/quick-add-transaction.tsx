@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowRight,
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -644,10 +645,7 @@ export function QuickAddTransaction({ accounts, projectTagSuggestions }: Props) 
  * null，mount 後再 portal，避免 hydration mismatch。
  */
 function BodyPortal({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useIsMounted();
   if (!mounted) return null;
   return createPortal(children, document.body);
 }

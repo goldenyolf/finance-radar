@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   Area,
@@ -13,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { ChartEmptyState } from "@/components/dashboard/chart-empty-state";
 import { chartStroke } from "@/components/dashboard/chart-theme";
 
@@ -48,8 +48,7 @@ export function CashflowLineChart({ data, threshold = 150000 }: Props) {
   // theme-aware 配色：dark 走霓虹藍 + 亮紅，light 維持 indigo + 標準紅。
   // hooks 必須在 empty-state early return 之前（rules-of-hooks）。
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsMounted();
   const isDark = mounted && resolvedTheme === "dark";
 
   if (!data || data.length === 0) {
