@@ -11,6 +11,7 @@ import { stripDescriptionLabel } from "@/lib/description-normalize";
 import {
   buildCategoryLookup,
   classifyByCategoryKeywords,
+  resolveCategory,
   type CategoryLookup,
   type CategoryRow,
 } from "@/lib/categories";
@@ -339,7 +340,8 @@ async function loadUserPlates(
 function resolveTargetAccount(args: {
   overrideAccountId: string | null;
   paymentMethod: PaymentMethod | null;
-  category: ExpenseCategory | null;
+  /** 內建 code 或 categories.id（UUID）— per 0030 雙形態 */
+  category: CategoryValue | null;
   accounts: LineAccountContext[];
   profileDefaultAccountId: string | null;
   categoryLookup: CategoryLookup;
@@ -370,7 +372,9 @@ function resolveTargetAccount(args: {
   }
 
   if (category) {
-    const cat = categoryLookup.byCode.get(category);
+    // resolveCategory 兩段查找（byId → byCode）—— 只查 byCode 的話，自訂
+    // 分類綁的板塊 / 預設帳戶完全不會生效，會一路掉到 profile default。
+    const cat = resolveCategory(category, categoryLookup);
 
     // (D) 真.動態板塊路由 — plate_id 為主路徑
     if (cat?.plate_id) {
@@ -546,6 +550,48 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
+/**
+ * 冪等 claim：把 webhookEventId 寫進 line_webhook_events（PK 去重，per 0035）。
+ *
+ * 回傳 true = 這個事件我們沒處理過，可以繼續；
+ *      false = 重送，直接放棄（reply token 這時多半也過期了）。
+ *
+ * 為什麼需要：LINE 收不到 200 會重送，而本 handler 是把整條 pipeline
+ * （下載媒體 → Whisper/Vision → Gemini → 多次 DB → budget alert push）都
+ * await 完才回應。發票那條特別容易超時 → 重送 → 同一張發票記兩次，而且
+ * 使用者只會看到帳目莫名多一筆，毫無線索。
+ *
+ * 表不存在（0035 還沒跑）→ 記一次 warn 後照舊處理，不擋功能。
+ */
+async function claimEvent(eventId: string): Promise<boolean> {
+  const { error } = await db()
+    .from("line_webhook_events")
+    .insert({ event_id: eventId });
+  if (!error) return true;
+
+  // 23505 = PK 衝突 = 這個事件已經被處理過（或正在處理中）
+  if (error.code === "23505") {
+    console.warn(`[LINE webhook] 事件 ${eventId} 為重送，跳過`);
+    return false;
+  }
+  console.warn(
+    "[LINE webhook] 冪等 claim 失敗（0035 migration 跑了嗎？），照舊處理:",
+    error
+  );
+  return true;
+}
+
+/** 處理途中炸掉 → 釋放 claim，讓 LINE 的下次重送還有機會補做。 */
+async function releaseEvent(eventId: string): Promise<void> {
+  const { error } = await db()
+    .from("line_webhook_events")
+    .delete()
+    .eq("event_id", eventId);
+  if (error) {
+    console.error(`[LINE webhook] 釋放事件 ${eventId} 失敗:`, error);
+  }
+}
+
 async function handleEvent(
   event: webhook.Event,
   client: messagingApi.MessagingApiClient
@@ -554,6 +600,11 @@ async function handleEvent(
   const messageEvent = event as webhook.MessageEvent;
   if (!messageEvent.replyToken) return;
   const replyToken = messageEvent.replyToken;
+
+  // 在做任何有副作用的事之前先 claim。webhookEventId 是必填 ULID，
+  // 但保留 optional 判斷防禦舊 payload / 測試打進來的手工 JSON。
+  const eventId = event.webhookEventId;
+  if (eventId && !(await claimEvent(eventId))) return;
 
   const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN!;
 
@@ -645,6 +696,10 @@ async function handleEvent(
     }
   } catch (err) {
     console.error("[LINE webhook] Unhandled error in dispatcher:", err);
+    // 沒做完就炸了 → 把 claim 還回去，LINE 重送時才有機會補做。
+    // （預期內的失敗路徑不走這裡，它們會回友善訊息並保留 claim，
+    //   因為使用者已經知道這次失敗了，重送只會多一則重複的錯誤訊息。）
+    if (eventId) await releaseEvent(eventId);
     await safeReply(
       client,
       replyToken,
@@ -758,7 +813,7 @@ async function handleTextMessage(
   item = stripDescriptionLabel(item);
 
   // expense 才需要 category；income 直接 null
-  const category: ExpenseCategory | null =
+  const category: CategoryValue | null =
     txType === "expense"
       ? (llmCategory ?? (await classifyExpense(item, userCategories)))
       : null;
@@ -917,18 +972,24 @@ async function handleTextMessage(
 }
 
 /**
+ * transactions.category 欄位的雙形態（per 0030）：內建 code 或 categories.id。
+ * webhook 內所有「分類」都用這個型別流動，讀取一律走 resolveCategory()。
+ */
+type CategoryValue = string;
+
+/**
  * 取得 category 在 LINE 回覆中顯示用的中文名稱。
- * 優先使用者自訂的 categories.name，沒有再 fallback 到靜態 7 大類 label。
+ *
+ * 走 resolveCategory（byId → byCode）而非只查 byCode —— 後者對自訂分類的
+ * UUID 永遠查不到，會顯示成「其他」。
  */
 function resolveCategoryLabel(
-  category: ExpenseCategory,
+  category: CategoryValue,
   lookup: CategoryLookup
 ): string {
-  return (
-    lookup.byCode.get(category)?.name ??
-    EXPENSE_CATEGORY_LABEL[category] ??
-    "其他"
-  );
+  const row = resolveCategory(category, lookup);
+  if (row) return row.name;
+  return EXPENSE_CATEGORY_LABEL[category as ExpenseCategory] ?? "其他";
 }
 
 /* ─────────────────────────── Audio (Whisper STT) ─────────────────────────── */
@@ -1189,14 +1250,18 @@ function monthStartInTaipei(): string {
  */
 async function buildBudgetWarning(
   userId: string,
-  category: ExpenseCategory,
+  category: CategoryValue,
   lookup: CategoryLookup
 ): Promise<string> {
+  // 內建的「其他」是 catch-all，沒有預算概念。自訂分類即使叫「其他」也有
+  // 自己的 UUID 與預算，不該被這行擋掉。
   if (category === "other") return "";
 
   try {
-    // 預算從 categories.budget_monthly 拿（Phase 5 之後不再走 system_settings）
-    const row = lookup.byCode.get(category);
+    // 預算從 categories.budget_monthly 拿（Phase 5 之後不再走 system_settings）。
+    // resolveCategory 兩段查找 —— 只查 byCode 的話自訂分類的預算永遠是 0，
+    // 使用者設了上限卻永遠收不到警告。
+    const row = resolveCategory(category, lookup);
     const budget = row?.budget_monthly ?? 0;
     if (!Number.isFinite(budget) || budget <= 0) return "";
 
@@ -1232,25 +1297,37 @@ async function buildBudgetWarning(
 
 /**
  * 三段式分類，優先用使用者自訂的關鍵字 / LLM prompt，缺資料時 fallback：
- *   1. 使用者 categories.keywords 比對（最長關鍵字優先）—— 命中且是內建 code 直接用
+ *   1. 使用者 categories.keywords 比對（最長關鍵字優先）
  *   2. 沒命中時打 LLM（Gemini），prompt 用使用者的 name + keywords 客製
  *   3. 仍無 → 退到舊的靜態關鍵字 classifier，最後 fallback 'other'
  *
- * 為什麼第一段命中還要檢查 row.code != null：transactions.category 還是
- * snake_case enum 欄位，自訂分類（code=null）目前無法落到該欄；Phase 5
- * 切換到 category_id UUID 之後就可以放開這個限制。
+ * 回傳 CategoryValue = 內建 code 或 categories.id（UUID）—— 跟
+ * transactions.category 欄位自 0030 起的雙形態一致。
+ *
+ * 第一段原本寫 `if (matched?.code) return ...`，把命中的自訂分類（code=null）
+ * 整個丟掉。那行的註解說「transactions.category 還是 snake_case enum 欄位」，
+ * 但 0030 已經開放該欄存 categories.id、0031 也把殘留的 CHECK 拔了 —— 限制
+ * 早就不存在，只是這裡沒跟上。結果是使用者在 /settings 建的自訂分類，
+ * 連同他設的關鍵字與預算，在 LINE 記帳這條路上完全是死的。
+ *
+ * 注意 (2) LLM 這條仍然只吐內建 code：line-llm-parse / llm-classify /
+ * openai-vision 三份 prompt 都是列 7 大類要 LLM 選一個。要讓 LLM 也能選
+ * 自訂分類是另一件事（prompt + 驗證都要改，且會動到既有分類準確度），
+ * 這裡不順手做。使用者想讓自訂分類生效 → 在 /settings 給它關鍵字，
+ * 走 (1) 這條確定性路徑。
  */
 async function classifyExpense(
   title: string,
   categories: CategoryRow[]
-): Promise<ExpenseCategory> {
-  // (1) 使用者自訂關鍵字
+): Promise<CategoryValue> {
+  // (1) 使用者自訂關鍵字 —— 內建與自訂分類都可命中
   if (categories.length > 0) {
     const matched = classifyByCategoryKeywords(title, categories);
-    if (matched?.code) return matched.code as ExpenseCategory;
+    // 內建分類寫 code（穩定識別子），自訂分類寫 id（UUID）
+    if (matched) return matched.code ?? matched.id;
   }
 
-  // (2) LLM with dynamic prompt
+  // (2) LLM with dynamic prompt（只會回內建 code）
   const llm = await classifyByLlm(
     title,
     categories.length > 0 ? categories : undefined
@@ -1258,8 +1335,7 @@ async function classifyExpense(
   if (llm) return llm;
 
   // (3) 退路：靜態關鍵字（fork 友善 — 沒設 categories 也能用）
-  const fallback = classifyByKeyword(title);
-  return fallback;
+  return classifyByKeyword(title);
 }
 
 async function replyText(
