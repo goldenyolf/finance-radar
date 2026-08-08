@@ -20,6 +20,12 @@ export interface SubscriptionRow {
   next_billing_date: string;
   account_id: string;
   category: string;
+  /**
+   * per 0033 — 「已針對這個 next_billing_date 推播過續扣提醒」的去重標記。
+   * null / 不等於 next_billing_date = 這一輪還沒推過。只有 cron 會讀寫，
+   * UI 端不需要（select("*") 會帶回來，故宣告成 optional 避免 caller 被迫填）。
+   */
+  last_alerted_billing_date?: string | null;
 }
 
 /**
@@ -70,4 +76,35 @@ export function advanceBillingDate(
     day: "2-digit",
   }).format(d);
   return parts;
+}
+
+/**
+ * 反覆 advanceBillingDate 直到扣款日回到「今天或未來」，回傳補跑後的日期。
+ *
+ * 為什麼需要補跑：cron 可能連續多天沒跑到（專案暫停、function 持續失敗、
+ * 排程被關掉）。舊版一次只推一輪，一旦落後超過一個週期就永遠追不上，
+ * 訂閱的 next_billing_date 會卡在過去日期爛掉。
+ *
+ * 已經是今天或未來 → 原值回傳（no-op，呼叫端可用 `!==` 判斷要不要寫 DB）。
+ *
+ * maxSteps 是 runaway 保險：monthly 訂閱 600 步 = 50 年，正常資料絕不會
+ * 撞到；真的撞到代表日期資料壞掉（例如 1900 年），這時停下來回傳當前值
+ * 比無限迴圈卡死 cron 好。
+ */
+export function catchUpBillingDate(
+  current: string,
+  cycle: BillingCycle,
+  now: Date = new Date(),
+  maxSteps = 600
+): string {
+  let date = current;
+  for (let i = 0; i < maxSteps; i++) {
+    const days = daysUntilBilling(date, now);
+    if (Number.isNaN(days) || days >= 0) return date;
+    const next = advanceBillingDate(date, cycle);
+    // advanceBillingDate 遇到爛日期會原值回傳 → 沒有前進就跳出，避免死迴圈
+    if (next === date) return date;
+    date = next;
+  }
+  return date;
 }
