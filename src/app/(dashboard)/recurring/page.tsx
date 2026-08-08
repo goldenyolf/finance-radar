@@ -25,8 +25,8 @@ import {
   num,
   type AccountRow,
   type RecurringRow,
-  type UserRow,
 } from "@/lib/dashboard";
+import { getCurrentUserId } from "@/lib/current-user";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -43,28 +43,29 @@ async function safeList<T>(
   }
 }
 
+/**
+ * 顯式 .eq("user_id", uid) — recurring_payments 在 repo 的 migrations 裡從沒
+ * ENABLE ROW LEVEL SECURITY 過，不能只靠 RLS scope。
+ *
+ * 順手拿掉原本的 `users` 表讀取：它是 pre-Supabase-Auth 的 legacy 表
+ * （0002 seed 用 gen_random_uuid() 建，id 不是 auth uid），而且 `.limit(1)`
+ * 無條件抓「表裡第一筆」；本頁拿到之後從頭到尾沒用過。
+ */
 async function loadRecurringPage() {
-  const supabase = await createClient();
-  const userPromise = (async () => {
-    try {
-      const { data } = await supabase
-        .from("users")
-        .select("*")
-        .limit(1)
-        .maybeSingle();
-      return data as UserRow | null;
-    } catch {
-      return null;
-    }
-  })();
+  const uid = await getCurrentUserId();
+  if (!uid) return { recurring: [], accounts: [] };
 
-  const [user, recurring, accounts] = await Promise.all([
-    userPromise,
-    safeList<RecurringRow>(supabase.from("recurring_payments").select("*")),
-    safeList<AccountRow>(supabase.from("accounts").select("*")),
+  const supabase = await createClient();
+  const [recurring, accounts] = await Promise.all([
+    safeList<RecurringRow>(
+      supabase.from("recurring_payments").select("*").eq("user_id", uid)
+    ),
+    safeList<AccountRow>(
+      supabase.from("accounts").select("*").eq("user_id", uid)
+    ),
   ]);
 
-  return { user, recurring, accounts };
+  return { recurring, accounts };
 }
 
 function formatDate(iso: string) {
@@ -157,7 +158,7 @@ function RecurringRowCard({
 }
 
 export default async function RecurringPage() {
-  const { user, recurring, accounts } = await loadRecurringPage();
+  const { recurring, accounts } = await loadRecurringPage();
 
   const accountName = (id: string | null) => {
     if (!id) return "未指定帳戶";

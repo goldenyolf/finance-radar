@@ -11,13 +11,8 @@ import { createClient } from "@/lib/supabase/server";
 import type { IncomeCategory } from "@/lib/dashboard";
 import {
   classifyByKeyword,
-  EXPENSE_CATEGORY_LABEL,
+  EXPENSE_CATEGORY_CODES,
 } from "@/lib/expense-categories";
-
-/** 7 大支出分類 code set — server-side enum validation 用 */
-const EXPENSE_CATEGORY_CODES = new Set<string>(
-  Object.keys(EXPENSE_CATEGORY_LABEL)
-);
 
 export type TransactionType = "income" | "expense" | "transfer";
 export type TransactionPriority = "essential" | "non_essential";

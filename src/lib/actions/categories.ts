@@ -79,22 +79,30 @@ export async function updateCategory(
   if (err) return { ok: false, error: err };
 
   const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
   // 注意：code 欄位刻意不允許 update — built-in 7 大分類的 code 是穩定識別子，
   // 預算邏輯與舊 transactions backfill 都依賴它。只允許改 name/color/keywords。
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from("categories")
-    .update({
-      name: input.name.trim(),
-      type: input.type,
-      color: input.color,
-      keywords: input.keywords.trim(),
-      budget_monthly: input.budget_monthly,
-      default_account_id: input.default_account_id,
-      plate_id: input.plate_id,
-    })
-    .eq("id", input.id);
+    .update(
+      {
+        name: input.name.trim(),
+        type: input.type,
+        color: input.color,
+        keywords: input.keywords.trim(),
+        budget_monthly: input.budget_monthly,
+        default_account_id: input.default_account_id,
+        plate_id: input.plate_id,
+      },
+      { count: "exact" }
+    )
+    .eq("id", input.id)
+    .eq("user_id", userData.user.id);
 
   if (error) return { ok: false, error: error.message };
+  if (!count) return { ok: false, error: "找不到該分類（或不屬於你）" };
   revalidatePath("/");
   revalidatePath("/settings");
   revalidatePath("/analytics");
@@ -105,12 +113,16 @@ export async function deleteCategory(id: string): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少分類 ID" };
 
   const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+  const uid = userData.user.id;
 
   // 防呆：built-in 七大類（code != null）禁止刪除，會破壞預算系統 + LLM prompt
   const { data: row, error: fetchErr } = await supabase
     .from("categories")
     .select("code")
     .eq("id", id)
+    .eq("user_id", uid)
     .maybeSingle();
   if (fetchErr) return { ok: false, error: fetchErr.message };
   if (!row) return { ok: false, error: "找不到該分類" };
@@ -121,8 +133,13 @@ export async function deleteCategory(id: string): Promise<MutationResult> {
     };
   }
 
-  const { error } = await supabase.from("categories").delete().eq("id", id);
+  const { error, count } = await supabase
+    .from("categories")
+    .delete({ count: "exact" })
+    .eq("id", id)
+    .eq("user_id", uid);
   if (error) return { ok: false, error: error.message };
+  if (!count) return { ok: false, error: "找不到該分類（或不屬於你）" };
 
   revalidatePath("/");
   revalidatePath("/settings");

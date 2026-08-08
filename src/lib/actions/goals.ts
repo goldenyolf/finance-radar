@@ -31,8 +31,13 @@ export async function createGoal(
   if (err) return { ok: false, error: err };
 
   const supabase = await createClient();
-  // user_id 走 DB DEFAULT auth.uid()
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  // user_id 顯式寫入而非靠 DB DEFAULT auth.uid() — DEFAULT 缺失時會寫成
+  // NULL 變成孤兒 row，顯式寫至少會撞 NOT NULL 早 fail。
   const { error } = await supabase.from("goals").insert({
+    user_id: userData.user.id,
     name: input.name.trim(),
     target_amount: input.targetAmount,
     current_amount: 0,
@@ -48,8 +53,16 @@ export async function createGoal(
 export async function deleteGoal(id: string): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少目標 ID" };
   const supabase = await createClient();
-  const { error } = await supabase.from("goals").delete().eq("id", id);
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  const { error, count } = await supabase
+    .from("goals")
+    .delete({ count: "exact" })
+    .eq("id", id)
+    .eq("user_id", userData.user.id);
   if (error) return { ok: false, error: error.message };
+  if (!count) return { ok: false, error: "找不到該目標（或不屬於你）" };
   revalidatePath("/");
   return { ok: true };
 }
@@ -83,11 +96,16 @@ export async function addFundsToGoal(
   }
 
   const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+  const uid = userData.user.id;
+
   // 1. 撈現值 + target
   const { data: goal, error: fetchErr } = await supabase
     .from("goals")
     .select("current_amount, target_amount")
     .eq("id", goalId)
+    .eq("user_id", uid)
     .maybeSingle();
   if (fetchErr) return { ok: false, error: fetchErr.message };
   if (!goal) return { ok: false, error: "找不到該目標" };
@@ -98,15 +116,19 @@ export async function addFundsToGoal(
   const justCompleted = current < target && newAmount >= target;
 
   // 2. update goals
-  const { error: updateErr } = await supabase
+  const { error: updateErr, count } = await supabase
     .from("goals")
-    .update({ current_amount: newAmount })
-    .eq("id", goalId);
+    .update({ current_amount: newAmount }, { count: "exact" })
+    .eq("id", goalId)
+    .eq("user_id", uid);
   if (updateErr) return { ok: false, error: updateErr.message };
+  if (!count) return { ok: false, error: "找不到該目標（或不屬於你）" };
 
   // 3. insert log（即使這步失敗，前面的金額已更新，視為部分成功）
+  //    user_id 顯式寫入 — LINE webhook 端的同款 insert 一直都有帶，這裡對齊。
   const { error: logErr } = await supabase.from("goal_logs").insert({
     goal_id: goalId,
+    user_id: uid,
     amount,
   });
   if (logErr) {

@@ -42,8 +42,12 @@ export async function createSubscription(
   if (err) return { ok: false, error: err };
 
   const supabase = await createClient();
-  // user_id 走 DB DEFAULT auth.uid()
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  // user_id 顯式寫入而非靠 DB DEFAULT auth.uid()（DEFAULT 缺失會寫成孤兒 row）
   const { error } = await supabase.from("subscriptions").insert({
+    user_id: userData.user.id,
     name: input.name.trim(),
     amount: input.amount,
     billing_cycle: input.billingCycle,
@@ -66,19 +70,31 @@ export async function updateSubscription(
   if (err) return { ok: false, error: err };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  const { error, count } = await supabase
     .from("subscriptions")
-    .update({
-      name: input.name.trim(),
-      amount: input.amount,
-      billing_cycle: input.billingCycle,
-      next_billing_date: input.nextBillingDate,
-      account_id: input.accountId,
-      category: input.category?.trim() || "固定支出",
-    })
-    .eq("id", input.id);
+    .update(
+      {
+        name: input.name.trim(),
+        amount: input.amount,
+        billing_cycle: input.billingCycle,
+        next_billing_date: input.nextBillingDate,
+        account_id: input.accountId,
+        category: input.category?.trim() || "固定支出",
+        // 刻意不動 last_alerted_billing_date（per 0033）：使用者改扣款日後，
+        // 舊標記等於舊日期、跟新的 next_billing_date 不相等，cron 的
+        // `last_alerted === next_billing` 去重條件自然不成立，照樣會提醒。
+        // 不寫這欄也讓本檔不依賴 0033 是否已套用。
+      },
+      { count: "exact" }
+    )
+    .eq("id", input.id)
+    .eq("user_id", userData.user.id);
 
   if (error) return { ok: false, error: error.message };
+  if (!count) return { ok: false, error: "找不到該訂閱（或不屬於你）" };
 
   revalidatePath("/");
   return { ok: true };
@@ -90,9 +106,17 @@ export async function deleteSubscription(
   if (!id) return { ok: false, error: "缺少訂閱 ID" };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("subscriptions").delete().eq("id", id);
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  const { error, count } = await supabase
+    .from("subscriptions")
+    .delete({ count: "exact" })
+    .eq("id", id)
+    .eq("user_id", userData.user.id);
 
   if (error) return { ok: false, error: error.message };
+  if (!count) return { ok: false, error: "找不到該訂閱（或不屬於你）" };
 
   revalidatePath("/");
   return { ok: true };

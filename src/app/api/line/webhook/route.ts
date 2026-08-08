@@ -226,11 +226,13 @@ async function tryGoalDeposit(
   const newAmount = current + intent.amount;
   const justCompleted = current < targetAmount && newAmount >= targetAmount;
 
-  // 更新累積金額
+  // 更新累積金額。service client 繞過 RLS，.eq("user_id") 是唯一的租戶防線
+  // （target 雖來自已 filter 的清單，但這條路徑上沒有第二層可以兜底）。
   const { error: updateErr } = await db()
     .from("goals")
     .update({ current_amount: newAmount })
-    .eq("id", target.id);
+    .eq("id", target.id)
+    .eq("user_id", userId);
   if (updateErr) {
     console.error("[LINE webhook] goal update failed:", updateErr);
     await replyText(

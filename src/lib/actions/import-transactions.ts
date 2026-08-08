@@ -9,6 +9,7 @@ import {
   type BankFormat,
   type ParsedRow,
 } from "@/lib/csv-import";
+import { EXPENSE_CATEGORY_CODES } from "@/lib/expense-categories";
 import { createClient } from "@/lib/supabase/server";
 
 import type { ExpenseCategory } from "@/lib/expense-categories";
@@ -76,11 +77,15 @@ export async function parseImportCsv(formData: FormData): Promise<ImportResult> 
 
   // 撈既有 transactions 算 dedup keys
   const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData?.user) return { ok: false, error: "未登入或 session 失效" };
+
   const existingKeys = new Set<string>();
   try {
     const { data, error } = await supabase
       .from("transactions")
       .select("date, amount, description")
+      .eq("user_id", userData.user.id)
       .eq("type", "expense");
     if (!error && data) {
       for (const r of data) {
@@ -133,6 +138,11 @@ export async function confirmImport(
   if (!Array.isArray(rows) || rows.length === 0) {
     return { ok: false, error: "沒有可匯入的交易" };
   }
+  // 跟 bulkUpdateTransactionCategory 同樣的 500 筆天花板 — rows 直接來自
+  // client，沒有上限的話一次 request 可以塞爆整張表。
+  if (rows.length > 500) {
+    return { ok: false, error: "單次最多匯入 500 筆，請分批處理" };
+  }
   if (!accountId) {
     return { ok: false, error: "請選擇匯入目標帳戶" };
   }
@@ -143,6 +153,41 @@ export async function confirmImport(
     return { ok: false, error: "未登入或 session 失效" };
   }
   const userId = userData.user.id;
+
+  // 驗 accountId 擁有權 — 舊版直接照寫 client 傳來的值。accounts.id 是全域
+  // 唯一的 TEXT，塞別人的 id 過得了 FK，結果是交易掛在使用者看不到的帳戶上
+  // 變成幽靈資料（首頁 / 板塊全部依 account_id 過濾）。
+  const { data: accRow, error: accErr } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (accErr) return { ok: false, error: accErr.message };
+  if (!accRow) return { ok: false, error: "帳戶不存在或不屬於你" };
+
+  // 驗每筆的 category — 跟 updateTransactionCategory / bulkUpdate 同一套雙路徑：
+  // built-in 7 code 白名單直接過，其他當 UUID 查 categories 表確認屬於本人。
+  // 0031 之後 DB 端沒有 CHECK constraint 了，這層不擋的話任意字串都寫得進去，
+  // 之後全部 render 成灰色「其他」。
+  const customCategoryIds = new Set(
+    rows.map((r) => r.category as string).filter((c) => !EXPENSE_CATEGORY_CODES.has(c))
+  );
+  if (customCategoryIds.size > 0) {
+    const ids = Array.from(customCategoryIds);
+    const { data: catRows, error: catErr } = await supabase
+      .from("categories")
+      .select("id")
+      .in("id", ids)
+      .eq("user_id", userId)
+      .eq("type", "expense");
+    if (catErr) return { ok: false, error: catErr.message };
+    const owned = new Set((catRows ?? []).map((c) => c.id as string));
+    const bad = ids.filter((id) => !owned.has(id));
+    if (bad.length > 0) {
+      return { ok: false, error: "有交易的分類不存在或不屬於你" };
+    }
+  }
 
   const payload = rows.map((r) => ({
     user_id: userId,

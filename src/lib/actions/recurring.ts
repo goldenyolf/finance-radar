@@ -39,9 +39,13 @@ export async function createRecurring(
   if (!input.nextDueDate) return { ok: false, error: "請選擇下次執行日期" };
 
   const supabase = await createClient();
-  // user_id 走 DB DEFAULT auth.uid()，這裡不傳；RLS policy 也用 auth.uid() 驗
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  // user_id 顯式寫入而非靠 DB DEFAULT auth.uid()（DEFAULT 缺失會寫成孤兒 row）
   const { error } = await supabase.from("recurring_payments").insert({
     id: randomUUID(),
+    user_id: userData.user.id,
     account_id: input.accountId,
     title: input.title.trim(),
     amount: input.amount,
@@ -78,19 +82,27 @@ export async function updateRecurring(
   if (!input.nextDueDate) return { ok: false, error: "請選擇下次執行日期" };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  const { error, count } = await supabase
     .from("recurring_payments")
-    .update({
-      account_id: input.accountId,
-      title: input.title.trim(),
-      amount: input.amount,
-      type: input.type,
-      frequency: input.frequency,
-      next_due_date: input.nextDueDate,
-    })
-    .eq("id", input.id);
+    .update(
+      {
+        account_id: input.accountId,
+        title: input.title.trim(),
+        amount: input.amount,
+        type: input.type,
+        frequency: input.frequency,
+        next_due_date: input.nextDueDate,
+      },
+      { count: "exact" }
+    )
+    .eq("id", input.id)
+    .eq("user_id", userData.user.id);
 
   if (error) return { ok: false, error: error.message };
+  if (!count) return { ok: false, error: "找不到該項目（或不屬於你）" };
 
   revalidatePath("/");
   revalidatePath("/recurring");
@@ -101,12 +113,17 @@ export async function deleteRecurring(id: string): Promise<MutationResult> {
   if (!id) return { ok: false, error: "缺少項目 ID" };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { ok: false, error: "尚未登入" };
+
+  const { error, count } = await supabase
     .from("recurring_payments")
-    .delete()
-    .eq("id", id);
+    .delete({ count: "exact" })
+    .eq("id", id)
+    .eq("user_id", userData.user.id);
 
   if (error) return { ok: false, error: error.message };
+  if (!count) return { ok: false, error: "找不到該項目（或不屬於你）" };
 
   revalidatePath("/");
   revalidatePath("/recurring");

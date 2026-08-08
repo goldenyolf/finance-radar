@@ -27,6 +27,19 @@ export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
  * 給 base-ui Select.Value 的 render-function children 用：
  * base-ui 的 value 型別是 any，所以走 unknown 收斂後再查表。
  */
+/**
+ * 7 大 built-in 支出分類 code 的 Set — server-side 白名單驗證用。
+ *
+ * 0031 把 transactions.category 的 CHECK constraint 拔掉之後（欄位同時要能
+ * 存 built-in code 跟 categories.id UUID），DB 端已經沒有任何防線，所有
+ * 寫入路徑都得自己驗：白名單命中 → 直接過；沒命中 → 當 UUID 查 categories
+ * 表確認屬於當前 user。actions/transactions.ts 與 actions/import-transactions.ts
+ * 共用這一份，避免兩邊白名單漂移。
+ */
+export const EXPENSE_CATEGORY_CODES: ReadonlySet<string> = new Set<string>(
+  Object.keys(EXPENSE_CATEGORY_LABEL)
+);
+
 export function getCategoryLabel(value: unknown): string {
   if (typeof value !== "string" || !value) return "選擇花費類型";
   if (value in EXPENSE_CATEGORY_LABEL) {
