@@ -57,11 +57,14 @@ export type RecurringFrequency =
 
 export type RiskLevel = "low" | "medium" | "high";
 
-export interface UserRow {
-  id: string;
-  name: string | null;
-  emergency_fund_threshold: number | string;
-}
+/*
+ * UserRow 已移除（連同 loadDashboard 對 `users` 表的讀取）。
+ *
+ * `users` 是 pre-Supabase-Auth 的遺留表：0002 seed 用 gen_random_uuid() 建
+ * 那一列，id 不是 auth uid，所以永遠對不上任何登入者。它唯一的用途是首頁
+ * 安全門檻的 fallback，而該設定的正式來源是 system_settings（/settings 寫入）。
+ * 0036 也對它開了 RLS，DB 層同樣查不到。應用層留著只是死碼。
+ */
 
 export interface AssetRow {
   id: string;

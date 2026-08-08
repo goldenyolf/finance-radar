@@ -6,7 +6,6 @@ import type {
   DebtRow,
   RecurringRow,
   TransactionRow,
-  UserRow,
 } from "@/lib/dashboard";
 
 async function safeList<T>(
@@ -22,7 +21,6 @@ async function safeList<T>(
 }
 
 export interface DashboardSnapshot {
-  user: UserRow | null;
   assets: AssetRow[];
   debts: DebtRow[];
   recurring: RecurringRow[];
@@ -70,7 +68,6 @@ export async function loadDashboard(
   // 沒有 uid 就不該對任何表做無條件全表 select。
   if (!uid) {
     return {
-      user: null,
       assets: [],
       debts: [],
       recurring: [],
@@ -79,25 +76,12 @@ export async function loadDashboard(
     };
   }
 
-  // 每張表都顯式 .eq("user_id", uid)。RLS 是主要防線，但 users / assets /
-  // debts / recurring_payments 這幾張表在 repo 的 migrations 裡從沒 ENABLE
-  // ROW LEVEL SECURITY 過（只有 0004/0007/0010/0016/0024/0028 六張有），
-  // 而 users 原本是 `.select("*").limit(1)` 完全無條件 —— RLS 若沒開，
-  // 拿到的是「表裡第一筆」= 別人的 emergency_fund_threshold，會直接流進
-  // 首頁的安全門檻與現金流預測。
-  const userPromise = (async () => {
-    try {
-      const { data } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", uid)
-        .maybeSingle();
-      return data as UserRow | null;
-    } catch {
-      return null;
-    }
-  })();
-
+  // 每張表都顯式 .eq("user_id", uid) — belt-and-suspenders。0036 之後所有表
+  // 的 RLS 都補齊了（實測 anon 讀不到任何一張），但 RLS 是「當下狀態」不是
+  // 「不變量」：0028 明明對 transactions 開過 RLS，卻被一條遺留的 anon 全開
+  // policy 蓋掉，實測 anon 讀得到全部 312 列。程式碼層的 filter 不會被 DB
+  // 端的設定漂移悄悄關掉，值得留著。
+  //
   // 配 0032 索引 (user_id, date DESC)：帶 date 下界時走 index range scan，
   // 不再全表 sequential scan。
   let transactionsQuery = supabase
@@ -111,9 +95,8 @@ export async function loadDashboard(
     );
   }
 
-  const [user, assets, debts, recurring, transactions, accounts] =
+  const [assets, debts, recurring, transactions, accounts] =
     await Promise.all([
-      userPromise,
       safeList<AssetRow>(
         supabase.from("assets").select("*").eq("user_id", uid)
       ),
@@ -127,5 +110,5 @@ export async function loadDashboard(
       ),
     ]);
 
-  return { user, assets, debts, recurring, transactions, accounts };
+  return { assets, debts, recurring, transactions, accounts };
 }

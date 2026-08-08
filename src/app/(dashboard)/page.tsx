@@ -34,7 +34,6 @@ import {
   availableCash,
   buildBoardData,
   computeForecast,
-  num,
   scopeForAccount,
 } from "@/lib/dashboard";
 import { loadCategories } from "@/lib/load-categories";
@@ -65,7 +64,7 @@ export default async function HomePage({ searchParams }: PageProps) {
     prevMonthStart.getMonth() + 1
   ).padStart(2, "0")}-01`;
   const [
-    { user, assets, debts, recurring, transactions, accounts },
+    { assets, debts, recurring, transactions, accounts },
     settings,
     subscriptions,
     goals,
@@ -96,9 +95,11 @@ export default async function HomePage({ searchParams }: PageProps) {
     transactions,
     now,
   });
-  const threshold =
-    settings.safetyThreshold ??
-    (user ? num(user.emergency_fund_threshold) : 0);
+  // 安全門檻只有一個來源：system_settings（/settings 那個輸入框寫的）。
+  // 原本後面還接了 `?? num(user.emergency_fund_threshold)` 的 legacy fallback，
+  // 讀的是 pre-auth 的 users 表 —— 那張表的 id 是 0002 seed 用
+  // gen_random_uuid() 產的，永遠不等於任何 auth uid，這條 fallback 早就是死碼。
+  const threshold = settings.safetyThreshold ?? 0;
 
   const activeAccountId =
     accountParam && accounts.some((a) => a.id === accountParam)
