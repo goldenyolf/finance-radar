@@ -15,6 +15,7 @@ import {
   type CategoryRow,
 } from "@/lib/categories";
 import { formatCurrency, type AccountType, type PaymentMethod } from "@/lib/dashboard";
+import { depositToGoal } from "@/lib/goal-deposit";
 import {
   classifyByKeyword,
   EXPENSE_CATEGORY_LABEL,
@@ -187,10 +188,12 @@ async function tryGoalDeposit(
   const intent = parseGoalMessage(text);
   if (!intent) return false;
 
-  // 撈這位使用者的 goals 找最佳匹配（service client 沒 auth，要顯式 filter）
+  // 撈這位使用者的 goals 找最佳匹配（service client 沒 auth，要顯式 filter）。
+  // 只要 id + name：金額由 depositToGoal 內的原子 UPDATE 讀寫並回傳，
+  // 這裡先讀一次反而會給人「讀到的值可以拿來算」的錯覺。
   const { data: goals, error } = await db()
     .from("goals")
-    .select("id, name, current_amount, target_amount")
+    .select("id, name")
     .eq("user_id", userId);
   if (error) {
     console.error("[LINE webhook] goals fetch failed:", error);
@@ -221,37 +224,31 @@ async function tryGoalDeposit(
     if (matched) target = matched;
   }
 
-  const current = Number(target.current_amount);
-  const targetAmount = Number(target.target_amount);
-  const newAmount = current + intent.amount;
-  const justCompleted = current < targetAmount && newAmount >= targetAmount;
-
-  // 更新累積金額。service client 繞過 RLS，.eq("user_id") 是唯一的租戶防線
-  // （target 雖來自已 filter 的清單，但這條路徑上沒有第二層可以兜底）。
-  const { error: updateErr } = await db()
-    .from("goals")
-    .update({ current_amount: newAmount })
-    .eq("id", target.id)
-    .eq("user_id", userId);
-  if (updateErr) {
-    console.error("[LINE webhook] goal update failed:", updateErr);
+  // 原子加值（per 0034 add_goal_funds RPC）+ 寫 audit log，實作跟網頁端
+  // server action 共用。舊版是「讀現值 → 加 → 寫回」，而本 handler 是
+  // Promise.all 併發跑的 —— 同一個 webhook payload 帶兩則「提撥 500」時
+  // 兩條會讀到同一個舊值，少記一筆。
+  const deposit = await depositToGoal(
+    db(),
+    target.id,
+    userId,
+    intent.amount
+  );
+  if (!deposit.ok) {
+    console.error("[LINE webhook] goal deposit failed:", deposit.error);
     await replyText(
       client,
       replyToken,
-      `${replyPrefix}❌ 寫入失敗：${updateErr.message}`
+      `${replyPrefix}❌ 寫入失敗：${deposit.error ?? "未知錯誤"}`
     );
     return true;
   }
 
-  // 寫 log（失敗不擋主流程）
-  const { error: logErr } = await db().from("goal_logs").insert({
-    goal_id: target.id,
-    user_id: userId,
-    amount: intent.amount,
-  });
-  if (logErr) console.error("[LINE webhook] goal log insert failed:", logErr);
-
-  const pct = (newAmount / targetAmount) * 100;
+  const newAmount = deposit.newAmount ?? 0;
+  const targetAmount = deposit.targetAmount ?? 0;
+  const justCompleted = deposit.justCompleted ?? false;
+  // target_amount 為 0 的目標不該讓百分比變成 Infinity / NaN
+  const pct = targetAmount > 0 ? (newAmount / targetAmount) * 100 : 0;
   const baseMsg = `🌟 太棒了！已為【${target.name}】注入 $${intent.amount} 能量，目前進度已達 ${pct.toFixed(0)}%！加油！`;
   const completedMsg = justCompleted
     ? `\n\n🎉 夢想 100% 達成！恭喜，準備好出發了嗎？`
@@ -404,6 +401,19 @@ const PAYMENT_METHOD_EMOJI: Record<PaymentMethod, string> = {
   credit_card: "💳",
   transfer: "🏦",
 };
+
+/**
+ * 帳戶類型 → 付款方式。跟 quick-add-transaction 的 ACCOUNT_TYPE_TO_PAYMENT
+ * 同一套規則：bank 帳戶的現代消費場景就是轉帳／匯款，cash / credit_card
+ * 一一對應。給發票批次寫入用（圖片本身推不出付款方式，帳戶類型是最好的線索）。
+ */
+function paymentMethodForAccountType(
+  type: AccountType | undefined
+): PaymentMethod {
+  if (type === "credit_card") return "credit_card";
+  if (type === "bank") return "transfer";
+  return "cash";
+}
 
 /* ─────────────── Placeholder 核銷（recurring fulfillment）─────────────── */
 
@@ -1065,6 +1075,12 @@ async function handleImageMessage(
     type: "expense" as const,
     priority: "non_essential" as const,
     category: item.category,
+    // 發票沒有付款方式的線索，但帳戶類型就是最好的推測（跟 Quick Add 的
+    // ACCOUNT_TYPE_TO_PAYMENT 同一套 mapping）。舊版整個欄位留空，導致
+    // 發票記的帳在明細頁沒有付款方式 emoji，跟文字記帳的行為不一致。
+    payment_method: paymentMethodForAccountType(
+      userAccounts.find((a) => a.id === target!.id)?.type
+    ),
     status: "completed" as const,
     date: today,
   }));
@@ -1092,6 +1108,10 @@ async function handleImageMessage(
 
   const warnings = await collectBudgetWarnings(userId, items, lookup);
 
+  // 門檻監控 —— 文字 / 核銷兩條路徑一直都有跑，只有發票這條漏了。而這偏偏
+  // 是「一次記 10 筆」最容易觸發單日熔斷的路徑。
+  await runBudgetAlerts(db(), userId);
+
   const total = items.reduce((sum, i) => sum + i.amount, 0);
   // 同帳戶連續多筆會視覺重複；只在「跟前一筆不同」時附帳戶後綴，UX 較乾淨。
   const lines = resolved.map(({ item, target }, idx) => {
@@ -1113,22 +1133,23 @@ async function handleImageMessage(
 /**
  * 對發票多筆項目，把同分類加總後一次性檢查預算。回傳警告字串陣列。
  * 為避免 LINE 訊息爆炸，最多顯示 3 條最嚴重的。
+ *
+ * 舊版是 for-await 序列跑 buildBudgetWarning，每個分類一次 DB query
+ * （一張發票 5 個分類 = 5 次來回，全部卡在 LINE reply 之前）。改成併行後
+ * 總耗時等於最慢的那一次。
  */
 async function collectBudgetWarnings(
   userId: string,
   items: InvoiceItem[],
   lookup: CategoryLookup
 ): Promise<string[]> {
-  const byCategory = new Map<ExpenseCategory, number>();
-  for (const it of items) {
-    byCategory.set(it.category, (byCategory.get(it.category) ?? 0) + it.amount);
-  }
-  const warnings: string[] = [];
-  for (const cat of byCategory.keys()) {
-    const w = await buildBudgetWarning(userId, cat, lookup);
-    if (w) warnings.push(w.trim());
-  }
-  return warnings.slice(0, 3);
+  const categories = new Set<ExpenseCategory>();
+  for (const it of items) categories.add(it.category);
+
+  const results = await Promise.all(
+    Array.from(categories, (cat) => buildBudgetWarning(userId, cat, lookup))
+  );
+  return results.filter(Boolean).map((w) => w.trim()).slice(0, 3);
 }
 
 /**

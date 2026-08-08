@@ -422,9 +422,17 @@ export function computeDedupKey(
 
 interface ParseInput {
   csvText: string;
-  /** 既有 DB transactions 的 dedup key 集合 — 用來標記重複 */
-  existingKeys: Set<string>;
+  /**
+   * 既有 DB transactions 的 dedup key 集合 — 用來標記重複。
+   *
+   * 可省略：呼叫端如果想「先 parse 拿到日期範圍，再用該範圍去撈 DB」
+   * （避免撈全歷史），就先不傳，之後用 markDuplicates() 補標記。
+   */
+  existingKeys?: Set<string>;
 }
+
+/** 空集合 singleton — 免得每次 parse 都配一個新的。 */
+const NO_KEYS: ReadonlySet<string> = new Set<string>();
 
 export interface ParseResult {
   format: BankFormat;
@@ -435,7 +443,7 @@ export interface ParseResult {
 
 export function parseAndClassify({
   csvText,
-  existingKeys,
+  existingKeys = NO_KEYS as Set<string>,
 }: ParseInput): ParseResult {
   const grid = parseCsv(csvText);
   if (grid.length < 2) {
@@ -488,4 +496,42 @@ export function parseAndClassify({
   }
 
   return { format, rows };
+}
+
+/**
+ * 回傳這批 rows 的日期範圍（含頭尾），空陣列回 null。
+ *
+ * 用途：把 dedup 的 DB 查詢收斂到 CSV 實際涵蓋的區間。信用卡明細通常只有
+ * 一兩個月，但舊版是撈「全歷史的 expense」來算 key 集合 —— 用了兩年之後
+ * 每匯入一次就得把整張表拉回應用層。
+ */
+export function dateRangeOf(
+  rows: ParsedRow[]
+): { from: string; to: string } | null {
+  if (rows.length === 0) return null;
+  let from = rows[0].date;
+  let to = rows[0].date;
+  for (const r of rows) {
+    if (r.date < from) from = r.date;
+    if (r.date > to) to = r.date;
+  }
+  return { from, to };
+}
+
+/**
+ * 用 existingKeys 重新標記 new / duplicate。refund（負數金額）維持原狀 ——
+ * 退款本來就不該進 DB，跟「是否重複」是正交的兩件事。
+ *
+ * 就地改寫傳進來的 rows 並回傳同一個陣列（呼叫端剛 parse 出來，沒有別人
+ * 持有這份參考）。
+ */
+export function markDuplicates(
+  rows: ParsedRow[],
+  existingKeys: Set<string>
+): ParsedRow[] {
+  for (const r of rows) {
+    if (r.status === "refund") continue;
+    r.status = existingKeys.has(r._dedupKey) ? "duplicate" : "new";
+  }
+  return rows;
 }

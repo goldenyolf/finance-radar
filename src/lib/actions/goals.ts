@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { depositToGoal } from "@/lib/goal-deposit";
 import { createClient } from "@/lib/supabase/server";
 
 export interface CreateGoalInput {
@@ -77,11 +78,12 @@ export interface AddFundsResult {
 }
 
 /**
- * 兩步式：read 現值 → update += amount → insert goal_logs。
+ * 提撥金額。實作在 lib/goal-deposit.ts —— 跟 LINE webhook 的 tryGoalDeposit
+ * 共用同一份，走 add_goal_funds() RPC 做原子加值（per 0034）。
  *
- * 不開 Supabase RPC 是為了維持「全部設定在 web app 端、不動 DB schema」
- * 的習慣。單一使用者場景下沒有 race condition；多人共用要改寫成 RPC
- * 或 transaction。
+ * 原本這裡是 read-modify-write 兩步式，註解寫「單一使用者場景沒有 race
+ * condition」；但 webhook 那份是併發跑的（Promise.all over events），同一份
+ * 邏輯兩種正確性假設站不住腳，索性統一成原子版本。
  *
  * justCompleted flag 讓 client 端用來決定要不要噴 confetti — 比
  * 「前後 amount 比對」更可靠（後端是唯一可信來源）。
@@ -90,56 +92,22 @@ export async function addFundsToGoal(
   goalId: string,
   amount: number
 ): Promise<AddFundsResult> {
-  if (!goalId) return { ok: false, error: "缺少目標 ID" };
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { ok: false, error: "提撥金額必須為大於 0 的數字" };
-  }
-
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { ok: false, error: "尚未登入" };
-  const uid = userData.user.id;
 
-  // 1. 撈現值 + target
-  const { data: goal, error: fetchErr } = await supabase
-    .from("goals")
-    .select("current_amount, target_amount")
-    .eq("id", goalId)
-    .eq("user_id", uid)
-    .maybeSingle();
-  if (fetchErr) return { ok: false, error: fetchErr.message };
-  if (!goal) return { ok: false, error: "找不到該目標" };
-
-  const current = Number(goal.current_amount);
-  const target = Number(goal.target_amount);
-  const newAmount = current + amount;
-  const justCompleted = current < target && newAmount >= target;
-
-  // 2. update goals
-  const { error: updateErr, count } = await supabase
-    .from("goals")
-    .update({ current_amount: newAmount }, { count: "exact" })
-    .eq("id", goalId)
-    .eq("user_id", uid);
-  if (updateErr) return { ok: false, error: updateErr.message };
-  if (!count) return { ok: false, error: "找不到該目標（或不屬於你）" };
-
-  // 3. insert log（即使這步失敗，前面的金額已更新，視為部分成功）
-  //    user_id 顯式寫入 — LINE webhook 端的同款 insert 一直都有帶，這裡對齊。
-  const { error: logErr } = await supabase.from("goal_logs").insert({
-    goal_id: goalId,
-    user_id: uid,
-    amount,
-  });
-  if (logErr) {
-    console.error("[goals] log insert failed (current_amount 已更新):", logErr);
-    // 不 return error，仍視為成功 — 金額對了就 OK，log 只是 audit trail
-  }
+  const result = await depositToGoal(
+    supabase,
+    goalId,
+    userData.user.id,
+    amount
+  );
+  if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/");
   return {
     ok: true,
-    newCurrentAmount: newAmount,
-    justCompleted,
+    newCurrentAmount: result.newAmount,
+    justCompleted: result.justCompleted,
   };
 }

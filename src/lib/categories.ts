@@ -92,6 +92,59 @@ export function resolveCategory(
   return lookup.byId.get(value) ?? lookup.byCode.get(value) ?? null;
 }
 
+/** UI 選單 / chip 用的分類選項。value 是要寫進 transactions.category 的值。 */
+export interface CategoryOption {
+  /** built-in code（'food_dining' 等）或 categories.id（自訂分類 UUID） */
+  value: string;
+  name: string;
+  color: string;
+}
+
+/**
+ * 攤平「built-in 7 大類 + 使用者自訂 expense 分類」成一份選項清單。
+ *
+ * 排序：built-in 依 EXPENSE_CATEGORY_LABEL 的宣告順序固定在前（使用者已經
+ * 習慣那個順序，按 name 排會每次改分類名就跳位），自訂分類按 name 排在後。
+ *
+ * built-in 的 name / color 優先吃使用者在 /settings 改過的值（byCode 命中），
+ * 沒有才退回靜態 map —— 這讓「把『餐飲食品』改名成『吃喝』」在所有選單同步。
+ *
+ * 這份邏輯原本在 category-drilldown-panel 與 bulk-actions-bar 各有一份逐字
+ * 相同的實作，後者的註解寫「不重用是為了避免 client component 反向 import
+ * drilldown-panel」—— 但它是純函式，抽到這裡就沒有那個顧慮了。
+ *
+ * @param builtInLabel  EXPENSE_CATEGORY_LABEL（由 caller 傳入避免循環 import
+ *                      —— expense-categories.ts 已經 import 本檔的
+ *                      buildCategoryLookup / resolveCategory）
+ * @param builtInColor  EXPENSE_CATEGORY_COLOR
+ */
+export function buildCategoryOptions(
+  categories: CategoryRow[] | undefined,
+  builtInLabel: Record<string, string>,
+  builtInColor: Record<string, string>
+): CategoryOption[] {
+  const lookup = categories ? buildCategoryLookup(categories) : null;
+  const options: CategoryOption[] = [];
+
+  for (const code of Object.keys(builtInLabel)) {
+    const dyn = lookup?.byCode.get(code);
+    options.push({
+      value: code,
+      name: dyn?.name ?? builtInLabel[code],
+      color: dyn?.color ?? builtInColor[code],
+    });
+  }
+
+  const custom = (categories ?? [])
+    .filter((c) => c.type === "expense" && !c.code)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const c of custom) {
+    options.push({ value: c.id, name: c.name, color: c.color });
+  }
+
+  return options;
+}
+
 /**
  * 拆 categories.keywords 成 string[]，過濾空字串。
  * 用 comma 分隔（包含全形＋半形 + 空白容錯）。

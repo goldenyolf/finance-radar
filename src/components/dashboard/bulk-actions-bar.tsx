@@ -26,13 +26,13 @@ import {
   bulkUpdateTransactionProject,
 } from "@/lib/actions/transactions";
 import {
-  buildCategoryLookup,
+  buildCategoryOptions,
+  type CategoryOption,
   type CategoryRow,
 } from "@/lib/categories";
 import {
   EXPENSE_CATEGORY_COLOR,
   EXPENSE_CATEGORY_LABEL,
-  type ExpenseCategory,
 } from "@/lib/expense-categories";
 
 interface Props {
@@ -48,34 +48,6 @@ interface Props {
   onSuccess: () => void;
 }
 
-interface CategoryChip {
-  value: string; // built-in code 或 categories.id UUID
-  name: string;
-  color: string;
-}
-
-/**
- * per 0030 buildCategoryOptions 的相同邏輯 — 這裡不重用是為了避免 client
- * component 反向 import drilldown-panel。built-in 7 個依 EXPENSE_CATEGORY_LABEL
- * 順序固定，自訂按 name 排。
- */
-function buildCategoryChips(categories: CategoryRow[] | undefined): CategoryChip[] {
-  const lookup = categories ? buildCategoryLookup(categories) : null;
-  const chips: CategoryChip[] = [];
-  for (const code of Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[]) {
-    const dyn = lookup?.byCode.get(code);
-    chips.push({
-      value: code,
-      name: dyn?.name ?? EXPENSE_CATEGORY_LABEL[code],
-      color: dyn?.color ?? EXPENSE_CATEGORY_COLOR[code],
-    });
-  }
-  const custom = (categories ?? [])
-    .filter((c) => c.type === "expense" && !c.code)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  for (const c of custom) chips.push({ value: c.id, name: c.name, color: c.color });
-  return chips;
-}
 
 /**
  * 懸浮批次工具列 — 多選 ≥ 1 筆時從底部 spring 滑入。
@@ -100,7 +72,11 @@ export function BulkActionsBar({
   const [pending, startTransition] = useTransition();
 
   const visible = selectedIds.length > 0;
-  const categoryChips = buildCategoryChips(categories);
+  const categoryChips = buildCategoryOptions(
+    categories,
+    EXPENSE_CATEGORY_LABEL,
+    EXPENSE_CATEGORY_COLOR
+  );
 
   function applyTag(tag: string | null) {
     if (pending) return;
@@ -128,7 +104,7 @@ export function BulkActionsBar({
     });
   }
 
-  function applyCategory(chip: CategoryChip) {
+  function applyCategory(chip: CategoryOption) {
     if (pending) return;
     startTransition(async () => {
       const result = await bulkUpdateTransactionCategory({

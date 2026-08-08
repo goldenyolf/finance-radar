@@ -82,7 +82,7 @@ interface ResolvedCategory {
   color: string;
 }
 
-function resolveCategory(
+function resolveCategoryDisplay(
   value: string | null,
   lookup: CategoryLookup | null
 ): ResolvedCategory {
@@ -130,7 +130,7 @@ export function buildDailySpendData(
   const seriesAgg = new Map<string, { color: string; monthTotal: number }>();
 
   for (const t of monthlyExpenses) {
-    const { name, color } = resolveCategory(t.category, lookup);
+    const { name, color } = resolveCategoryDisplay(t.category, lookup);
     const amount = num(t.amount);
     if (amount <= 0) continue;
 
@@ -286,7 +286,7 @@ export function buildDailyDetail(
     const amount = num(t.amount);
     if (amount <= 0) continue;
 
-    const { name, color } = resolveCategory(t.category, lookup);
+    const { name, color } = resolveCategoryDisplay(t.category, lookup);
     const accName = getAccountLabel(
       t.account_id,
       t.account_id ? accountById.get(t.account_id)?.name : undefined

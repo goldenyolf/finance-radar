@@ -33,6 +33,7 @@ import { Money } from "@/components/ui/money";
 import { updateTransactionCategory } from "@/lib/actions/transactions";
 import {
   buildCategoryLookup,
+  buildCategoryOptions,
   resolveCategory,
   type CategoryRow,
 } from "@/lib/categories";
@@ -53,29 +54,6 @@ import { cn } from "@/lib/utils";
  * 改法：把 built-in 7 個 + user 自訂 expense 分類都攤平成 options，value =
  * code (built-in) 或 category.id (自訂 UUID)。
  */
-type CategoryOption = { value: string; name: string; color: string };
-
-function buildCategoryOptions(categories: CategoryRow[]): CategoryOption[] {
-  const lookup = buildCategoryLookup(categories);
-  const options: CategoryOption[] = [];
-  // built-in 依 EXPENSE_CATEGORY_LABEL 固定順序
-  for (const code of Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[]) {
-    const dyn = lookup.byCode.get(code);
-    options.push({
-      value: code,
-      name: dyn?.name ?? EXPENSE_CATEGORY_LABEL[code],
-      color: dyn?.color ?? EXPENSE_CATEGORY_COLOR[code],
-    });
-  }
-  // 自訂分類（code = null）— 依 name 排序附加在後
-  const custom = categories
-    .filter((c) => c.type === "expense" && !c.code)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  for (const c of custom) {
-    options.push({ value: c.id, name: c.name, color: c.color });
-  }
-  return options;
-}
 
 interface Props {
   /** 分類點 + label header 用的當前分類顏色（跟圓餅扇形一致）*/
@@ -177,7 +155,11 @@ function DrilldownRow({ tx, categories }: RowProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const lookup = buildCategoryLookup(categories);
-  const options = buildCategoryOptions(categories);
+  const options = buildCategoryOptions(
+    categories,
+    EXPENSE_CATEGORY_LABEL,
+    EXPENSE_CATEGORY_COLOR
+  );
 
   // 當前 category value — DB 端可能是 built-in code 或自訂 UUID；null 視為 'other'。
   // per review #5：不再窄化到 ExpenseCategory enum；跟 aggregator 對齊語意。

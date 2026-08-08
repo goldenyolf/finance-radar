@@ -16,6 +16,8 @@
  * 設計信念：警報失敗**不該**炸主流程。所有錯誤都吞掉只 log。
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { formatCurrency } from "@/lib/dashboard";
 import {
   sendLineFlexNotification,
@@ -23,27 +25,15 @@ import {
 } from "@/lib/line-push";
 
 /**
- * 寬鬆 Supabase client 型別 — 接受 server action 的 authenticated client、
- * 也接受 webhook 的 service role client。共用 .from().select/.insert 介面。
+ * server action 的 authenticated client（@supabase/ssr）與 webhook / cron 的
+ * service role client（@supabase/supabase-js）都是 SupabaseClient，直接用官方
+ * 型別即可。
+ *
+ * 這裡原本手寫了一份 SupabaseLike 結構型別，導致每個查詢都得寫
+ * `as unknown as { eq: ... }` 把 builder 的下一段接回來 —— 大約 40 行的
+ * cast 體操，而且完全沒有型別安全（打錯欄位名不會被抓到）。
  */
-type SupabaseLike = {
-  from: (table: string) => {
-    select: (cols: string) => {
-      eq: (col: string, val: unknown) => {
-        eq?: (col: string, val: unknown) => {
-          maybeSingle?: () => Promise<{ data: unknown; error: unknown }>;
-        };
-        gte?: (col: string, val: string) => {
-          lt: (col: string, val: string) => Promise<{ data: unknown; error: unknown }>;
-        };
-        maybeSingle?: () => Promise<{ data: unknown; error: unknown }>;
-      };
-    };
-    insert: (
-      values: Record<string, unknown>
-    ) => Promise<{ data: unknown; error: { code?: string; message?: string } | null }>;
-  };
-};
+type Db = SupabaseClient;
 
 interface ExpenseTxRow {
   amount: number | string;
@@ -81,14 +71,14 @@ interface AlertContext {
  * 但 service role client 沒有，顯式傳穩定）。
  */
 export async function runBudgetAlerts(
-  supabase: unknown,
+  supabase: Db,
   userId: string
 ): Promise<void> {
   try {
     const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
     if (!channelAccessToken) return; // LINE 沒設定 → 靜默 skip
 
-    const ctx = await collectContext(supabase as SupabaseLike, userId);
+    const ctx = await collectContext(supabase, userId);
     if (!ctx) return;
 
     // Scenario A：本月剩餘率跌破 20%
@@ -96,8 +86,9 @@ export async function runBudgetAlerts(
     //   remainingPct 為負（已透支）也算命中（更該警報）。
     if (ctx.monthlyBudget > 0 && ctx.remainingPct < 20) {
       await fireIfFirst(
-        supabase as SupabaseLike,
+        supabase,
         userId,
+        ctx.lineUserId,
         "low_remaining",
         ctx.monthPeriod,
         {
@@ -115,8 +106,9 @@ export async function runBudgetAlerts(
       ctx.todaySpent >= ctx.dailyBaseline * 5
     ) {
       await fireIfFirst(
-        supabase as SupabaseLike,
+        supabase,
         userId,
+        ctx.lineUserId,
         "daily_burst",
         ctx.todayPeriod,
         {
@@ -135,23 +127,20 @@ export async function runBudgetAlerts(
 /* ─────────────────── Context 收集 ─────────────────── */
 
 async function collectContext(
-  supabase: SupabaseLike,
+  supabase: Db,
   userId: string
 ): Promise<AlertContext | null> {
   const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN!;
 
   // (1) profile.line_user_id — 沒綁不推
-  const profileQuery = supabase
+  const profileRes = await supabase
     .from("profiles")
     .select("line_user_id")
-    .eq("user_id", userId);
-  const profileRes = await (
-    profileQuery as unknown as {
-      maybeSingle: () => Promise<{ data: ProfileRow | null; error: unknown }>;
-    }
-  ).maybeSingle();
-  if (profileRes.error || !profileRes.data?.line_user_id) return null;
-  const lineUserId = profileRes.data.line_user_id;
+    .eq("user_id", userId)
+    .maybeSingle();
+  const profile = profileRes.data as ProfileRow | null;
+  if (profileRes.error || !profile?.line_user_id) return null;
+  const lineUserId = profile.line_user_id;
 
   // (2) 本月區間
   const now = new Date();
@@ -160,51 +149,27 @@ async function collectContext(
   const nextMonthStart = computeNextMonthStart(monthStart);
   const todayPeriod = ymdDate(now);
 
-  // (3) 本月 expense + completed 交易
-  const txQuery = supabase
-    .from("transactions")
-    .select("amount, date, category")
-    .eq("user_id", userId);
-  const txQuery2 = (
-    txQuery as unknown as {
-      eq: (col: string, val: unknown) => {
-        eq: (col: string, val: unknown) => {
-          gte: (col: string, val: string) => {
-            lt: (col: string, val: string) => Promise<{
-              data: ExpenseTxRow[] | null;
-              error: unknown;
-            }>;
-          };
-        };
-      };
-    }
-  )
-    .eq("type", "expense")
-    .eq("status", "completed")
-    .gte("date", monthStart)
-    .lt("date", nextMonthStart);
-  const txRes = await txQuery2;
-  if (txRes.error) return null;
-  const transactions = txRes.data ?? [];
+  // (3) 本月 expense + completed 交易 / (4) 本人 expense 類 categories
+  //     兩者無依賴關係，併行跑省一次 round-trip。
+  const [txRes, catRes] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("amount, date, category")
+      .eq("user_id", userId)
+      .eq("type", "expense")
+      .eq("status", "completed")
+      .gte("date", monthStart)
+      .lt("date", nextMonthStart),
+    supabase
+      .from("categories")
+      .select("code, name, budget_monthly, type")
+      .eq("user_id", userId)
+      .eq("type", "expense"),
+  ]);
 
-  // (4) 本人 expense 類 categories
-  const catQuery = supabase
-    .from("categories")
-    .select("code, name, budget_monthly, type")
-    .eq("user_id", userId);
-  const catRes = (await (
-    catQuery as unknown as {
-      eq: (col: string, val: unknown) => Promise<{
-        data: CategoryRow[] | null;
-        error: unknown;
-      }>;
-    }
-  ).eq("type", "expense")) as {
-    data: CategoryRow[] | null;
-    error: unknown;
-  };
-  if (catRes.error) return null;
-  const categories = catRes.data ?? [];
+  if (txRes.error || catRes.error) return null;
+  const transactions = (txRes.data ?? []) as ExpenseTxRow[];
+  const categories = (catRes.data ?? []) as CategoryRow[];
 
   // (5) 計算 metrics
   const monthlyBudget = categories.reduce(
@@ -248,15 +213,25 @@ async function collectContext(
 /* ─────────────────── 警報 fire + 去重 ─────────────────── */
 
 /**
- * 嘗試 INSERT budget_alerts；成功（首度觸發）才呼 LINE Flex push。
- * 23505 (unique violation) = 此 period 已推過、靜默 skip。
+ * 先 INSERT budget_alerts 佔位（UNIQUE 約束擋掉併發的第二次），成功才推
+ * LINE Flex。23505 (unique violation) = 此 period 已推過、靜默 skip。
+ *
+ * **推播失敗要把佔位列刪掉**：舊版只 console.error 就結束，但去重列已經寫
+ * 進去了 —— LINE token 過期 / 429 / 網路抖一下，該使用者這個月的
+ * low_remaining 警報就再也不會發，而且完全無聲。撤回之後下一筆交易觸發
+ * runBudgetAlerts 時會重試。
+ *
+ * 為什麼不乾脆「先推再寫」：那樣併發兩條 runBudgetAlerts（例如 LINE 記帳
+ * 同時網頁也在改交易）會各自推一次，使用者收到重複警報。先佔位仍然是對的
+ * 順序，只是失敗要收乾淨。
  *
  * composeFlex 回傳 {altText, contents}：altText 是純文字 fallback（LINE
  * 通知列 / Apple Watch / 舊客戶端顯示）、contents 是 bubble JSON。
  */
 async function fireIfFirst(
-  supabase: SupabaseLike,
+  supabase: Db,
   userId: string,
+  lineUserId: string,
   alertType: "low_remaining" | "daily_burst",
   alertPeriod: string,
   payload: Record<string, unknown>,
@@ -279,36 +254,34 @@ async function fireIfFirst(
     return;
   }
 
-  // 首度觸發 → Flex Message push
+  // 首度觸發 → Flex Message push。lineUserId 由 collectContext 帶進來，
+  // 不再為了拿它多打一次 profiles。
   const { altText, contents } = composeFlex();
   const ok = await sendLineFlexNotification({
-    userId: (await getLineUserId(supabase, userId)) ?? "",
+    userId: lineUserId,
     altText,
     contents,
     channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "",
   });
-  if (!ok) {
+  if (ok) return;
+
+  console.error(
+    `[budget-alerts] LINE flex push failed for ${alertType} ${alertPeriod}，撤回去重列以便重試`
+  );
+  const { error: rollbackErr } = await supabase
+    .from("budget_alerts")
+    .delete()
+    .eq("user_id", userId)
+    .eq("alert_type", alertType)
+    .eq("alert_period", alertPeriod);
+  if (rollbackErr) {
+    // 撤回也失敗 → 這個 period 確實會消音。至少讓它在 log 裡是刺眼的，
+    // 而不是像舊版那樣完全沒有痕跡。
     console.error(
-      `[budget-alerts] LINE flex push failed for ${alertType} ${alertPeriod}`
+      `[budget-alerts] 撤回去重列失敗，${alertType} ${alertPeriod} 將不再重試:`,
+      rollbackErr
     );
   }
-}
-
-/* 共用：拿 line_user_id（fireIfFirst 內部用） */
-async function getLineUserId(
-  supabase: SupabaseLike,
-  userId: string
-): Promise<string | null> {
-  const q = supabase.from("profiles").select("line_user_id").eq("user_id", userId);
-  const res = await (
-    q as unknown as {
-      maybeSingle: () => Promise<{
-        data: { line_user_id: string | null } | null;
-        error: unknown;
-      }>;
-    }
-  ).maybeSingle();
-  return res.data?.line_user_id ?? null;
 }
 
 /* ─────────────────── Flex Message 組裝 ─────────────────── */

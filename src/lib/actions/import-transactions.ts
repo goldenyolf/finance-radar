@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { runBudgetAlerts } from "@/lib/budget-alerts";
 import {
   computeDedupKey,
+  dateRangeOf,
+  markDuplicates,
   parseAndClassify,
   type BankFormat,
   type ParsedRow,
@@ -75,34 +77,47 @@ export async function parseImportCsv(formData: FormData): Promise<ImportResult> 
     return { ok: false, error: "讀取 CSV 內容失敗" };
   }
 
-  // 撈既有 transactions 算 dedup keys
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData?.user) return { ok: false, error: "未登入或 session 失效" };
 
-  const existingKeys = new Set<string>();
-  try {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("date, amount, description")
-      .eq("user_id", userData.user.id)
-      .eq("type", "expense");
-    if (!error && data) {
-      for (const r of data) {
-        const desc = String(r.description ?? "");
-        const amt = Number(r.amount) || 0;
-        const dt = String(r.date ?? "");
-        if (!dt || amt <= 0 || !desc) continue;
-        existingKeys.add(computeDedupKey(dt, amt, desc));
-      }
-    }
-  } catch {
-    // 失敗 → existingKeys 空集合，全部當 new 處理
-  }
+  /*
+    先 parse（純函式、不碰 DB），拿到 CSV 實際涵蓋的日期範圍，再用該範圍去
+    撈既有交易算 dedup key。
 
-  const result = parseAndClassify({ csvText, existingKeys });
+    舊版順序相反：先撈「全歷史的 expense」再 parse。信用卡明細通常只涵蓋
+    一兩個月，卻要把整張表拉回應用層才能比對，用越久越慢。
+  */
+  const result = parseAndClassify({ csvText });
   if (result.error) {
     return { ok: false, error: result.error };
+  }
+
+  const range = dateRangeOf(result.rows);
+  if (range) {
+    const existingKeys = new Set<string>();
+    try {
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("date, amount, description")
+        .eq("user_id", userData.user.id)
+        .eq("type", "expense")
+        .gte("date", range.from)
+        .lte("date", range.to);
+      if (!error && data) {
+        for (const r of data) {
+          const desc = String(r.description ?? "");
+          const amt = Number(r.amount) || 0;
+          const dt = String(r.date ?? "");
+          if (!dt || amt <= 0 || !desc) continue;
+          existingKeys.add(computeDedupKey(dt, amt, desc));
+        }
+      }
+    } catch {
+      // 失敗 → existingKeys 空集合，全部當 new 處理（最差只是讓 user 重複
+      // 匯入，可手動刪；比擋下整個流程好）
+    }
+    markDuplicates(result.rows, existingKeys);
   }
 
   const stats = {
